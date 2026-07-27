@@ -1,0 +1,17 @@
+{
+  "name": "eyon-history-workbench",
+  "displayName": "伊雍历史工作台",
+  "channel": "development",
+  "version": "0.1.0",
+  "rulesVersion": "1.0.0",
+  "schemaVersion": 1,
+  "minimumLoaderVersion": "0.1.0",
+  "entry": "",
+  "style": "",
+  "publishedAt": "",
+  "sha256": "",
+  "notes": [
+    "初始化私有开发仓库",
+    "纳入交互原型与脚本嵌入规则"
+  ]
+}

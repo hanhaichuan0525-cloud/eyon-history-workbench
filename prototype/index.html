@@ -1,0 +1,2733 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>伊雍历史系统 · 交互原型</title>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      --bg: #080b0c;
+      --surface: #101516;
+      --surface-2: #151b1b;
+      --surface-3: #1b2221;
+      --ink: #f1eee5;
+      --muted: #9da6a2;
+      --faint: #68726e;
+      --gold: #c5a45c;
+      --gold-2: #e2cf91;
+      --teal: #52b8ad;
+      --teal-2: #83d5ca;
+      --red: #a64f47;
+      --line: rgba(197, 164, 92, .24);
+      --line-strong: rgba(197, 164, 92, .52);
+      --teal-line: rgba(82, 184, 173, .36);
+      --shadow: rgba(0, 0, 0, .52);
+      --serif: "Noto Serif SC", "Songti SC", "SimSun", serif;
+      --sans: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      --asset-root: "我的核心及美化项目/美化/伊雍美化 新/assets";
+    }
+
+    * { box-sizing: border-box; }
+    html { background: var(--bg); color-scheme: dark; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: var(--sans);
+      letter-spacing: 0;
+    }
+    button, input, select, textarea { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid var(--teal);
+      outline-offset: 2px;
+    }
+    .app {
+      width: 100%;
+      min-height: 100svh;
+      display: grid;
+      grid-template-columns: 236px minmax(0, 1fr);
+      background:
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px),
+        var(--bg);
+      background-size: 32px 32px;
+    }
+
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100svh;
+      display: flex;
+      flex-direction: column;
+      padding: 22px 14px 16px;
+      border-right: 1px solid var(--line);
+      background: rgba(10, 14, 15, .97);
+      z-index: 20;
+    }
+    .brand {
+      position: relative;
+      min-height: 104px;
+      padding: 15px 12px 14px 70px;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand::before {
+      content: "E";
+      position: absolute;
+      width: 42px;
+      height: 42px;
+      left: 10px;
+      top: 14px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      color: var(--gold-2);
+      background: #0c1112;
+      font: 700 17px/1 var(--serif);
+    }
+    .brand-kicker {
+      color: var(--teal-2);
+      font: 700 10px/1.2 var(--sans);
+      text-transform: uppercase;
+    }
+    .brand h1 {
+      margin: 6px 0 3px;
+      color: var(--gold-2);
+      font: 700 22px/1.15 var(--serif);
+    }
+    .brand p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .nav {
+      display: grid;
+      gap: 4px;
+      margin-top: 18px;
+    }
+    .nav-button {
+      width: 100%;
+      min-height: 46px;
+      display: grid;
+      grid-template-columns: 30px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      text-align: left;
+      transition: .18s ease;
+    }
+    .nav-button:hover { color: var(--ink); background: rgba(255,255,255,.035); }
+    .nav-button.active {
+      color: var(--gold-2);
+      border-color: var(--line);
+      background: rgba(197,164,92,.07);
+      box-shadow: inset 3px 0 0 var(--teal);
+    }
+    .nav-button i { width: 18px; height: 18px; }
+    .nav-button span { font-size: 13px; font-weight: 700; }
+    .nav-button small {
+      color: var(--faint);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+    .rail-status {
+      margin-top: auto;
+      padding: 13px 12px;
+      border: 1px solid var(--teal-line);
+      border-radius: 5px;
+      background: rgba(82,184,173,.055);
+    }
+    .rail-status strong {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--teal-2);
+      font-size: 12px;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--teal);
+      box-shadow: 0 0 10px rgba(82,184,173,.75);
+    }
+    .rail-status p { margin: 7px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+
+    .workspace { min-width: 0; padding: 0 24px 36px; }
+    .topbar {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .page-heading h2 { margin: 0; font: 700 22px/1.2 var(--serif); color: var(--ink); }
+    .page-heading p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
+    .icon-button, .quiet-button, .primary-button, .danger-button {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--surface);
+      cursor: pointer;
+      transition: .18s ease;
+    }
+    .icon-button {
+      width: 36px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      color: var(--muted);
+    }
+    .icon-button i { width: 16px; height: 16px; }
+    .icon-button:hover, .quiet-button:hover { color: var(--gold-2); border-color: var(--line-strong); }
+    .quiet-button, .primary-button, .danger-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 13px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .quiet-button i, .primary-button i, .danger-button i { width: 15px; height: 15px; }
+    .primary-button {
+      border-color: var(--teal-line);
+      background: rgba(82,184,173,.12);
+      color: var(--teal-2);
+    }
+    .primary-button:hover { background: rgba(82,184,173,.2); }
+    .danger-button { border-color: rgba(166,79,71,.44); color: #e2a29c; background: rgba(166,79,71,.08); }
+    .danger-button:hover { background: rgba(166,79,71,.18); }
+    .primary-button:disabled { opacity: .38; cursor: not-allowed; }
+
+    .view { display: none; padding-top: 22px; }
+    .view.active { display: block; animation: viewIn .28s ease both; }
+    @keyframes viewIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    .ornament {
+      height: 1px;
+      margin: 5px 0 20px;
+      background: linear-gradient(90deg, transparent, var(--line-strong) 18%, var(--line-strong) 82%, transparent);
+    }
+
+    .section {
+      border-top: 1px solid var(--line);
+      background: rgba(12,16,17,.78);
+    }
+    .section-header {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 0 16px;
+      border-bottom: 1px solid rgba(197,164,92,.12);
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+    .section-title :is(i, svg) { width: 17px; height: 17px; flex: 0 0 auto; color: var(--gold); }
+    .section-title h3 { margin: 0; font: 700 14px/1.2 var(--serif); color: var(--gold-2); }
+    .section-title p { margin: 0 0 0 5px; color: var(--faint); font-size: 10px; }
+    .section-body { padding: 16px; }
+    .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .42fr); gap: 16px; }
+    .columns-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .columns-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+
+    .time-overview {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: stretch;
+      gap: 14px;
+    }
+    .time-plane {
+      position: relative;
+      min-height: 196px;
+      padding: 21px 22px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .time-plane.ruin { border-color: var(--teal-line); }
+    .time-plane::after { content: none; }
+    .plane-label { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+    .time-plane h3 { margin: 8px 0 19px; font: 700 20px/1.2 var(--serif); color: var(--gold-2); }
+    .time-plane.ruin h3 { color: var(--teal-2); }
+    .datum { display: grid; grid-template-columns: 44px 1fr; gap: 7px; margin-top: 12px; font-size: 12px; line-height: 1.6; }
+    .datum span { color: var(--faint); }
+    .datum strong { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+    .runtime-table { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); }
+    .runtime-cell { padding: 14px 15px; border-right: 1px solid var(--line); }
+    .runtime-cell:last-child { border-right: 0; }
+    .runtime-cell span { display: block; color: var(--faint); font-size: 10px; }
+    .runtime-cell strong { display: block; margin-top: 6px; color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+    .runtime-cell strong.teal { color: var(--teal-2); }
+    .command-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 13px; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .search {
+      position: relative;
+      flex: 1 1 210px;
+      min-width: 0;
+      display: block;
+    }
+    .search > :is(i, svg) {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 12px;
+      top: 50%;
+      z-index: 2;
+      color: var(--faint);
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+    .search input, .field input, .field select, .field textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #090d0e;
+      color: var(--ink);
+    }
+    .search input { display: block; height: 36px; padding: 0 12px 0 38px; }
+    .filter-select { height: 36px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--muted); }
+    .people-layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 14px; }
+    .people-source { border-right: 1px solid var(--line); padding-right: 14px; }
+    .subheading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
+    .subheading strong { color: var(--gold-2); font: 700 13px/1.2 var(--serif); }
+    .subheading small { color: var(--faint); font-size: 10px; }
+    .person-list { display: grid; gap: 7px; }
+    .person-card {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      gap: 9px;
+      align-items: center;
+      min-height: 52px;
+      padding: 7px 9px;
+      border: 1px solid rgba(197,164,92,.16);
+      border-radius: 5px;
+      background: var(--surface);
+      cursor: grab;
+      user-select: none;
+    }
+    .person-card:active { cursor: grabbing; }
+    .avatar {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      color: var(--gold-2);
+      background: var(--surface-3);
+      font: 700 14px/1 var(--serif);
+    }
+    .person-name { min-width: 0; }
+    .person-name strong { display: block; color: var(--ink); font-size: 14px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .person-name small { display: block; margin-top: 5px; color: var(--faint); font-size: 11px; line-height: 1.35; }
+    .drag-handle { width: 15px; color: var(--faint); }
+    .groups-grid { display: grid; grid-template-columns: repeat(3, minmax(170px, 1fr)); gap: 10px; }
+    .drop-group {
+      min-height: 118px;
+      border: 1px dashed rgba(197,164,92,.28);
+      border-radius: 6px;
+      background: rgba(255,255,255,.014);
+      padding: 10px;
+      transition: .18s ease;
+    }
+    .drop-group.drag-over { border-color: var(--teal); background: rgba(82,184,173,.07); }
+    .drop-group.active { border-style: solid; border-color: var(--teal-line); background: rgba(82,184,173,.055); }
+    .drop-group-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; padding: 0 0 9px; }
+    .drop-group-head strong { color: var(--gold-2); font-size: 13px; line-height: 1.25; cursor: pointer; }
+    .drop-group-head span { color: var(--faint); font-size: 10px; }
+    .group-edit {
+      width: 25px;
+      height: 25px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      background: transparent;
+      color: var(--faint);
+      cursor: pointer;
+    }
+    .group-edit:hover { color: var(--teal-2); }
+    .group-edit i { width: 13px; height: 13px; }
+    .drop-group .person-list { gap: 6px; }
+    .group-members { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; align-content: flex-start; }
+    .group-member {
+      min-width: 0;
+      max-width: 100%;
+      padding: 5px 8px;
+      border: 1px solid rgba(197,164,92,.2);
+      border-radius: 3px;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .group-member:hover { color: var(--teal-2); border-color: var(--teal-line); }
+    .group-empty { color: var(--faint); font-size: 10px; line-height: 1.5; }
+
+    .genealogy-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 14px; align-items: start; }
+    .focus-person { padding: 15px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+    .focus-person .large-avatar {
+      width: 68px;
+      height: 68px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: var(--surface-3);
+      color: var(--gold-2);
+      font: 700 26px/1 var(--serif);
+    }
+    .focus-person h3 { margin: 0; font: 700 17px/1.2 var(--serif); color: var(--gold-2); }
+    .focus-person p { margin: 7px 0 15px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .stepper { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; border: 1px solid var(--line); }
+    .stepper button { height: 34px; border: 0; background: transparent; color: var(--gold-2); cursor: pointer; }
+    .stepper strong { text-align: center; font-size: 12px; }
+    .focus-detail {
+      margin-top: 13px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+    .focus-detail > span { color: var(--faint); font-size: 10px; }
+    .focus-detail > strong { display: block; margin-top: 5px; color: var(--gold-2); font: 700 14px/1.35 var(--serif); }
+    .focus-detail dl { display: grid; grid-template-columns: 42px 1fr; gap: 6px 8px; margin: 10px 0 0; font-size: 11px; line-height: 1.45; }
+    .focus-detail dt { color: var(--faint); }
+    .focus-detail dd { margin: 0; color: var(--muted); }
+    .tree-canvas {
+      position: relative;
+      min-height: 470px;
+      padding: 28px 22px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background:
+        linear-gradient(rgba(197,164,92,.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(197,164,92,.055) 1px, transparent 1px),
+        var(--surface);
+      background-size: 26px 26px;
+      overflow: hidden;
+    }
+    .family-level { display: flex; justify-content: center; gap: 16px; position: relative; }
+    .family-level + .family-level { margin-top: 56px; }
+    .family-level + .family-level::before {
+      content: "";
+      position: absolute;
+      width: 1px;
+      height: 56px;
+      top: -56px;
+      left: 50%;
+      background: var(--line-strong);
+    }
+    .family-node {
+      width: min(150px, 29%);
+      min-height: 70px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--surface);
+      text-align: center;
+      cursor: pointer;
+    }
+    .family-node.active { border-color: var(--teal); box-shadow: inset 0 0 0 1px rgba(82,184,173,.18); }
+    .family-node small { display: block; color: var(--faint); font-size: 9px; }
+    .family-node strong { display: block; margin-top: 5px; color: var(--ink); font: 700 12px/1.3 var(--serif); }
+    .family-node em { display: block; margin-top: 5px; color: var(--teal-2); font: normal 9px/1.2 var(--sans); }
+    .evidence-list { display: grid; gap: 8px; }
+    .evidence {
+      padding: 10px 11px;
+      border-left: 2px solid var(--gold);
+      background: rgba(197,164,92,.055);
+    }
+    .evidence.teal { border-left-color: var(--teal); background: rgba(82,184,173,.055); }
+    .evidence strong { display: block; font-size: 13px; }
+    .evidence p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+
+    .kinship-shell {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .kinship-toolbar {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 11px;
+      border-bottom: 1px solid var(--line);
+    }
+    .kinship-legend { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+    .kinship-legend span::before { content: ""; display: inline-block; width: 15px; height: 1px; margin-right: 5px; vertical-align: middle; background: var(--gold); }
+    .kinship-legend .mvu::before { background: var(--teal); }
+    .kinship-scroll { overflow: auto; scrollbar-color: var(--line-strong) var(--surface-2); }
+    .kinship-board {
+      position: relative;
+      width: 1440px;
+      height: 660px;
+      background:
+        linear-gradient(rgba(197,164,92,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(197,164,92,.035) 1px, transparent 1px),
+        var(--surface);
+      background-size: 28px 28px;
+      transform-origin: left top;
+    }
+    .kinship-board svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .kin-edge { fill: none; stroke: rgba(197,164,92,.5); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+    .generation-mark {
+      position: absolute;
+      left: 8px;
+      width: 32px;
+      min-height: 62px;
+      display: grid;
+      place-items: center;
+      padding: 6px 4px;
+      border-left: 2px solid var(--line-strong);
+      color: var(--faint);
+      background: var(--surface-2);
+      font-size: 10px;
+      line-height: 1.2;
+      letter-spacing: 2px;
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      z-index: 2;
+    }
+    .kin-node {
+      position: absolute;
+      width: 144px;
+      min-height: 70px;
+      padding: 9px 10px;
+      transform: translateX(-50%);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--surface-2);
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+      box-shadow: 0 6px 16px rgba(0,0,0,.24);
+    }
+    .kin-node:hover { border-color: var(--line-strong); }
+    .kin-node.active { border-color: var(--teal); box-shadow: inset 0 0 0 1px rgba(82,184,173,.18), 0 8px 18px rgba(0,0,0,.3); }
+    .kin-node small { display: block; color: var(--muted); font-size: 10px; }
+    .kin-node strong { display: block; margin-top: 5px; font: 700 13px/1.3 var(--serif); }
+    .kin-node em { display: block; margin-top: 5px; color: var(--teal-2); font: normal 10px/1.3 var(--sans); }
+    .kin-node.reference em { color: var(--teal-2); }
+    .kin-context-menu {
+      position: fixed;
+      z-index: 90;
+      display: none;
+      min-width: 190px;
+      padding: 5px;
+      border: 1px solid var(--line-strong);
+      background: var(--surface-2);
+      box-shadow: 0 14px 34px rgba(0,0,0,.44);
+    }
+    .kin-context-menu.show { display: block; }
+    .kin-context-menu button {
+      width: 100%;
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 9px;
+      border: 0;
+      background: transparent;
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+    }
+    .kin-context-menu button:hover { background: rgba(82,184,173,.1); color: var(--teal-2); }
+    .kin-context-menu svg { width: 15px; height: 15px; }
+
+    .generator-layout { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 14px; }
+    .form-stack { display: grid; gap: 14px; }
+    .field label { display: block; margin-bottom: 7px; color: var(--muted); font-size: 12px; }
+    .form-stack > .field > label,
+    .date-group > label {
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+    .field input, .field select { height: 40px; padding: 0 11px; font-size: 12px; }
+    .field textarea { min-height: 94px; padding: 10px 11px; resize: vertical; font-size: 12px; line-height: 1.6; }
+    .field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .date-range-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .date-group {
+      padding: 10px;
+      border: 1px solid rgba(197,164,92,.15);
+      border-radius: 4px;
+      background: rgba(197,164,92,.025);
+    }
+    .date-parts { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; }
+    .date-part { min-width: 0; }
+    .date-part span { display: block; margin-bottom: 6px; color: var(--gold-2); font-size: 11px; font-weight: 800; }
+    .date-part input { min-width: 0; padding: 0 6px; text-align: center; }
+    .field-note { margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .field-error { display: none; margin-top: 6px; color: #e2a29c; font-size: 10px; }
+    .field.invalid input { border-color: rgba(166,79,71,.9); }
+    .field.invalid .field-error { display: block; }
+    .api-route { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    .route-option {
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .route-option.active { border-color: var(--teal-line); background: rgba(82,184,173,.08); color: var(--teal-2); }
+    .token-row { display: flex; gap: 5px; flex-wrap: wrap; }
+    .token {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 25px;
+      padding: 0 8px;
+      border: 1px solid var(--teal-line);
+      border-radius: 3px;
+      color: var(--teal-2);
+      background: rgba(82,184,173,.06);
+      font-size: 11px;
+    }
+    .timeline-panel { min-width: 0; }
+    .chronology {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .chronology-toolbar {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 7px 10px 7px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-2);
+    }
+    .scale-state {
+      display: flex;
+      align-items: baseline;
+      gap: 9px;
+      color: var(--muted);
+      font-size: 9px;
+    }
+    .scale-state strong { color: var(--gold-2); font: 700 13px/1 var(--serif); }
+    .chronology-viewport {
+      position: relative;
+      height: 236px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-color: var(--line-strong) var(--surface-2);
+      overscroll-behavior: contain;
+    }
+    .chronology-viewport::-webkit-scrollbar,
+    .record-tabs::-webkit-scrollbar { height: 10px; }
+    .chronology-viewport::-webkit-scrollbar-track,
+    .record-tabs::-webkit-scrollbar-track { background: var(--surface-2); }
+    .chronology-viewport::-webkit-scrollbar-thumb,
+    .record-tabs::-webkit-scrollbar-thumb {
+      border: 2px solid var(--surface-2);
+      border-radius: 8px;
+      background: var(--line-strong);
+    }
+    .chronology-track {
+      --track-width: 100%;
+      --event-width: 148px;
+      position: relative;
+      width: var(--track-width);
+      min-width: 100%;
+      height: 220px;
+      background:
+        linear-gradient(180deg, transparent 0 53px, rgba(197,164,92,.25) 53px 54px, transparent 54px),
+        repeating-linear-gradient(90deg, transparent 0 79px, rgba(197,164,92,.035) 79px 80px);
+      transition: width .24s ease;
+    }
+    .timeline-tick {
+      position: absolute;
+      top: 27px;
+      width: max-content;
+      color: var(--faint);
+      font: 11px/1.25 var(--sans);
+      text-align: center;
+      transform: translateX(-50%);
+    }
+    .timeline-tick::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 20px;
+      width: 1px;
+      height: 8px;
+      background: var(--line-strong);
+    }
+    .timeline-event {
+      position: absolute;
+      top: var(--lane-top);
+      width: var(--event-width);
+      min-height: 112px;
+      transform: translateX(-50%);
+      transition: left .24s ease, width .24s ease, opacity .15s ease;
+    }
+    .timeline-event::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: calc(-1 * var(--stem-height));
+      width: 1px;
+      height: var(--stem-height);
+      background: var(--line-strong);
+    }
+    .timeline-event::after {
+      content: "";
+      position: absolute;
+      left: calc(50% - 3px);
+      top: calc(-1 * var(--stem-height) - 3px);
+      width: 7px;
+      height: 7px;
+      border: 1px solid var(--gold);
+      border-radius: 50%;
+      background: #090d0e;
+    }
+    .timeline-event.anomaly::after { border-color: var(--teal); background: var(--teal); box-shadow: 0 0 0 4px rgba(82,184,173,.1); }
+    .event-kind {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--faint);
+      font-size: 10px;
+    }
+    .history-node {
+      width: 100%;
+      min-height: 108px;
+      padding: 12px 13px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--surface);
+      cursor: pointer;
+      text-align: left;
+      transition: .18s ease;
+    }
+    .history-node:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+    .history-node.selected { border-color: var(--teal); box-shadow: 0 0 0 1px rgba(82,184,173,.17), 0 9px 22px var(--shadow); }
+    .history-node.anomaly { background: #10201f; border-color: var(--teal-line); }
+    .history-node small { color: var(--muted); font-size: 10px; }
+    .history-node strong { display: block; margin: 7px 0; color: var(--gold-2); font: 700 14px/1.35 var(--serif); }
+    .history-node.anomaly strong { color: var(--teal-2); }
+    .history-node p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .timeline-summary {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 40px;
+      padding: 9px 14px;
+      border-top: 1px solid var(--line);
+      background: rgba(197,164,92,.035);
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .timeline-summary strong { flex: 0 0 auto; color: var(--gold-2); font-size: 12px; }
+    .node-inspector {
+      display: none;
+      margin-top: 12px;
+      padding: 13px 15px;
+      border: 1px solid var(--teal-line);
+      background: rgba(82,184,173,.045);
+    }
+    .node-inspector.visible { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; }
+    .node-inspector strong { color: var(--teal-2); font-size: 14px; }
+    .node-inspector p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+
+    .library-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 14px; }
+    .shelf { border-right: 1px solid var(--line); padding-right: 14px; }
+    .book-list { display: grid; gap: 6px; }
+    .book-tab {
+      position: relative;
+      min-height: 72px;
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid rgba(197,164,92,.16);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--ink);
+      cursor: pointer;
+      text-align: left;
+    }
+    .book-tab.active { border-color: var(--line-strong); background: rgba(197,164,92,.07); }
+    .book-spine {
+      position: relative;
+      width: 42px;
+      height: 54px;
+      border: 1px solid var(--line-strong);
+      border-radius: 2px 4px 4px 2px;
+      background: var(--book-color, #30221e);
+      box-shadow: inset 6px 0 rgba(0,0,0,.24), inset 0 0 0 3px rgba(230,205,142,.08), 0 4px 8px rgba(0,0,0,.16);
+    }
+    .book-spine::before {
+      content: "";
+      position: absolute;
+      inset: 6px 5px 6px 10px;
+      border: 1px solid rgba(225,197,127,.52);
+    }
+    .book-spine::after {
+      content: attr(data-mark);
+      position: absolute;
+      inset: 0 0 0 6px;
+      display: grid;
+      place-items: center;
+      color: #e3cf9e;
+      font: 700 14px/1 var(--serif);
+      text-shadow: 0 1px 2px rgba(0,0,0,.55);
+    }
+    .book-tab strong { display: block; font: 700 13px/1.3 var(--serif); color: var(--gold-2); }
+    .book-tab small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; }
+    .codex {
+      position: relative;
+      min-height: 535px;
+      padding: 28px 32px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #e7d6b2;
+      color: #30271e;
+      box-shadow: inset 0 0 34px rgba(86,57,30,.14), 0 18px 35px var(--shadow);
+    }
+    .codex::before, .codex::after { content: none; }
+    .codex::before { left: -10px; top: -11px; }
+    .codex::after { right: -10px; bottom: -11px; transform: rotate(180deg); }
+    .codex-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 17px; border-bottom: 1px solid rgba(76,51,27,.28); }
+    .codex-head small { color: #8a693a; font-size: 9px; }
+    .codex-head h3 { margin: 5px 0 0; font: 700 24px/1.2 var(--serif); }
+    .seal {
+      width: 58px;
+      height: 58px;
+      flex: 0 0 auto;
+      border: 1px solid rgba(76,51,27,.38);
+      border-radius: 50%;
+    }
+    .book-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 16px; }
+    .book-meta span { padding: 3px 7px; border: 1px solid rgba(76,51,27,.23); color: #684d2d; font-size: 8px; }
+    .chapter {
+      border-top: 1px solid rgba(76,51,27,.24);
+    }
+    .chapter:last-child { border-bottom: 1px solid rgba(76,51,27,.24); }
+    .chapter summary {
+      min-height: 45px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      cursor: pointer;
+      list-style: none;
+      color: #50391f;
+      font: 700 13px/1.3 var(--serif);
+    }
+    .chapter summary::-webkit-details-marker { display: none; }
+    .chapter summary i { width: 15px; height: 15px; transition: .18s ease; }
+    .chapter[open] summary i { transform: rotate(180deg); }
+    .chapter-body { padding: 0 2px 17px; color: #443526; font: 12px/1.9 var(--serif); text-align: justify; }
+    .chapter-body p { margin: 0 0 11px; }
+
+    .settings-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 14px; }
+    .settings-nav { display: grid; align-content: start; gap: 4px; }
+    .settings-tab {
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 11px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      text-align: left;
+      font-size: 11px;
+    }
+    .settings-tab i { width: 15px; height: 15px; }
+    .settings-tab.active { border-color: var(--line); color: var(--gold-2); background: rgba(197,164,92,.06); }
+    .settings-pane { display: none; }
+    .settings-pane.active { display: block; }
+    .setting-row {
+      min-height: 62px;
+      display: grid;
+      grid-template-columns: minmax(180px, .48fr) minmax(240px, 1fr);
+      gap: 20px;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(197,164,92,.12);
+    }
+    .setting-copy strong { display: block; font-size: 11px; }
+    .setting-copy p { margin: 5px 0 0; color: var(--faint); font-size: 9px; line-height: 1.5; }
+    .setting-control { min-width: 0; }
+    .setting-control input, .setting-control select {
+      width: 100%;
+      height: 35px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #090d0e;
+      color: var(--ink);
+      padding: 0 10px;
+    }
+    .api-stack { display: grid; gap: 12px; padding: 14px; }
+    .api-root-card,
+    .api-credentials {
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .api-root-card { border-left: 3px solid var(--teal); }
+    .api-root-card .setting-row,
+    .api-credentials .setting-row:last-child { border-bottom: 0; }
+    .api-group {
+      border: 1px solid rgba(197,164,92,.16);
+      background: rgba(197,164,92,.018);
+    }
+    .api-group-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 0 13px;
+      border-bottom: 1px solid rgba(197,164,92,.12);
+      color: var(--gold-2);
+      font: 800 12px/1.3 var(--serif);
+    }
+    .api-group-title :is(i, svg) { width: 15px; height: 15px; color: var(--teal-2); }
+    .api-module-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 11px; }
+    .api-module-card {
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .api-module-card strong { display: block; color: var(--ink); font-size: 12px; }
+    .api-module-card p { min-height: 34px; margin: 5px 0 9px; color: var(--faint); font-size: 10px; line-height: 1.55; }
+    .api-module-card select { width: 100%; height: 35px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); padding: 0 8px; }
+    .api-credentials .api-group-title { justify-content: space-between; }
+    .api-credentials .api-group-title small { color: var(--faint); font: 400 9px/1.3 var(--sans); }
+    .smart-retrieval-button {
+      min-width: 168px;
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--muted);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .smart-retrieval-button :is(i, svg) { width: 16px; height: 16px; }
+    .smart-retrieval-button.active { color: var(--teal-2); border-color: var(--teal-line); background: rgba(82,184,173,.08); }
+    .scope-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border: 1px solid var(--teal-line);
+      color: var(--teal-2);
+      background: rgba(82,184,173,.06);
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .scope-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+
+    /* V2: adapters for the real Eyon content contracts. */
+    .archive-drawer {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .archive-row {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 52px;
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(197,164,92,.12);
+    }
+    .archive-row > i { width: 16px; height: 16px; color: var(--teal); }
+    .archive-row strong { display: block; font-size: 11px; }
+    .archive-row small { display: block; margin-top: 4px; color: var(--faint); font-size: 9px; }
+
+    .people-filters {
+      display: grid;
+      grid-template-columns: minmax(320px, 1fr) 180px 180px;
+      gap: 9px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .people-filters .search { height: 42px; }
+    .people-filters .search > :is(i, svg) { top: 50%; }
+    .people-filters .search input,
+    .people-filters .filter-select { height: 42px; font-size: 12px; }
+    .people-workbench {
+      display: grid;
+      grid-template-columns: 260px minmax(480px, 1fr) 255px;
+      gap: 14px;
+      align-items: start;
+    }
+    .people-index {
+      border-right: 1px solid var(--line);
+      padding-right: 14px;
+    }
+    .facet-row { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 12px; }
+    .facet {
+      min-height: 30px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .facet.active { color: var(--teal-2); border-color: var(--teal-line); background: rgba(82,184,173,.07); }
+    .person-card.selected { border-color: var(--teal); background: rgba(82,184,173,.06); }
+    .person-card .presence {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--faint);
+    }
+    .person-card .presence.on { background: var(--teal); box-shadow: 0 0 8px rgba(82,184,173,.6); }
+    .person-record {
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .record-head {
+      display: grid;
+      grid-template-columns: 62px minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      padding: 15px;
+      border-bottom: 1px solid var(--line);
+    }
+    .record-avatar {
+      width: 62px;
+      height: 62px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: var(--surface-3);
+      color: var(--gold-2);
+      font: 700 24px/1 var(--serif);
+    }
+    .record-title h3 { margin: 0; color: var(--gold-2); font: 700 22px/1.25 var(--serif); }
+    .record-title p { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .record-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+    .record-badges span {
+      padding: 3px 7px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 10px;
+    }
+    .record-badges .contract { color: var(--teal-2); border-color: var(--teal-line); }
+    .record-tabs {
+      display: flex;
+      gap: 0;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--line);
+      scrollbar-color: var(--line-strong) var(--surface-2);
+    }
+    .record-tab {
+      flex: 0 0 auto;
+      min-height: 38px;
+      padding: 0 13px;
+      border: 0;
+      border-right: 1px solid rgba(197,164,92,.12);
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .record-tab.active { color: var(--gold-2); background: rgba(197,164,92,.06); box-shadow: inset 0 -2px var(--teal); }
+    .record-pane { display: none; padding: 15px; }
+    .record-pane.active { display: block; }
+    .record-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .record-block {
+      padding: 12px;
+      border: 1px solid rgba(197,164,92,.14);
+      background: var(--surface);
+    }
+    .record-block.wide { grid-column: 1 / -1; }
+    .record-block h4 { margin: 0 0 8px; color: var(--gold); font: 700 13px/1.3 var(--serif); }
+    .record-block p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.75; }
+    .stat-list { display: grid; gap: 8px; }
+    .stat-line { display: grid; grid-template-columns: 42px minmax(0, 1fr) 28px; gap: 8px; align-items: center; font-size: 11px; }
+    .stat-track { height: 5px; background: #07090a; }
+    .stat-track span { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--teal)); }
+    .item-list { display: grid; gap: 8px; }
+    .item-entry { padding: 10px; border-left: 2px solid var(--gold); background: rgba(197,164,92,.04); }
+    .item-entry strong { color: var(--ink); font-size: 12px; }
+    .item-entry small { display: block; margin-top: 4px; color: var(--faint); font-size: 10px; }
+    .item-entry p { margin-top: 7px; }
+    .group-manager {
+      position: sticky;
+      top: 84px;
+      min-width: 0;
+      padding: 13px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .group-manager-head { display: grid; gap: 5px; margin-bottom: 10px; }
+    .group-manager-head > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .group-manager-head strong { color: var(--gold-2); font: 700 15px/1.3 var(--serif); }
+    .group-manager-head p { margin: 0; color: var(--faint); font-size: 10px; line-height: 1.55; }
+    .group-manager .primary-button { min-height: 32px; padding: 0 9px; font-size: 10px; }
+    .group-filter-all {
+      width: 100%;
+      min-height: 34px;
+      margin-bottom: 8px;
+      border: 1px solid var(--teal-line);
+      background: rgba(82,184,173,.06);
+      color: var(--teal-2);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .group-stack { display: grid; gap: 8px; }
+
+    .candidate-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .candidate-tab {
+      min-height: 58px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--muted);
+      text-align: left;
+      cursor: pointer;
+    }
+    .candidate-tab strong { display: block; color: var(--ink); font: 700 12px/1.4 var(--serif); }
+    .candidate-tab small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .candidate-tab.active { border-color: var(--teal); background: rgba(82,184,173,.06); }
+    .period-tag { display: inline-flex; margin-bottom: 5px; padding: 2px 6px; border: 1px solid var(--line); color: var(--gold-2); font-size: 10px; }
+    .candidate-tab.transition .period-tag { color: var(--teal-2); border-color: var(--teal-line); }
+    .candidate-tab.turmoil .period-tag { color: #e2a29c; border-color: rgba(166,79,71,.44); }
+    .ruin-dossier {
+      margin-bottom: 12px;
+      padding: 15px 17px;
+      border: 1px solid var(--teal-line);
+      background: linear-gradient(90deg, rgba(82,184,173,.045), transparent 48%), var(--surface);
+    }
+    .ruin-dossier-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; padding-bottom: 10px; border-bottom: 1px solid rgba(82,184,173,.18); }
+    .ruin-dossier-heading strong { color: var(--teal-2); font: 800 15px/1.2 var(--serif); }
+    .ruin-dossier-heading small { color: var(--muted); font-size: 11px; }
+    .ruin-copy dl { display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 9px 12px; margin: 0; }
+    .ruin-copy dt { font-size: 12px; font-weight: 800; }
+    .ruin-copy dt:nth-of-type(1) { color: #d6b96f; }
+    .ruin-copy dt:nth-of-type(2) { color: #66c9bd; }
+    .ruin-copy dt:nth-of-type(3) { color: #9fb9df; }
+    .ruin-copy dt:nth-of-type(4) { color: #dda68e; }
+    .ruin-copy dt:nth-of-type(5) { color: #c7a9d8; }
+    .ruin-copy dd { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.65; }
+    .ruin-copy .history { color: var(--muted); }
+
+    .codex-stage {
+      position: relative;
+      min-height: 610px;
+      perspective: 1500px;
+    }
+    .codex-book {
+      position: relative;
+      min-height: 610px;
+      transform-style: preserve-3d;
+    }
+    .codex-cover, .codex-spread {
+      min-height: 610px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      box-shadow: 0 18px 35px var(--shadow);
+    }
+    .codex-cover {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      padding: 38px;
+      overflow: hidden;
+      background:
+        linear-gradient(rgba(8,12,13,.76), rgba(8,12,13,.88)),
+        #111716;
+      transform-origin: left center;
+      transition: transform .75s cubic-bezier(.2,.72,.15,1), opacity .35s ease;
+      cursor: pointer;
+    }
+    .codex-cover::before {
+      content: "";
+      position: absolute;
+      inset: 16px;
+      border: 1px solid var(--line-strong);
+      pointer-events: none;
+    }
+    .cover-copy { position: relative; z-index: 1; max-width: 560px; text-align: center; }
+    .cover-copy > small { color: var(--teal-2); font-size: 12px; font-weight: 700; }
+    .cover-copy h3 { margin: 13px 0 9px; color: var(--gold-2); font: 700 30px/1.25 var(--serif); }
+    .cover-copy p { margin: 0 auto; color: var(--muted); font-size: 14px; line-height: 1.75; }
+    .codex-cover .book-meta { justify-content: center; margin: 16px 0 20px; gap: 8px; }
+    .codex-cover .book-meta span {
+      padding: 5px 9px;
+      border-color: var(--line);
+      color: var(--gold-2);
+      background: rgba(197,164,92,.045);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .codex-spread {
+      display: block;
+      background: #dfcfaa;
+      color: #30271e;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .codex-page {
+      max-width: 780px;
+      min-height: 610px;
+      margin: 0 auto;
+      padding: 34px clamp(24px, 5vw, 58px) 42px;
+      box-shadow: inset 0 0 34px rgba(83,58,31,.09);
+    }
+    .codex-page h4 { margin: 0 0 12px; color: #5a3d20; font: 700 15px/1.3 var(--serif); }
+    .codex-page p { margin: 0 0 12px; color: #443526; font: 11px/1.85 var(--serif); text-align: justify; }
+    .codex-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0 14px;
+      color: #7a5d32;
+      font: 700 9px/1 var(--sans);
+      letter-spacing: 1.4px;
+    }
+    .codex-divider::before, .codex-divider::after {
+      content: "";
+      height: 1px;
+      flex: 1;
+      background: rgba(76,51,27,.25);
+    }
+    .codex-summary {
+      margin-top: 22px;
+      padding: 16px 18px;
+      border: 1px solid rgba(76,51,27,.24);
+      background: rgba(255,250,235,.26);
+    }
+    .codex-summary strong { display: block; margin-bottom: 7px; color: #68461f; font: 700 13px/1.3 var(--serif); }
+    .codex-summary p { margin: 0; }
+    .codex-book.open .codex-cover { transform: rotateY(-102deg); opacity: 0; pointer-events: none; }
+    .codex-spread :is(details, summary, button, a, input, select, textarea, label) { cursor: auto; }
+    .inline-control { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
+    .toggle {
+      position: relative;
+      width: 42px;
+      height: 22px;
+      display: inline-block;
+    }
+    .toggle input { position: absolute; opacity: 0; }
+    .toggle span { position: absolute; inset: 0; border: 1px solid var(--line); border-radius: 11px; background: #080b0c; cursor: pointer; }
+    .toggle span::after { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; border-radius: 50%; background: var(--faint); transition: .18s ease; }
+    .toggle input:checked + span { border-color: var(--teal-line); background: rgba(82,184,173,.13); }
+    .toggle input:checked + span::after { left: 22px; background: var(--teal); }
+    .appearance-stack { display: grid; gap: 18px; }
+    .appearance-block {
+      padding-bottom: 18px;
+      border-bottom: 1px solid rgba(197,164,92,.12);
+    }
+    .appearance-block:last-child { padding-bottom: 0; border-bottom: 0; }
+    .appearance-heading { margin-bottom: 10px; }
+    .appearance-heading strong { display: block; color: var(--ink); font-size: 12px; }
+    .appearance-heading p { margin: 4px 0 0; color: var(--faint); font-size: 10px; line-height: 1.55; }
+    .mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .appearance-choice {
+      min-height: 68px;
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--surface);
+      color: var(--ink);
+      cursor: pointer;
+      text-align: left;
+    }
+    .appearance-choice i { width: 20px; height: 20px; color: var(--teal-2); }
+    .appearance-choice strong, .palette-choice strong { display: block; font-size: 11px; }
+    .appearance-choice small, .palette-choice small { display: block; margin-top: 4px; color: var(--faint); font-size: 9px; }
+    .appearance-choice.active, .palette-choice.active {
+      border-color: var(--teal);
+      box-shadow: inset 0 0 0 1px var(--teal-line);
+    }
+    .palette-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    .palette-choice {
+      min-height: 66px;
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      align-items: center;
+      gap: 11px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--surface);
+      color: var(--ink);
+      cursor: pointer;
+      text-align: left;
+    }
+    .palette-icon, .type-icon {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border: 1px solid color-mix(in srgb, var(--swatch, var(--sample)) 58%, transparent);
+      border-radius: 50%;
+      color: var(--swatch, var(--sample));
+      background: color-mix(in srgb, var(--swatch, var(--sample)) 12%, var(--surface));
+    }
+    .palette-icon i, .type-icon i { width: 18px; height: 18px; }
+    .choice-copy { min-width: 0; }
+
+    .toast {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      max-width: min(360px, calc(100vw - 32px));
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 14px;
+      border: 1px solid var(--teal-line);
+      border-radius: 5px;
+      background: #101817;
+      color: var(--ink);
+      box-shadow: 0 16px 30px var(--shadow);
+      font-size: 11px;
+      transform: translateY(90px);
+      opacity: 0;
+      pointer-events: none;
+      transition: .24s ease;
+      z-index: 80;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast i { width: 17px; height: 17px; color: var(--teal-2); }
+    .eyon-working {
+      position: fixed;
+      top: 20px;
+      right: 24px;
+      width: min(320px, calc(100vw - 32px));
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) 8px;
+      gap: 11px;
+      align-items: center;
+      padding: 12px 13px;
+      border: 1px solid var(--teal-line);
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--surface) 94%, var(--teal) 6%);
+      box-shadow: 0 18px 42px var(--shadow);
+      opacity: 0;
+      transform: translateY(-18px);
+      pointer-events: none;
+      transition: .24s ease;
+      z-index: 90;
+    }
+    .eyon-working.show { opacity: 1; transform: translateY(0); }
+    .working-sigil {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--teal-line);
+      border-radius: 50%;
+      color: var(--teal-2);
+      background: rgba(82,184,173,.06);
+    }
+    .working-sigil i { width: 17px; height: 17px; }
+    .working-copy { min-width: 0; }
+    .working-copy small { display: block; color: var(--faint); font-size: 9px; }
+    .working-copy strong { display: block; margin-top: 3px; color: var(--ink); font: 700 13px/1.3 var(--serif); }
+    .working-copy p { margin: 3px 0 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .working-pulse {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--teal);
+      box-shadow: 0 0 0 0 rgba(82,184,173,.35);
+      animation: workingPulse 1.35s ease-out infinite;
+    }
+    @keyframes workingPulse {
+      0% { box-shadow: 0 0 0 0 rgba(82,184,173,.38); }
+      75%, 100% { box-shadow: 0 0 0 8px rgba(82,184,173,0); }
+    }
+
+    .floating-orb {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      width: 50px;
+      height: 50px;
+      display: none;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: #0c1112;
+      box-shadow: 0 10px 20px rgba(0,0,0,.5);
+      z-index: 40;
+    }
+    .floating-orb::before { content: "E"; color: var(--gold-2); font: 700 16px/1 var(--serif); }
+
+    body[data-mode="day"] {
+      --bg: #f7f8f6;
+      --surface: #ffffff;
+      --surface-2: #f1f3f0;
+      --surface-3: #e7ebe7;
+      --ink: #202522;
+      --muted: #59625d;
+      --faint: #7a847f;
+      --gold: #9b7833;
+      --gold-2: #6f521d;
+      --line: rgba(109,82,31,.2);
+      --line-strong: rgba(109,82,31,.44);
+      --shadow: rgba(32,37,34,.16);
+    }
+    body[data-accent="jade"] {
+      --teal: #52b8ad;
+      --teal-2: #83d5ca;
+      --teal-line: rgba(82,184,173,.4);
+    }
+    body[data-accent="gold"] {
+      --teal: #c39a43;
+      --teal-2: #e3c676;
+      --teal-line: rgba(195,154,67,.42);
+    }
+    body[data-accent="blue"] {
+      --teal: #669fc7;
+      --teal-2: #9ccce5;
+      --teal-line: rgba(102,159,199,.42);
+    }
+    body[data-accent="crimson"] {
+      --teal: #b65f67;
+      --teal-2: #e19aa0;
+      --teal-line: rgba(182,95,103,.42);
+    }
+    body[data-mode="day"][data-accent="jade"] { --teal: #147f75; --teal-2: #0b675f; }
+    body[data-mode="day"][data-accent="gold"] { --teal: #98701e; --teal-2: #745210; }
+    body[data-mode="day"][data-accent="blue"] { --teal: #337da9; --teal-2: #245f83; }
+    body[data-mode="day"][data-accent="crimson"] { --teal: #9c404b; --teal-2: #7d2f38; }
+    body[data-mode="night"][data-text="neutral"] { --ink: #f1eee5; --muted: #a7afab; --faint: #737d78; }
+    body[data-mode="night"][data-text="warm"] { --ink: #f4e6cf; --muted: #b9aa96; --faint: #817568; }
+    body[data-mode="night"][data-text="cool"] { --ink: #e4edf2; --muted: #a4b1b8; --faint: #6f7c83; }
+    body[data-mode="day"][data-text="neutral"] { --ink: #202522; --muted: #59625d; --faint: #7a847f; }
+    body[data-mode="day"][data-text="warm"] { --ink: #3d2d22; --muted: #68584c; --faint: #88786c; }
+    body[data-mode="day"][data-text="cool"] { --ink: #20313d; --muted: #51636e; --faint: #74858e; }
+    body[data-mode="day"] .app {
+      background:
+        linear-gradient(rgba(24,35,29,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(24,35,29,.035) 1px, transparent 1px),
+        var(--bg);
+      background-size: 32px 32px;
+    }
+    body[data-mode="day"] .rail { background: rgba(255,255,255,.96); }
+    body[data-mode="day"] .brand::before,
+    body[data-mode="day"] .floating-orb { background: #fff; }
+    body[data-mode="day"] .section { background: rgba(255,255,255,.88); }
+    body[data-mode="day"] .nav-button:hover { background: rgba(24,35,29,.045); }
+    body[data-mode="day"] .nav-button.active,
+    body[data-mode="day"] .settings-tab.active,
+    body[data-mode="day"] .book-tab.active { background: rgba(155,120,51,.08); }
+    body[data-mode="day"] :is(
+      .search input, .field input, .field select, .field textarea,
+      .setting-control input, .setting-control select, .kinship-shell,
+      .kin-node, .kin-context-menu, .chronology, .chronology-toolbar,
+      .timeline-event::after, .family-node, .focus-detail, .ruin-dossier
+    ) { background: #fff; }
+    body[data-mode="day"] .kinship-board,
+    body[data-mode="day"] .tree-canvas {
+      background:
+        linear-gradient(rgba(32,37,34,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(32,37,34,.045) 1px, transparent 1px),
+        #f8faf8;
+    }
+    body[data-mode="day"] .generation-mark { background: rgba(255,255,255,.92); }
+    body[data-mode="day"] .person-record,
+    body[data-mode="day"] .record-head,
+    body[data-mode="day"] .record-tabs,
+    body[data-mode="day"] .record-pane { background: #fff; }
+    body[data-mode="day"] .stat-track { background: #e3e8e4; }
+    body[data-mode="day"] .history-node.anomaly { background: #edf8f6; }
+    body[data-mode="day"] .toggle span { background: #e7ebe7; }
+    body[data-mode="day"] .toast { background: #fff; }
+    body[data-mode="day"] .codex-cover {
+      background: linear-gradient(rgba(255,255,255,.9), rgba(247,248,246,.96)), #fff;
+    }
+    body[data-mode="day"] .codex-cover .book-meta span { background: rgba(155,120,51,.06); }
+
+    @media (max-width: 1080px) {
+      .app { grid-template-columns: 196px minmax(0, 1fr); }
+      .brand { padding-left: 50px; }
+      .brand::before { width: 40px; background-size: 40px auto; }
+      .groups-grid { grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+      .genealogy-layout { grid-template-columns: 220px minmax(0, 1fr); }
+      .time-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .archive-drawer { grid-template-columns: 1fr; }
+      .people-workbench { grid-template-columns: 230px minmax(0, 1fr); }
+      .group-manager { position: static; grid-column: 1 / -1; }
+      .group-stack { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .api-module-grid { grid-template-columns: 1fr; }
+      .record-head { grid-template-columns: 52px minmax(0, 1fr); }
+      .record-head > .toolbar { grid-column: 1 / -1; }
+      .record-avatar { width: 52px; height: 52px; }
+    }
+    @media (max-width: 760px) {
+      .app { display: block; padding-bottom: 70px; }
+      .rail {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: auto;
+        bottom: 0;
+        width: 100%;
+        height: 64px;
+        display: block;
+        padding: 5px 6px;
+        border: 0;
+        border-top: 1px solid var(--line);
+        z-index: 60;
+      }
+      .brand, .rail-status { display: none; }
+      .nav { margin: 0; grid-template-columns: repeat(6, 1fr); gap: 2px; }
+      .nav-button {
+        min-height: 52px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 3px;
+        padding: 0 2px;
+        text-align: center;
+        box-shadow: none;
+      }
+      .nav-button i { width: 17px; height: 17px; }
+      .nav-button span { font-size: 8px; white-space: nowrap; }
+      .nav-button small { display: none; }
+      .nav-button.active { box-shadow: inset 0 2px 0 var(--teal); }
+      .workspace { padding: 0 12px 20px; }
+      .topbar { min-height: 62px; }
+      .page-heading h2 { font-size: 18px; }
+      .page-heading p { display: none; }
+      .top-actions .quiet-button span { display: none; }
+      .view { padding-top: 14px; }
+      .ornament { margin-bottom: 10px; opacity: .54; }
+      .split, .columns-2, .columns-3, .people-layout, .people-workbench, .genealogy-layout,
+      .generator-layout, .library-layout, .settings-layout { grid-template-columns: 1fr; }
+      .time-overview { grid-template-columns: 1fr; }
+      .runtime-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .runtime-cell:nth-child(2) { border-right: 0; }
+      .runtime-cell:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .people-source, .shelf { border-right: 0; padding-right: 0; border-bottom: 1px solid var(--line); padding-bottom: 13px; }
+      .people-index { border-right: 0; padding-right: 0; border-bottom: 1px solid var(--line); padding-bottom: 13px; }
+      .people-filters { grid-template-columns: 1fr; gap: 9px; }
+      .people-filters .search { grid-column: auto; width: 100%; }
+      .people-filters .search input,
+      .people-filters .filter-select { width: 100%; min-width: 0; }
+      .group-manager { grid-column: auto; }
+      .group-stack { grid-template-columns: 1fr; }
+      .groups-grid { grid-template-columns: 1fr 1fr; }
+      .drop-group { min-height: 140px; }
+      .tree-canvas { min-height: 430px; padding: 21px 10px; }
+      .family-level { gap: 7px; }
+      .family-node { width: min(150px, 32%); padding: 8px 4px; }
+      .family-node strong { font-size: 10px; }
+      .chronology-toolbar { align-items: flex-start; }
+      .scale-state { flex-wrap: wrap; }
+      .timeline-event { max-width: 210px; }
+      .node-inspector.visible { grid-template-columns: 1fr; }
+      .candidate-tabs { grid-template-columns: 1fr; }
+      .codex-stage, .codex-book, .codex-cover, .codex-spread { min-height: 0; }
+      .codex-stage { padding-top: 14px; }
+      .codex-cover { min-height: 520px; }
+      .codex { min-height: 480px; padding: 22px 18px; }
+      .codex-head h3 { font-size: 20px; }
+      .settings-nav { grid-template-columns: repeat(5, 1fr); overflow-x: auto; }
+      .settings-tab { justify-content: center; padding: 0 7px; }
+      .settings-tab span { display: none; }
+      .setting-row { grid-template-columns: 1fr; gap: 9px; }
+      .api-stack { padding: 10px; }
+      .palette-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .floating-orb { display: none; }
+    }
+    @media (max-width: 430px) {
+      .workspace { padding-left: 9px; padding-right: 9px; }
+      .section-body { padding: 11px; }
+      .section-header { padding: 0 11px; }
+      .section-title p { display: none; }
+      .groups-grid { grid-template-columns: 1fr; }
+      .field-row, .date-range-grid { grid-template-columns: 1fr; }
+      .time-plane { padding: 18px 15px; }
+      .runtime-table { grid-template-columns: 1fr; }
+      .runtime-cell { border-right: 0; border-bottom: 1px solid var(--line); }
+      .runtime-cell:last-child { border-bottom: 0; }
+      .family-node { min-height: 78px; }
+      .book-list { grid-template-columns: 1fr 1fr; }
+      .book-tab { min-height: 64px; padding: 7px; }
+      .record-grid { grid-template-columns: 1fr; }
+      .record-block.wide { grid-column: auto; }
+      .record-head { grid-template-columns: 46px minmax(0, 1fr); padding: 11px; }
+      .record-avatar { width: 46px; height: 46px; font-size: 19px; }
+      .record-title h3 { font-size: 15px; }
+      .groups-grid.compact { grid-template-columns: 1fr; }
+      .archive-row { grid-template-columns: 24px minmax(0, 1fr); }
+      .archive-row > .period-tag { grid-column: 2; justify-self: start; }
+      .codex-cover { min-height: 470px; padding: 28px 20px; }
+      .cover-copy h3 { font-size: 24px; }
+      .cover-copy p { font-size: 13px; }
+      .mode-grid, .palette-grid { grid-template-columns: 1fr; }
+      .codex-page { padding: 22px 18px; }
+    }
+  </style>
+</head>
+<body data-mode="night" data-accent="jade" data-text="neutral">
+  <div class="app">
+    <aside class="rail">
+      <div class="brand">
+        <div class="brand-kicker">Serpent Archive</div>
+        <h1>伊雍</h1>
+        <p>历史工作台 · 原型 0.1</p>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <button class="nav-button active" data-view="time"><i data-lucide="clock-3"></i><span>墟境时空</span><small>01</small></button>
+        <button class="nav-button" data-view="people"><i data-lucide="users"></i><span>人物查看</span><small>24</small></button>
+        <button class="nav-button" data-view="genealogy"><i data-lucide="git-fork"></i><span>宗族谱系</span><small>07</small></button>
+        <button class="nav-button" data-view="generator"><i data-lucide="waypoints"></i><span>墟境生成</span><small>03</small></button>
+        <button class="nav-button" data-view="library"><i data-lucide="library-big"></i><span>传记书库</span><small>12</small></button>
+        <button class="nav-button" data-view="settings"><i data-lucide="settings-2"></i><span>设置</span><small></small></button>
+      </nav>
+      <div class="rail-status">
+        <strong><span class="status-dot"></span>运行正常</strong>
+        <p>时间内核只读演示<br>资料库索引：48 条</p>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div class="page-heading">
+          <h2 id="page-title">墟境时空</h2>
+          <p id="page-subtitle">现实锚点、墟境进程与明确的状态操作</p>
+        </div>
+        <div class="top-actions">
+          <button class="quiet-button" id="sync-button"><i data-lucide="refresh-cw"></i><span>读取当前变量</span></button>
+          <button class="icon-button" title="关闭工作台"><i data-lucide="x"></i></button>
+        </div>
+      </header>
+
+      <section class="view active" id="view-time">
+        <div class="ornament"></div>
+        <div class="time-overview">
+          <article class="time-plane">
+            <div class="plane-label">Reality Anchor</div>
+            <h3>现实锚点</h3>
+            <div class="datum"><span>时间</span><strong>复兴纪元488年 · 风信之月15日 · 14:09</strong></div>
+            <div class="datum"><span>地点</span><strong>布劳尔子爵城堡 · 底层马厩</strong></div>
+          </article>
+          <article class="time-plane ruin">
+            <div class="plane-label">Historical Ruin</div>
+            <h3>墟境时空</h3>
+            <div class="datum"><span>时间</span><strong>复兴纪元145年 · 星见之月20日 · 23:18</strong></div>
+            <div class="datum"><span>地点</span><strong>地下教堂 · 侧翼忏悔室</strong></div>
+          </article>
+        </div>
+        <div style="height:14px"></div>
+        <section class="section">
+          <div class="section-header">
+            <div class="section-title"><i data-lucide="activity"></i><h3>运行状态</h3><p>只允许时间内核写入MVU</p></div>
+          </div>
+          <div class="section-body">
+            <div class="runtime-table">
+              <div class="runtime-cell"><span>流程状态 · 墟境轮次</span><strong class="teal">exploring · RUN-39</strong></div>
+              <div class="runtime-cell"><span>任务规则锁定</span><strong>已锁定</strong></div>
+              <div class="runtime-cell"><span>进入特异点</span><strong>圣液配额被替换</strong></div>
+              <div class="runtime-cell"><span>引用传记</span><strong>未使用（可选）</strong></div>
+            </div>
+            <div class="command-bar">
+              <button class="quiet-button" data-toast="已打开当前墟境的因果图"><i data-lucide="waypoints"></i>查看因果图</button>
+              <button class="danger-button" id="return-from-ruin" data-toast="已冻结本轮锚点，蝴蝶效应将在后台结算"><i data-lucide="log-out"></i>遣返</button>
+            </div>
+          </div>
+        </section>
+        <div class="archive-drawer">
+          <section class="section">
+            <div class="section-header"><div class="section-title"><i data-lucide="butterfly"></i><h3>蝴蝶效应档案</h3><p>已归档的现世变化</p></div><button class="quiet-button" data-toast="已打开完整蝴蝶效应面板"><i data-lucide="panel-right-open"></i>查看全部</button></div>
+            <div class="archive-row"><i data-lucide="orbit"></i><div><strong>《蝴蝶效应锚定日志4》</strong><small>城市级 · 商会势力暗流与布劳尔农庄抵押流失</small></div><span class="period-tag">已归档</span></div>
+            <div class="archive-row"><i data-lucide="orbit"></i><div><strong>《蝴蝶效应锚定日志3》</strong><small>聚落级 · 南城门旧墙结构与守卫家族断嗣</small></div><span class="period-tag">已归档</span></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-people">
+        <div class="ornament"></div>
+        <section class="section">
+          <div class="section-header">
+            <div class="section-title"><i data-lucide="scan-search"></i><h3>人物实体库</h3><p>读取关系列表完整字段；自定义组只保存在本地</p></div>
+          </div>
+          <div class="section-body">
+            <div class="people-filters">
+              <div class="search"><i data-lucide="search"></i><input id="person-search" placeholder="搜索姓名、身份、职业、种族或自定义组"></div>
+              <select class="filter-select"><option>全部生命层级</option><option>第六层级</option><option>第五层级</option><option>第四层级</option></select>
+              <select class="filter-select"><option>全部契约状态</option><option>命定契约</option><option>未缔约</option></select>
+            </div>
+            <div class="people-workbench">
+              <aside class="people-index">
+                <div class="subheading"><strong>MVU人物 · 24</strong><small>当前楼层快照</small></div>
+                <div class="facet-row"><button class="facet active">全部</button><button class="facet">在场 6</button><button class="facet">人类 14</button><button class="facet">命定契约 5</button></div>
+                <div class="person-list" id="source-people">
+                  <div class="person-card selected" draggable="true" data-name="维奥莱塔·马克西姆·奥古斯塔"><div class="avatar">维</div><div class="person-name"><strong>维奥莱塔·马克西姆·奥古斯塔</strong><small>第六层级 · 女皇 · Lv.24</small></div><span class="presence"></span></div>
+                  <div class="person-card" draggable="true" data-name="伊伽"><div class="avatar">伊</div><div class="person-name"><strong>伊伽</strong><small>精灵 · 同行者 · 在场</small></div><span class="presence on"></span></div>
+                  <div class="person-card" draggable="true" data-name="格萝瑞·夜川"><div class="avatar">格</div><div class="person-name"><strong>格萝瑞·夜川</strong><small>人类 · 夜川家 · Lv.16</small></div><span class="presence"></span></div>
+                  <div class="person-card" draggable="true" data-name="伊芙琳·霜枝"><div class="avatar">霜</div><div class="person-name"><strong>伊芙琳·霜枝</strong><small>人类 · 快乐教会</small></div><span class="presence"></span></div>
+                  <div class="person-card" draggable="true" data-name="伊雍"><div class="avatar">雍</div><div class="person-name"><strong>伊雍</strong><small>神性 · 虚嗣王庭 · 在场</small></div><span class="presence on"></span></div>
+                </div>
+              </aside>
+              <article class="person-record">
+                <header class="record-head">
+                  <div class="record-avatar">维</div>
+                  <div class="record-title">
+                    <h3>维奥莱塔·马克西姆·奥古斯塔</h3>
+                    <p>奥古斯提姆帝国女皇 · 大陆级称号“铁血女皇”</p>
+                    <div class="record-badges"><span>人类</span><span>统治者</span><span>神话战士</span><span>第六层级</span><span>Lv.24</span><span class="contract">命定契约 · 否</span></div>
+                  </div>
+                  <div class="toolbar"><button class="icon-button" title="加入谱系中心" data-toast="已将维奥莱塔设为谱系中心"><i data-lucide="git-fork"></i></button><button class="icon-button" title="以此人物生成墟境" data-toast="人物资料已送入墟境生成器"><i data-lucide="waypoints"></i></button></div>
+                </header>
+                <nav class="record-tabs">
+                  <button class="record-tab active" data-record="profile">人物侧写</button><button class="record-tab" data-record="stats">属性状态</button><button class="record-tab" data-record="equipment">装备背包</button><button class="record-tab" data-record="skills">技能</button><button class="record-tab" data-record="ascension">登神长阶</button><button class="record-tab" data-record="history">历史关联</button>
+                </nav>
+                <div class="record-pane active" id="record-profile"><div class="record-grid">
+                  <section class="record-block"><h4>性格</h4><p>表面威严且从容，私下里却带着对亲密之人的些许依赖。内心深藏着对帝国沉甸甸的悲悯，但在涉及人类存续的底线上寸步不让。</p></section>
+                  <section class="record-block"><h4>喜爱</h4><p>特供的红茶、《勇者丝特拉》特典版绘本，以及沉重政务间隙难得的片刻安宁。</p></section>
+                  <section class="record-block"><h4>外貌</h4><p>外表停留在二十四岁左右，身高170cm，棕红长发与赤红眼瞳；身姿修长挺拔，具有长期战斗形成的匀称肌肉线条。</p></section>
+                  <section class="record-block"><h4>着装</h4><p>通常穿着象征皇权的红白大衣或赤红精钢板甲；当前不在场，具体着装未知。</p></section>
+                  <section class="record-block wide"><h4>心里话</h4><p>“北境长垣的崩溃比预想的要快……必须尽快整合所有力量。幸好，有他可以处理帝国内部的蛀虫。”</p></section>
+                  <section class="record-block wide"><h4>背景故事</h4><p>先帝牺牲后，她接过沉重的法则源质与皇位。加冕之日即登临第六层级，以雷霆手段镇压旧贵族叛乱，并试图以强权统合资源，为人类开辟存续之路。</p></section>
+                </div></div>
+                <div class="record-pane" id="record-stats"><div class="record-grid">
+                  <section class="record-block"><h4>基础属性</h4><div class="stat-list"><div class="stat-line"><span>力量</span><div class="stat-track"><span style="width:88%"></span></div><strong>14</strong></div><div class="stat-line"><span>敏捷</span><div class="stat-track"><span style="width:81%"></span></div><strong>13</strong></div><div class="stat-line"><span>体质</span><div class="stat-track"><span style="width:94%"></span></div><strong>15</strong></div><div class="stat-line"><span>智力</span><div class="stat-track"><span style="width:100%"></span></div><strong>16</strong></div><div class="stat-line"><span>精神</span><div class="stat-track"><span style="width:94%"></span></div><strong>15</strong></div></div></section>
+                  <section class="record-block"><h4>状态效果</h4><p>当前没有活动状态效果。人物不在场，实时战斗状态不作推断。</p></section>
+                </div></div>
+                <div class="record-pane" id="record-equipment"><div class="item-list"><div class="item-entry"><strong>黄昏判决 · 神话单手魔剑</strong><small>武器架 · 攻击2000 · 帝国皇室徽记</small><p>增加25%物理伤害；击中目标时有概率使其所有增益状态持续时间减半。</p></div><div class="item-entry"><strong>人物背包</strong><small>当前为空</small><p>背包与装备是独立对象；空字段仍保留入口，不伪造内容。</p></div></div></div>
+                <div class="record-pane" id="record-skills"><div class="item-list"><div class="item-entry"><strong>帝王之威 · 神话被动</strong><small>精神 · 范围：所有 · 控制 · 特性</small><p>低生命层级单位对其造成的伤害降低30%；敌对单位先攻检定固定承受-8。</p></div><div class="item-entry"><strong>破晓裁断 · 神话主动</strong><small>力量 · 单体 · 伤害 · 消耗8000 SP</small><p>造成物理与真实伤害并穿透18%防御，威力6500。</p></div></div></div>
+                <div class="record-pane" id="record-ascension"><div class="record-grid"><section class="record-block"><h4>登神长阶</h4><p>已开启。要素与权能暂为空，不能根据身份自动补写。</p></section><section class="record-block"><h4>统御法则</h4><p>帝国领土内所有属性检定+5、DR增加15%；可发动军势统合共享视野与部分资源。</p></section><section class="record-block"><h4>神位</h4><p>尚未确立。</p></section><section class="record-block"><h4>神国</h4><p>名称与描述均为空。</p></section></div></div>
+                <div class="record-pane" id="record-history"><div class="record-grid"><section class="record-block"><h4>传记</h4><p>《铁血女皇传》草稿 · 6个时期 · 尚未定稿。</p></section><section class="record-block"><h4>宗族谱系</h4><p>奥古斯塔皇族 · 已确认12人 · 3条关系待核实。</p></section><section class="record-block"><h4>相关墟境</h4><p>北境长垣崩溃、旧贵族叛乱、先帝法则源质移交。</p></section><section class="record-block"><h4>蝴蝶效应</h4><p>2条锚定日志提及皇室资源调配与北境防线。</p></section></div></div>
+              </article>
+              <aside class="group-manager" aria-label="自定义组别管理">
+                <div class="group-manager-head">
+                  <div>
+                    <strong>自定义组别</strong>
+                    <button class="primary-button" id="new-person-group"><i data-lucide="folder-plus"></i>新建</button>
+                  </div>
+                  <p>拖动左侧人物完成本地分类；点击组名筛选人物，点击成员调取资料。</p>
+                </div>
+                <button class="group-filter-all" id="show-all-people">全部人物 · 24</button>
+                <div class="group-stack" id="person-groups">
+                  <div class="drop-group" data-group="重点溯源">
+                    <div class="drop-group-head"><strong>重点溯源</strong><span>2人</span><button class="group-edit" title="重命名组别"><i data-lucide="pencil"></i></button></div>
+                    <div class="group-members"><button class="group-member" data-name="伊伽">伊伽</button><button class="group-member" data-name="维奥莱塔·马克西姆·奥古斯塔">维奥莱塔</button></div>
+                  </div>
+                  <div class="drop-group" data-group="墟境关联">
+                    <div class="drop-group-head"><strong>墟境关联</strong><span>2人</span><button class="group-edit" title="重命名组别"><i data-lucide="pencil"></i></button></div>
+                    <div class="group-members"><button class="group-member" data-name="格萝瑞·夜川">格萝瑞</button><button class="group-member" data-name="伊芙琳·霜枝">伊芙琳</button></div>
+                  </div>
+                  <div class="drop-group" data-group="王庭档案">
+                    <div class="drop-group-head"><strong>王庭档案</strong><span>1人</span><button class="group-edit" title="重命名组别"><i data-lucide="pencil"></i></button></div>
+                    <div class="group-members"><button class="group-member" data-name="伊雍">伊雍</button></div>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="view-genealogy">
+        <div class="ornament"></div>
+        <div class="genealogy-layout">
+          <section class="focus-person">
+            <div class="large-avatar">夜</div>
+            <h3>夜见哉川</h3>
+            <p>当前谱系中心。只整理MVU、世界书与正文能够确认的关系，供传记和墟境生成参考。</p>
+            <div class="field"><label>祖辈追溯</label><div class="stepper"><button data-counter="ancestor" data-step="-1">−</button><strong id="ancestor-value">4 代</strong><button data-counter="ancestor" data-step="1">＋</button></div></div>
+            <div style="height:9px"></div>
+            <div class="field"><label>后代追溯</label><div class="stepper"><button data-counter="descendant" data-step="-1">−</button><strong id="descendant-value">3 代</strong><button data-counter="descendant" data-step="1">＋</button></div></div>
+            <div style="height:11px"></div>
+            <button class="primary-button" id="rebuild-genealogy" style="width:100%"><i data-lucide="git-fork"></i>重新构建谱系</button>
+            <div class="focus-detail" aria-live="polite">
+              <span>选中人物</span>
+              <strong id="kin-detail-name">夜见哉川</strong>
+              <dl>
+                <dt>关系</dt><dd id="kin-detail-relation">当前人物</dd>
+                <dt>生卒</dt><dd id="kin-detail-life">复兴纪元462年—在世</dd>
+                <dt>职业</dt><dd id="kin-detail-profession">历史调查者、命定契约者</dd>
+                <dt>资料</dt><dd id="kin-detail-source">MVU角色列表，可加入墟境参与人物</dd>
+              </dl>
+            </div>
+          </section>
+          <section class="kinship-shell" aria-label="宗族谱系图">
+            <div class="kinship-toolbar">
+              <div class="kinship-legend"><span>谱系人物</span></div>
+              <div class="toolbar"><button class="icon-button" title="缩小谱系"><i data-lucide="zoom-out"></i></button><button class="icon-button" title="居中当前人物"><i data-lucide="locate-fixed"></i></button><button class="icon-button" title="放大谱系"><i data-lucide="zoom-in"></i></button></div>
+            </div>
+            <div class="kinship-scroll">
+              <div class="kinship-board">
+                <span class="generation-mark" style="top:35px">曾祖辈</span><span class="generation-mark" style="top:165px">祖辈</span><span class="generation-mark" style="top:295px">父母辈</span><span class="generation-mark" style="top:425px">同辈</span><span class="generation-mark" style="top:555px">后代</span>
+                <svg viewBox="0 0 1440 660" preserveAspectRatio="none" aria-hidden="true">
+                  <path class="kin-edge" d="M120 98 V132 H205 V164 M290 98 V132 H205"/>
+                  <path class="kin-edge" d="M460 98 V132 H545 V164 M630 98 V132 H545"/>
+                  <path class="kin-edge" d="M810 98 V132 H895 V164 M980 98 V132 H895"/>
+                  <path class="kin-edge" d="M1150 98 V132 H1235 V164 M1320 98 V132 H1235"/>
+                  <path class="kin-edge" d="M205 228 V262 H375 V294 M545 228 V262 H375"/>
+                  <path class="kin-edge" d="M895 228 V262 H1065 V294 M1235 228 V262 H1065"/>
+                  <path class="kin-edge" d="M375 358 V392 H770 V424 M1065 358 V392 H770"/>
+                  <path class="kin-edge" d="M375 358 V392 H530 V424"/>
+                  <path class="kin-edge" d="M770 488 V522 H770 V554"/>
+                </svg>
+                <button class="kin-node reference" style="left:120px;top:42px" data-name="夜川宗正" data-relation="父系曾祖父" data-life="复兴纪元372年—复兴纪元431年" data-source="世界书亲属记录"><small>父系曾祖父</small><strong>夜川宗正</strong><em>复兴纪元372—431年</em></button>
+                <button class="kin-node reference" style="left:290px;top:42px" data-name="芙雷雅·洛温" data-relation="父系曾祖母" data-life="复兴纪元378年—复兴纪元445年" data-source="世界书亲属记录"><small>父系曾祖母</small><strong>芙雷雅·洛温</strong><em>复兴纪元378—445年</em></button>
+                <button class="kin-node reference" style="left:460px;top:42px" data-name="阿尔德·梅尔" data-relation="祖母外祖父" data-life="复兴纪元381年—复兴纪元439年" data-source="家族条目"><small>祖母外祖父</small><strong>阿尔德·梅尔</strong><em>复兴纪元381—439年</em></button>
+                <button class="kin-node reference" style="left:630px;top:42px" data-name="薇娜·梅尔" data-relation="祖母外祖母" data-life="复兴纪元385年—复兴纪元452年" data-source="家族条目"><small>祖母外祖母</small><strong>薇娜·梅尔</strong><em>复兴纪元385—452年</em></button>
+                <button class="kin-node reference" style="left:810px;top:42px" data-name="奥托·卡缇恩" data-relation="母系曾祖父" data-life="复兴纪元376年—复兴纪元438年" data-source="世界书亲属记录"><small>母系曾祖父</small><strong>奥托·卡缇恩</strong><em>复兴纪元376—438年</em></button>
+                <button class="kin-node reference" style="left:980px;top:42px" data-name="艾妲·洛萨" data-relation="母系曾祖母" data-life="复兴纪元380年—复兴纪元449年" data-source="世界书亲属记录"><small>母系曾祖母</small><strong>艾妲·洛萨</strong><em>复兴纪元380—449年</em></button>
+                <button class="kin-node reference" style="left:1150px;top:42px" data-name="亚伦·萨弥尔" data-relation="外祖母之父" data-life="复兴纪元384年—复兴纪元447年" data-source="家族条目"><small>外祖母之父</small><strong>亚伦·萨弥尔</strong><em>复兴纪元384—447年</em></button>
+                <button class="kin-node reference" style="left:1320px;top:42px" data-name="露西亚·萨弥尔" data-relation="外祖母之母" data-life="复兴纪元389年—复兴纪元456年" data-source="家族条目"><small>外祖母之母</small><strong>露西亚·萨弥尔</strong><em>复兴纪元389—456年</em></button>
+                <button class="kin-node reference" style="left:205px;top:172px" data-name="夜川玄司" data-relation="祖父" data-life="复兴纪元401年—复兴纪元466年" data-source="世界书亲属记录"><small>祖父</small><strong>夜川玄司</strong><em>复兴纪元401—466年</em></button>
+                <button class="kin-node reference" style="left:545px;top:172px" data-name="梅尔莎" data-relation="祖母" data-life="复兴纪元408年—复兴纪元471年" data-source="世界书亲属记录"><small>祖母</small><strong>梅尔莎</strong><em>复兴纪元408—471年</em></button>
+                <button class="kin-node reference" style="left:895px;top:172px" data-name="卡提恩·洛萨" data-relation="外祖父" data-life="复兴纪元404年—复兴纪元469年" data-source="世界书亲属记录"><small>外祖父</small><strong>卡提恩·洛萨</strong><em>复兴纪元404—469年</em></button>
+                <button class="kin-node reference" style="left:1235px;top:172px" data-name="萨弥娅" data-relation="外祖母" data-life="复兴纪元411年—复兴纪元474年" data-source="世界书亲属记录"><small>外祖母</small><strong>萨弥娅</strong><em>复兴纪元411—474年</em></button>
+                <button class="kin-node" style="left:375px;top:302px" data-name="夜川信宗" data-relation="父亲" data-life="复兴纪元433年—复兴纪元479年" data-source="MVU角色列表" data-mvu="true"><small>父亲</small><strong>夜川信宗</strong><em>复兴纪元433—479年</em></button>
+                <button class="kin-node" style="left:1065px;top:302px" data-name="卡提娅" data-relation="母亲" data-life="复兴纪元438年—在世" data-source="MVU角色列表" data-mvu="true"><small>母亲</small><strong>卡提娅</strong><em>复兴纪元438年—在世</em></button>
+                <button class="kin-node" style="left:530px;top:432px" data-name="伊莎·夜川" data-relation="姐妹" data-life="复兴纪元466年—在世" data-source="MVU角色列表" data-mvu="true"><small>姐妹</small><strong>伊莎·夜川</strong><em>复兴纪元466年—在世</em></button>
+                <button class="kin-node active" style="left:770px;top:432px" data-name="夜见哉川" data-relation="当前人物" data-life="复兴纪元462年—在世" data-source="MVU角色列表" data-mvu="true"><small>当前人物</small><strong>夜见哉川</strong><em>复兴纪元462年—在世</em></button>
+                <button class="kin-node" style="left:770px;top:562px" data-name="伊莎贝尔" data-relation="养女" data-life="复兴纪元481年—在世" data-source="MVU角色列表" data-mvu="true"><small>养女</small><strong>伊莎贝尔</strong><em>复兴纪元481年—在世</em></button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-generator">
+        <div class="ornament"></div>
+        <div class="generator-layout">
+          <section class="section">
+            <div class="section-header"><div class="section-title"><i data-lucide="sliders-horizontal"></i><h3>生成条件</h3></div></div>
+            <div class="section-body form-stack">
+              <div class="field"><label>所属纪元</label><select id="ruin-era"><option>创世纪元</option><option>神明纪元</option><option>混乱纪元</option><option>英雄纪元</option><option selected>复兴纪元</option></select></div>
+              <div class="date-range-grid">
+                <div class="field date-group">
+                  <label>起始时间（均可选）</label>
+                  <div class="date-parts">
+                    <label class="date-part"><span>年</span><input id="ruin-start-year" inputmode="numeric" placeholder="145"></label>
+                    <label class="date-part"><span>月</span><input id="ruin-start-month" inputmode="numeric" placeholder="5"></label>
+                    <label class="date-part"><span>日</span><input id="ruin-start-day" inputmode="numeric" placeholder="20"></label>
+                  </div>
+                </div>
+                <div class="field date-group">
+                  <label>结束时间（均可选）</label>
+                  <div class="date-parts">
+                    <label class="date-part"><span>年</span><input id="ruin-end-year" inputmode="numeric" placeholder="180"></label>
+                    <label class="date-part"><span>月</span><input id="ruin-end-month" inputmode="numeric" placeholder="12"></label>
+                    <label class="date-part"><span>日</span><input id="ruin-end-day" inputmode="numeric" placeholder="31"></label>
+                  </div>
+                </div>
+              </div>
+              <div class="field" id="location-field"><label>地点范围（必填）</label><input id="ruin-location" placeholder="输入区域、城市、建筑或前文出现的小地点"><p class="field-note">优先检索世界书；世界书未收录时，读取可见前后文中的地点资料。允许手动补充新地点。</p><p class="field-error">必须填写地点，才能检索并生成墟境。</p></div>
+              <div class="field"><label>参与人物</label><div class="token-row"><span class="token">伊芙琳·霜枝</span><span class="token">夜川宗正</span><span class="token">＋ 添加</span></div></div>
+              <div class="field"><label>补充方向</label><textarea>寻找快乐教会与夜川家族第一次产生隐秘联系的历史节点，避免宏大叙事，优先选择可被个人行动改变的缝隙。</textarea><p class="field-note">历史题材由伊雍骰子规则分配；这里只补充玩家真正关心的人物、矛盾或探索方向。</p></div>
+              <button class="primary-button" id="generate-button"><i data-lucide="sparkles"></i>按历史波动生成候选</button>
+            </div>
+          </section>
+          <div class="timeline-panel">
+            <section class="section">
+              <div class="section-header">
+                <div class="section-title"><i data-lucide="route"></i><h3>候选墟境</h3><p>3—5个 · 由默认候选数量决定</p></div>
+              </div>
+              <div class="section-body">
+                <div class="candidate-tabs">
+                  <button class="candidate-tab transition active"><span class="period-tag">过渡期</span><strong>毒沼圣液失窃案</strong><small>145—180年 · 可信度86%</small></button>
+                  <button class="candidate-tab turmoil"><span class="period-tag">动荡期</span><strong>白圣林的血色婚盟</strong><small>152—156年 · 可信度79%</small></button>
+                  <button class="candidate-tab"><span class="period-tag">稳定期</span><strong>夜川旧名册疑案</strong><small>137—166年 · 可信度73%</small></button>
+                </div>
+                <article class="ruin-dossier">
+                  <div class="ruin-copy">
+                    <div class="ruin-dossier-heading"><strong>过渡期</strong></div>
+                    <dl>
+                      <dt>跨度</dt><dd>复兴纪元145年5月—180年冬</dd>
+                      <dt>演变</dt><dd>快乐教会南部支院的圣液配额从宗教供给逐步变成派系交易筹码。</dd>
+                      <dt>转向</dt><dd>稳定期 → 过渡期</dd>
+                      <dt>节点</dt><dd>复兴纪元145年5月20日 23:15</dd>
+                      <dt>史稿</dt><dd class="history">伊芙琳·霜枝以秘密婚约换取毒沼商路和炼金材料，一名负责重新誊写配额名册的抄写员却同时留下两份互相冲突的记录。被替换的姓氏把快乐教会、夜川旁系与一场数十年后的继承断裂拴在了一起。</dd>
+                    </dl>
+                  </div>
+                </article>
+                <div class="chronology">
+                  <div class="chronology-toolbar">
+                    <div class="scale-state"><strong>因果节点</strong><span>复兴纪元145年5月—180年冬</span></div>
+                    <span class="period-tag">4个节点</span>
+                  </div>
+                  <div class="chronology-viewport" id="chronology-viewport">
+                    <div class="chronology-track" id="chronology-track">
+                      <div id="timeline-ruler"></div>
+                      <div class="timeline-event" style="--lane-top:88px;--stem-height:34px" data-position="0.125">
+                        <span class="event-kind">缘起</span>
+                        <button class="history-node" data-node="origin"><small>145年5月2日</small><strong>圣液配额缩减</strong><p>南部支院开始争夺有限的圣液配额，旧有供给秩序出现裂口。</p></button>
+                      </div>
+                      <div class="timeline-event" style="--lane-top:88px;--stem-height:34px" data-position="0.375">
+                        <span class="event-kind">经过</span>
+                        <button class="history-node" data-node="process"><small>145年5月12日</small><strong>霜枝派系结盟</strong><p>伊芙琳以秘密婚约换取毒沼商路与炼金材料。</p></button>
+                      </div>
+                      <div class="timeline-event anomaly" style="--lane-top:88px;--stem-height:34px" data-position="0.625">
+                        <span class="event-kind">特异点</span>
+                        <button class="history-node anomaly" data-node="anomaly"><small>145年5月20日 23:15</small><strong>配额名册被替换</strong><p>忏悔室出现两份相互冲突的名册，这是可进入的历史切口。</p></button>
+                      </div>
+                      <div class="timeline-event" style="--lane-top:88px;--stem-height:34px" data-position="0.875">
+                        <span class="event-kind">结果</span>
+                        <button class="history-node" data-node="result"><small>180年冬 · 远期结果</small><strong>夜川支系断裂</strong><p>失踪事件最终改变继承序列；近距尺度下保留为远期边界。</p></button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="timeline-summary"><strong>长期演变</strong><span>婚盟、名册与失踪案在三十五年内持续改变宗族继承。</span></div>
+                </div>
+                <div class="node-inspector" id="node-inspector">
+                  <div><strong id="inspector-title">选择一个历史节点</strong><p id="inspector-copy">选择特异点后，将结构化“墟境探索”提示词填入酒馆输入框；生成模块不会直接写入状态。</p></div>
+                  <button class="primary-button" id="enter-node" disabled><i data-lucide="text-cursor-input"></i>填入酒馆输入框</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-library">
+        <div class="ornament"></div>
+        <section class="section">
+          <div class="section-header">
+            <div class="section-title"><i data-lucide="book-marked"></i><h3>虚嗣王庭传记书库</h3><p>全文存入本地资料库，世界书只保留主动同步的摘要</p></div>
+          </div>
+          <div class="section-body library-layout">
+            <aside class="shelf">
+              <div class="toolbar" style="margin-bottom:10px"><div class="search"><i data-lucide="search"></i><input placeholder="搜索传记"></div></div>
+              <div class="book-list">
+                <button class="book-tab active" data-book="iga"><span class="book-spine" data-mark="伊" style="--book-color:#35231d"></span><span><strong>《伊伽传》</strong><small>4卷 · 18个历史索引</small></span></button>
+                <button class="book-tab" data-book="yekawa"><span class="book-spine" data-mark="夜" style="--book-color:#173431"></span><span><strong>《夜川家纪事》</strong><small>7卷 · 宗族资料</small></span></button>
+                <button class="book-tab" data-book="brauer"><span class="book-spine" data-mark="布" style="--book-color:#30282d"></span><span><strong>《布劳尔秘史》</strong><small>3卷 · 地方史</small></span></button>
+                <button class="book-tab" data-book="frost"><span class="book-spine" data-mark="霜" style="--book-color:#28351f"></span><span><strong>《霜枝忏悔录》</strong><small>2卷 · 存在冲突</small></span></button>
+              </div>
+            </aside>
+            <div class="codex-stage">
+              <article class="codex-book" id="codex-book">
+                <div class="codex-cover" role="button" tabindex="0" aria-label="展开传记">
+                  <div class="cover-copy">
+                    <small>ROOT TRACE · SERPENT BIOGRAPHY</small>
+                    <h3 id="codex-cover-title">《伊伽传》</h3>
+                    <p id="codex-cover-subtitle">白圣林旁系、失踪名册与同行者未曾自述的来路</p>
+                    <div class="book-meta" id="codex-cover-meta" style="justify-content:center"><span>复兴纪元430—488年</span><span>人物传记</span><span>6个历史时期</span></div>
+                    <button class="primary-button" id="open-codex"><i data-lucide="book-open"></i>展开王庭典籍</button>
+                  </div>
+                </div>
+                <div class="codex-spread">
+                  <section class="codex-page" id="codex-page">
+                    <h4>起源（复兴纪元430年）</h4>
+                    <p>伊伽出生于白圣林边缘一个不再被主脉承认的旁系。她最早记住的并非母亲的脸，而是祭礼长桌下垂落的银铃与长辈们刻意压低的争执。</p>
+                    <details class="chapter"><summary>稳定期（430—444年）<i data-lucide="chevron-down"></i></summary><div class="chapter-body"><p>旁系家族依靠林地药材贸易维持体面，与主脉的关系疏离却尚未断裂。三份家族名录对她父系来源的记载已经出现细微差异。</p></div></details>
+                    <details class="chapter"><summary>过渡期（445—451年）<i data-lucide="chevron-down"></i></summary><div class="chapter-body"><p>南部支院扩张使宗族内部开始重新分配祭礼权。伊伽的名字第一次离开白圣林，出现在教会的外来者名册中。</p></div></details>
+                    <details class="chapter"><summary>动荡期（451—454年）<i data-lucide="chevron-down"></i></summary><div class="chapter-body"><p>名册上的夜川姓氏被刮除，一名抄写员随之失踪。这段空白成为日后可供进入的墟境节点。</p></div></details>
+                    <details class="chapter"><summary>过渡期（455—468年）<i data-lucide="chevron-down"></i></summary><div class="chapter-body"><p>她开始有意识地切断宗族留下的称谓与习惯，却没有彻底遗忘旧日仪式。</p></div></details>
+                    <details class="chapter"><summary>稳定期（469—482年）<i data-lucide="chevron-down"></i></summary><div class="chapter-body"><p>伊伽以独立身份在南部地区生活，相关记录逐渐减少，只在零散任务回执中留下踪迹。</p></div></details>
+                    <details class="chapter"><summary>过渡期（483—488年）<i data-lucide="chevron-down"></i></summary><div class="chapter-body"><p>与夜见哉川同行后，旧日关系重新进入现世，传记中的数个历史断点也具备了被墟境探索重新触及的条件。</p></div></details>
+                    <div class="codex-divider">现世续章</div>
+                    <h4>现状（复兴纪元488年）</h4>
+                    <p>伊伽如今以同行者身份活动，但她对南部支院暗门和旧祭礼的了解，仍明显超过本人愿意承认的程度。</p>
+                    <div class="codex-summary"><strong>传记总结</strong><p>伊伽的来路并非一条被完整保存的血脉，而是一组在宗族名册、教会档案与个人沉默之间彼此抵牾的记录。传记书库保留这些差异，并把可追溯的断点交给宗族谱系与墟境生成模块继续使用。</p></div>
+                  </section>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="ornament"></div>
+        <div class="settings-layout">
+          <nav class="settings-nav">
+            <button class="settings-tab active" data-settings="api"><i data-lucide="plug-zap"></i><span>API调用</span></button>
+            <button class="settings-tab" data-settings="skin"><i data-lucide="palette"></i><span>外观皮肤</span></button>
+            <button class="settings-tab" data-settings="ruin"><i data-lucide="waypoints"></i><span>墟境生成</span></button>
+            <button class="settings-tab" data-settings="retrieval"><i data-lucide="database-zap"></i><span>资料检索</span></button>
+            <button class="settings-tab" data-settings="data"><i data-lucide="archive"></i><span>数据管理</span></button>
+          </nav>
+          <section class="section">
+            <div class="settings-pane active" id="settings-api">
+              <div class="section-header"><div class="section-title"><i data-lucide="plug-zap"></i><h3>生成模块 API</h3><p>四项历史生成能力统一在此配置</p></div></div>
+              <div class="api-stack">
+                <section class="api-root-card">
+                  <div class="setting-row"><div class="setting-copy"><strong>默认调用来源</strong><p>这是四个生成模块的总路由。跟随酒馆插头时，只在调用瞬间读取当前端口、鉴权与模型。</p></div><div class="setting-control"><select id="api-default-route"><option value="tavern">跟随酒馆插头（推荐）</option><option value="external">独立 API</option></select></div></div>
+                </section>
+                <section class="api-group">
+                  <div class="api-group-title"><i data-lucide="blocks"></i>模块从属路由</div>
+                  <div class="api-module-grid">
+                    <div class="api-module-card"><strong>宗族谱系</strong><p>仅在生成或刷新当前人物族谱时调用。</p><select class="module-route"><option>跟随默认</option><option>跟随酒馆插头</option><option>独立 API</option></select></div>
+                    <div class="api-module-card"><strong>墟境生成</strong><p>仅在界面生成候选历史与因果节点时调用。</p><select class="module-route"><option>跟随默认</option><option>跟随酒馆插头</option><option>独立 API</option></select></div>
+                    <div class="api-module-card"><strong>寻根溯源</strong><p>仅在识别明确命令并生成传记时调用。</p><select class="module-route"><option>跟随默认</option><option>跟随酒馆插头</option><option>独立 API</option></select></div>
+                    <div class="api-module-card"><strong>蝴蝶效应结算</strong><p>遣返后读取冻结锚点，生成现世变化并写入全局世界书。</p><select class="module-route"><option>跟随默认</option><option>跟随酒馆插头</option><option>独立 API</option></select></div>
+                  </div>
+                </section>
+                <section class="api-credentials">
+                  <div class="api-group-title"><span>独立 API 凭据</span><small>仅供选择“独立 API”的模块读取</small></div>
+                  <div class="setting-row independent-api-row"><div class="setting-copy"><strong>接口地址</strong><p>支持 OpenAI 兼容的聊天补全接口。</p></div><div class="setting-control"><input value="https://api.example.com/v1"></div></div>
+                  <div class="setting-row independent-api-row"><div class="setting-copy"><strong>API 密钥</strong><p>不会写入世界书、聊天或导出资料。</p></div><div class="setting-control"><input type="password" value="sk-example-private-key"></div></div>
+                  <div class="setting-row independent-api-row"><div class="setting-copy"><strong>调用模型</strong><p>只有独立路由读取此项。</p></div><div class="setting-control inline-control"><select><option>gemini-2.5-pro</option><option>claude-sonnet</option><option>gpt-5</option></select><button class="quiet-button">刷新</button></div></div>
+                  <div class="setting-row"><div class="setting-copy"><strong>连接状态</strong><p>检查跨域、鉴权和模型可用性。</p></div><div class="setting-control"><button class="primary-button" id="api-test"><i data-lucide="radio"></i>测试连接</button></div></div>
+                </section>
+              </div>
+            </div>
+            <div class="settings-pane" id="settings-skin">
+              <div class="section-header"><div class="section-title"><i data-lucide="palette"></i><h3>外观皮肤</h3><p>分别设置明暗模式、界面强调色与正文字色</p></div></div>
+              <div class="section-body">
+                <div class="appearance-stack">
+                  <div class="appearance-block">
+                    <div class="appearance-heading"><strong>明暗模式</strong><p>日间模式使用白色工作台，夜间模式使用纯黑历史档案底色。</p></div>
+                    <div class="mode-grid">
+                      <button class="appearance-choice active" data-appearance="mode" data-value="night"><i data-lucide="moon-star"></i><span><strong>夜间模式</strong><small>黑底 · 低亮度阅读</small></span></button>
+                      <button class="appearance-choice" data-appearance="mode" data-value="day"><i data-lucide="sun"></i><span><strong>日间模式</strong><small>白底 · 清晰高对比</small></span></button>
+                    </div>
+                  </div>
+                  <div class="appearance-block">
+                    <div class="appearance-heading"><strong>UI 强调色</strong><p>用于按钮、选中状态、连接线和交互反馈，不改变史料语义色。</p></div>
+                    <div class="palette-grid">
+                      <button class="palette-choice active" data-appearance="accent" data-value="jade"><span class="palette-icon" style="--swatch:#52b8ad"><i data-lucide="waves"></i></span><span class="choice-copy"><strong>影蛇青</strong><small>默认</small></span></button>
+                      <button class="palette-choice" data-appearance="accent" data-value="gold"><span class="palette-icon" style="--swatch:#c39a43"><i data-lucide="crown"></i></span><span class="choice-copy"><strong>王庭金</strong><small>典藏</small></span></button>
+                      <button class="palette-choice" data-appearance="accent" data-value="blue"><span class="palette-icon" style="--swatch:#669fc7"><i data-lucide="moon-star"></i></span><span class="choice-copy"><strong>月辉蓝</strong><small>冷静</small></span></button>
+                      <button class="palette-choice" data-appearance="accent" data-value="crimson"><span class="palette-icon" style="--swatch:#b65f67"><i data-lucide="flame"></i></span><span class="choice-copy"><strong>绛红</strong><small>醒目</small></span></button>
+                    </div>
+                  </div>
+                  <div class="appearance-block">
+                    <div class="appearance-heading"><strong>字体色调</strong><p>按当前日间或夜间模式自动调整明度，始终保证正文对比度。</p></div>
+                    <div class="palette-grid">
+                      <button class="palette-choice active" data-appearance="text" data-value="neutral"><span class="type-icon" style="--sample:#aeb7b2"><i data-lucide="circle"></i></span><span class="choice-copy"><strong>中性霜白</strong><small>标准阅读</small></span></button>
+                      <button class="palette-choice" data-appearance="text" data-value="warm"><span class="type-icon" style="--sample:#c99a68"><i data-lucide="sun-medium"></i></span><span class="choice-copy"><strong>暖纸色</strong><small>柔和长读</small></span></button>
+                      <button class="palette-choice" data-appearance="text" data-value="cool"><span class="type-icon" style="--sample:#8fb5c8"><i data-lucide="snowflake"></i></span><span class="choice-copy"><strong>冷银色</strong><small>清晰理性</small></span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-pane" id="settings-ruin">
+              <div class="section-header"><div class="section-title"><i data-lucide="waypoints"></i><h3>墟境生成</h3></div></div>
+              <div class="setting-row"><div class="setting-copy"><strong>默认候选数量</strong><p>每次生成可供选择的墟境数；候选越多，API 消耗越高。</p></div><div class="setting-control"><select><option>3个候选</option><option>4个候选</option><option>5个候选</option></select></div></div>
+            </div>
+            <div class="settings-pane" id="settings-retrieval">
+              <div class="section-header"><div class="section-title"><i data-lucide="database-zap"></i><h3>资料检索</h3></div></div>
+              <div class="setting-row"><div class="setting-copy"><strong>智能引用传记</strong><p>开启后，从当前聊天的全部传记中检索最相关章节；不要求玩家在墟境生成页逐本选择。</p></div><div class="setting-control"><button class="smart-retrieval-button active" id="biography-retrieval-toggle" aria-pressed="true"><i data-lucide="book-open-check"></i><span>已开启</span></button></div></div>
+              <div class="setting-row"><div class="setting-copy"><strong>传记调用上限</strong><p>只发送最相关的章节片段。</p></div><div class="setting-control"><select><option>最多6个章节</option><option>最多4个章节</option><option>最多8个章节</option></select></div></div>
+              <div class="setting-row"><div class="setting-copy"><strong>世界书范围</strong><p>检索角色卡绑定世界书，不修改条目。</p></div><div class="setting-control"><select><option>伊雍核心与命定系统</option><option>所有已启用世界书</option></select></div></div>
+              <div class="setting-row"><div class="setting-copy"><strong>人物别名合并</strong><p>冲突时要求玩家确认。</p></div><div class="setting-control"><label class="toggle"><input type="checkbox" checked><span></span></label></div></div>
+            </div>
+            <div class="settings-pane" id="settings-data">
+              <div class="section-header"><div class="section-title"><i data-lucide="archive"></i><h3>数据管理</h3><p>IndexedDB · 原型演示</p></div></div>
+              <div class="setting-row"><div class="setting-copy"><strong>聊天存档隔离</strong><p>传记、谱系、墟境方案和自定义分组均以当前聊天 ID 为一级索引；切换存档后显示独立资料库。</p></div><div class="setting-control"><span class="scope-badge">已按聊天隔离</span></div></div>
+              <div class="setting-row"><div class="setting-copy"><strong>世界书注入镜像</strong><p>蝴蝶效应原稿按聊天保存；专用全局世界书只同步当前聊天的锚定日志，避免跨存档串档。</p></div><div class="setting-control"><span class="scope-badge">仅当前聊天</span></div></div>
+              <div class="setting-row"><div class="setting-copy"><strong>本地资料库</strong><p>12本传记、7组谱系、3个墟境方案，共18.4MB。</p></div><div class="setting-control"><button class="quiet-button" data-toast="资料库健康检查完成"><i data-lucide="shield-check"></i>检查资料库</button></div></div>
+              <div class="setting-row"><div class="setting-copy"><strong>导出备份</strong><p>API密钥不会包含在备份中。</p></div><div class="setting-control"><button class="quiet-button" data-toast="原型模式：已模拟导出完整备份"><i data-lucide="download"></i>导出全部资料</button></div></div>
+              <div class="setting-row"><div class="setting-copy"><strong>清理生成缓存</strong><p>不会删除传记、谱系和已保存墟境。</p></div><div class="setting-control"><button class="danger-button" data-toast="已清理模拟缓存"><i data-lucide="trash-2"></i>清理缓存</button></div></div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <button class="floating-orb" aria-label="打开伊雍历史工作台"></button>
+  <div class="kin-context-menu" id="kin-context-menu">
+    <button id="kin-add-participant"><i data-lucide="user-plus"></i>加入墟境参与人物</button>
+  </div>
+  <div class="eyon-working" id="eyon-working" role="status" aria-live="polite">
+    <span class="working-sigil" id="working-sigil"><i data-lucide="sparkles"></i></span>
+    <div class="working-copy">
+      <small>虚嗣王庭 · 史料工房</small>
+      <strong id="working-title">伊雍正在整理史料</strong>
+      <p id="working-detail">旧纸页正在归入王庭典藏。</p>
+    </div>
+    <span class="working-pulse"></span>
+  </div>
+  <div class="toast" id="toast"><i data-lucide="circle-check"></i><span id="toast-copy">操作完成</span></div>
+
+  <script>
+    const pages = {
+      time: ["墟境时空", "现实锚点、墟境进程与明确的状态操作"],
+      people: ["人物查看", "读取MVU人物，建立不改写变量的自定义分类"],
+      genealogy: ["宗族谱系", "按祖辈与后代代数整理已确认亲属，作为传记与墟境参考"],
+      generator: ["墟境生成", "用时间尺和因果图选择真正要进入的历史特异点"],
+      library: ["传记书库", "按卷册存放传记全文，并参与谱系与墟境检索"],
+      settings: ["设置", "生成模块API路由、皮肤、检索范围与本地资料管理"]
+    };
+
+    const toast = document.getElementById("toast");
+    const toastCopy = document.getElementById("toast-copy");
+    let toastTimer;
+    function showToast(message) {
+      toastCopy.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
+    }
+
+    const workingPanel = document.getElementById("eyon-working");
+    const workingTitle = document.getElementById("working-title");
+    const workingDetail = document.getElementById("working-detail");
+    const workingSigil = document.getElementById("working-sigil");
+    const workingMessages = {
+      biography: {
+        icon: "book-open-text",
+        title: "伊雍正在整理史料",
+        detail: "旧纸页正在归入王庭典藏。"
+      },
+      ruin: {
+        icon: "waypoints",
+        title: "伊雍正在观测历史涟漪",
+        detail: "她正在筛选能够被触及的因果断点。"
+      },
+      genealogy: {
+        icon: "git-fork",
+        title: "伊雍正在校勘血脉谱系",
+        detail: "姓名、纪元与亲缘记录正在彼此印证。"
+      },
+      butterfly: {
+        icon: "orbit",
+        title: "伊雍正在结算历史回响",
+        detail: "已冻结的因果锚点正在映照现世。"
+      }
+    };
+    let workingTimer;
+    function showEyonWorking(kind, duration = 1700) {
+      const copy = workingMessages[kind] || workingMessages.biography;
+      workingTitle.textContent = copy.title;
+      workingDetail.textContent = copy.detail;
+      workingSigil.innerHTML = `<i data-lucide="${copy.icon}"></i>`;
+      if (window.lucide) lucide.createIcons();
+      workingPanel.classList.add("show");
+      clearTimeout(workingTimer);
+      workingTimer = setTimeout(() => workingPanel.classList.remove("show"), duration);
+    }
+    window.EyonHistoryUI = { showWorking: showEyonWorking };
+    document.addEventListener("eyon:generation-start", event => {
+      showEyonWorking(event.detail?.kind || "biography", event.detail?.duration);
+    });
+
+    document.querySelectorAll(".nav-button").forEach(button => {
+      button.addEventListener("click", () => {
+        const key = button.dataset.view;
+        document.querySelectorAll(".nav-button").forEach(item => item.classList.toggle("active", item === button));
+        document.querySelectorAll(".view").forEach(view => view.classList.toggle("active", view.id === `view-${key}`));
+        document.getElementById("page-title").textContent = pages[key][0];
+        document.getElementById("page-subtitle").textContent = pages[key][1];
+        if (key === "generator") requestAnimationFrame(layoutCompactTimeline);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    });
+
+    document.querySelectorAll("[data-toast]").forEach(button => {
+      button.addEventListener("click", () => showToast(button.dataset.toast));
+    });
+    document.getElementById("return-from-ruin").addEventListener("click", () => {
+      showEyonWorking("butterfly", 2600);
+    });
+    document.getElementById("sync-button").addEventListener("click", () => {
+      const icon = document.querySelector("#sync-button svg");
+      if (icon) icon.style.animation = "spin .7s linear";
+      showToast("已读取当前楼层的MVU变量");
+      setTimeout(() => { if (icon) icon.style.animation = ""; }, 700);
+    });
+
+    const sourcePeople = [...document.querySelectorAll("#source-people .person-card")];
+    const personRecordTitle = document.querySelector(".record-title h3");
+    const personRecordSubtitle = document.querySelector(".record-title p");
+    const personRecordAvatar = document.querySelector(".record-avatar");
+    const eyonChatScope =
+      window.__EYON_CHAT_ID__ ||
+      new URLSearchParams(window.location.search).get("chatId") ||
+      "preview-chat";
+    const groupStorageKey = `eyon-history-preview-person-groups:${eyonChatScope}`;
+    let activeGroup = null;
+    let draggedPerson = null;
+
+    function activatePerson(name) {
+      const card = sourcePeople.find(item => item.dataset.name === name);
+      if (!card) return;
+      sourcePeople.forEach(item => item.classList.toggle("selected", item === card));
+      personRecordTitle.textContent = name;
+      personRecordSubtitle.textContent = card.querySelector("small")?.textContent || "MVU人物资料";
+      personRecordAvatar.textContent = card.querySelector(".avatar")?.textContent || name.slice(0, 1);
+      card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      showToast(`已调取人物资料：${name}`);
+    }
+
+    function applyPeopleFilters() {
+      const query = document.getElementById("person-search").value.trim().toLowerCase();
+      const groupNames = activeGroup
+        ? new Set([...activeGroup.querySelectorAll(".group-member")].map(item => item.dataset.name))
+        : null;
+      sourcePeople.forEach(card => {
+        const matchesSearch = card.dataset.name.toLowerCase().includes(query);
+        const matchesGroup = !groupNames || groupNames.has(card.dataset.name);
+        card.style.display = matchesSearch && matchesGroup ? "grid" : "none";
+      });
+    }
+
+    function updateGroupCount(group) {
+      const count = group.querySelectorAll(".group-member").length;
+      group.querySelector(".drop-group-head span").textContent = `${count}人`;
+    }
+
+    function savePersonGroups() {
+      const groups = [...document.querySelectorAll(".drop-group")].map(group => ({
+        name: group.dataset.group,
+        members: [...group.querySelectorAll(".group-member")].map(member => member.dataset.name)
+      }));
+      try {
+        localStorage.setItem(groupStorageKey, JSON.stringify(groups));
+      } catch {
+        // The preview still works when browser storage is unavailable.
+      }
+    }
+
+    function createPersonGroup(name, members = []) {
+      const group = document.createElement("div");
+      group.className = "drop-group";
+      group.dataset.group = name;
+      group.innerHTML = `<div class="drop-group-head"><strong></strong><span></span><button class="group-edit" title="重命名组别"><i data-lucide="pencil"></i></button></div><div class="group-members"></div>`;
+      group.querySelector(".drop-group-head strong").textContent = name;
+      const memberBox = group.querySelector(".group-members");
+      members.forEach(memberName => {
+        const member = document.createElement("button");
+        member.className = "group-member";
+        member.dataset.name = memberName;
+        member.textContent = memberName;
+        memberBox.appendChild(member);
+      });
+      if (!members.length) {
+        const empty = document.createElement("span");
+        empty.className = "group-empty";
+        empty.textContent = "拖入人物建立分类";
+        memberBox.appendChild(empty);
+      }
+      updateGroupCount(group);
+      return group;
+    }
+
+    try {
+      const savedGroups = JSON.parse(localStorage.getItem(groupStorageKey) || "null");
+      if (Array.isArray(savedGroups) && savedGroups.length) {
+        const groupStack = document.getElementById("person-groups");
+        groupStack.replaceChildren(...savedGroups.map(group => createPersonGroup(group.name, group.members)));
+      }
+    } catch {
+      // Ignore malformed local preview data and keep the built-in example groups.
+    }
+
+    function bindGroupMember(member) {
+      if (member.dataset.bound === "true") return;
+      member.dataset.bound = "true";
+      member.addEventListener("click", event => {
+        event.stopPropagation();
+        activatePerson(member.dataset.name);
+      });
+    }
+
+    function bindGroup(group) {
+      if (group.dataset.bound === "true") return;
+      group.dataset.bound = "true";
+      const title = group.querySelector(".drop-group-head strong");
+      const edit = group.querySelector(".group-edit");
+      title.addEventListener("click", () => {
+        activeGroup = group;
+        document.querySelectorAll(".drop-group").forEach(item => item.classList.toggle("active", item === group));
+        applyPeopleFilters();
+      });
+      edit.addEventListener("click", event => {
+        event.stopPropagation();
+        title.contentEditable = "true";
+        title.focus();
+        document.execCommand("selectAll", false, null);
+      });
+      title.addEventListener("blur", () => {
+        title.contentEditable = "false";
+        const name = title.textContent.trim() || "未命名组别";
+        title.textContent = name;
+        group.dataset.group = name;
+        savePersonGroups();
+        showToast(`组别已重命名为“${name}”`);
+      });
+      title.addEventListener("keydown", event => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          title.blur();
+        }
+      });
+      group.querySelectorAll(".group-member").forEach(bindGroupMember);
+      group.addEventListener("dragover", event => {
+        event.preventDefault();
+        group.classList.add("drag-over");
+      });
+      group.addEventListener("dragleave", () => group.classList.remove("drag-over"));
+      group.addEventListener("drop", event => {
+        event.preventDefault();
+        group.classList.remove("drag-over");
+        if (!draggedPerson) return;
+        const name = draggedPerson.dataset.name;
+        if (!group.querySelector(`.group-member[data-name="${CSS.escape(name)}"]`)) {
+          group.querySelector(".group-empty")?.remove();
+          const member = document.createElement("button");
+          member.className = "group-member";
+          member.dataset.name = name;
+          member.textContent = name;
+          group.querySelector(".group-members").appendChild(member);
+          bindGroupMember(member);
+          updateGroupCount(group);
+          savePersonGroups();
+        }
+        showToast(`${name} 已归入“${group.dataset.group}”`);
+      });
+    }
+
+    function bindDragCards() {
+      sourcePeople.forEach(card => {
+        card.addEventListener("dragstart", () => {
+          draggedPerson = card;
+          card.style.opacity = ".45";
+        });
+        card.addEventListener("dragend", () => {
+          card.style.opacity = "";
+          draggedPerson = null;
+          document.querySelectorAll(".drop-group").forEach(group => group.classList.remove("drag-over"));
+        });
+        card.addEventListener("click", () => activatePerson(card.dataset.name));
+      });
+    }
+    bindDragCards();
+    document.querySelectorAll(".drop-group").forEach(bindGroup);
+
+    document.getElementById("show-all-people").addEventListener("click", () => {
+      activeGroup = null;
+      document.querySelectorAll(".drop-group").forEach(group => group.classList.remove("active"));
+      applyPeopleFilters();
+    });
+    document.getElementById("new-person-group").addEventListener("click", () => {
+      const index = document.querySelectorAll(".drop-group").length + 1;
+      const group = createPersonGroup(`新组别 ${index}`);
+      document.getElementById("person-groups").appendChild(group);
+      bindGroup(group);
+      savePersonGroups();
+      if (window.lucide) lucide.createIcons();
+      group.querySelector(".group-edit").click();
+    });
+
+    document.getElementById("person-search").addEventListener("input", event => {
+      applyPeopleFilters();
+    });
+    document.querySelectorAll(".facet").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".facet").forEach(item => item.classList.toggle("active", item === button));
+        showToast(`已切换人物筛选：${button.textContent.trim()}`);
+      });
+    });
+    document.querySelectorAll(".record-tab").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".record-tab").forEach(item => item.classList.toggle("active", item === button));
+        document.querySelectorAll(".record-pane").forEach(pane => pane.classList.toggle("active", pane.id === `record-${button.dataset.record}`));
+      });
+    });
+
+    document.getElementById("rebuild-genealogy").addEventListener("click", () => {
+      showEyonWorking("genealogy", 1800);
+      setTimeout(() => showToast("谱系已按当前人物与追溯代数重新校勘"), 1200);
+    });
+
+    const genealogyDepth = { ancestor: 4, descendant: 3 };
+    document.querySelectorAll("[data-step]").forEach(button => {
+      button.addEventListener("click", () => {
+        const key = button.dataset.counter;
+        genealogyDepth[key] = Math.max(1, Math.min(8, genealogyDepth[key] + Number(button.dataset.step)));
+        document.getElementById(`${key}-value`).textContent = `${genealogyDepth[key]} 代`;
+      });
+    });
+
+    const kinDetailName = document.getElementById("kin-detail-name");
+    const kinDetailRelation = document.getElementById("kin-detail-relation");
+    const kinDetailLife = document.getElementById("kin-detail-life");
+    const kinDetailProfession = document.getElementById("kin-detail-profession");
+    const kinDetailSource = document.getElementById("kin-detail-source");
+    const kinContextMenu = document.getElementById("kin-context-menu");
+    let kinContextTarget = null;
+    const kinProfessionByName = {
+      "夜川宗正": "子爵领骑兵教官",
+      "芙雷雅·洛温": "领地药草师",
+      "阿尔德·梅尔": "城堡营造师",
+      "薇娜·梅尔": "家族账房主管",
+      "奥托·卡缇恩": "帝国驿路税务官",
+      "艾妲·洛萨": "领地织造工坊主",
+      "亚伦·萨弥尔": "教会档案抄写员",
+      "露西亚·萨弥尔": "乡镇接生医师",
+      "夜川玄司": "子爵领卫队长",
+      "梅尔莎": "城堡内务总管",
+      "卡提恩·洛萨": "商路护卫承包人",
+      "萨弥娅": "地方圣堂司账",
+      "夜川信宗": "领地巡查官",
+      "卡提娅": "家族文书官",
+      "伊莎·夜川": "法术研究者",
+      "夜见哉川": "历史调查者、命定契约者",
+      "伊莎贝尔": "见习法庭书记员"
+    };
+
+    document.querySelectorAll(".kin-node").forEach(node => {
+      node.addEventListener("click", () => {
+        document.querySelectorAll(".kin-node").forEach(item => item.classList.toggle("active", item === node));
+        kinDetailName.textContent = node.dataset.name;
+        kinDetailRelation.textContent = node.dataset.relation;
+        kinDetailLife.textContent = node.dataset.life;
+        kinDetailProfession.textContent = kinProfessionByName[node.dataset.name] || "由时代、地区与家族背景自动补全";
+        kinDetailSource.textContent = node.dataset.mvu
+          ? `${node.dataset.source}，可加入墟境参与人物`
+          : `${node.dataset.source}或API补全，可查看基础资料`;
+      });
+      node.addEventListener("contextmenu", event => {
+        if (!node.dataset.mvu) return;
+        event.preventDefault();
+        kinContextTarget = node;
+        kinContextMenu.style.left = `${Math.min(event.clientX, window.innerWidth - 205)}px`;
+        kinContextMenu.style.top = `${Math.min(event.clientY, window.innerHeight - 50)}px`;
+        kinContextMenu.classList.add("show");
+      });
+    });
+
+    document.getElementById("kin-add-participant").addEventListener("click", () => {
+      if (!kinContextTarget) return;
+      showToast(kinContextTarget.dataset.mvu
+        ? `${kinContextTarget.dataset.name} 已加入墟境参与人物`
+        : `${kinContextTarget.dataset.name} 不在MVU角色列表中，不能注入`);
+      kinContextMenu.classList.remove("show");
+    });
+    document.addEventListener("click", event => {
+      if (!kinContextMenu.contains(event.target)) kinContextMenu.classList.remove("show");
+    });
+
+    const timelineMajorTicks = [
+      { position: 0.125, label: "145年5月2日" },
+      { position: 0.375, label: "145年5月12日" },
+      { position: 0.625, label: "145年5月20日" },
+      { position: 0.875, label: "180年冬" }
+    ];
+    const chronologyViewport = document.getElementById("chronology-viewport");
+    const chronologyTrack = document.getElementById("chronology-track");
+    const timelineRuler = document.getElementById("timeline-ruler");
+
+    function renderTimelineRuler(width) {
+      timelineRuler.replaceChildren();
+      timelineMajorTicks.forEach(tick => {
+        const label = document.createElement("span");
+        label.className = "timeline-tick";
+        label.style.left = `${tick.position * width}px`;
+        label.textContent = tick.label;
+        timelineRuler.appendChild(label);
+      });
+    }
+
+    function positionTimelineContent(width) {
+      chronologyTrack.querySelectorAll(".timeline-event").forEach(event => {
+        event.style.left = `${Number(event.dataset.position) * width}px`;
+      });
+    }
+
+    function layoutCompactTimeline() {
+      const width = Math.max(860, chronologyViewport.clientWidth);
+      const eventWidth = Math.min(220, Math.max(176, (width - 120) / 4));
+      chronologyTrack.style.setProperty("--track-width", `${width}px`);
+      chronologyTrack.style.setProperty("--event-width", `${eventWidth}px`);
+      renderTimelineRuler(width);
+      positionTimelineContent(width);
+    }
+
+    layoutCompactTimeline();
+    window.addEventListener("resize", layoutCompactTimeline);
+
+    const inspector = document.getElementById("node-inspector");
+    const enterButton = document.getElementById("enter-node");
+    const inspectorTitle = document.getElementById("inspector-title");
+    const inspectorCopy = document.getElementById("inspector-copy");
+    document.querySelectorAll(".history-node").forEach(node => {
+      node.addEventListener("click", () => {
+        document.querySelectorAll(".history-node").forEach(item => item.classList.toggle("selected", item === node));
+        inspector.classList.add("visible");
+        inspectorTitle.textContent = node.querySelector("strong").textContent;
+        const isAnomaly = node.dataset.node === "anomaly";
+        inspectorCopy.textContent = isAnomaly
+          ? "将把纪元、时间、地点、人物与特异点整理成“墟境探索”提示词，填入酒馆输入框，由正文模型生成正式墟境面板。"
+          : "这是因果资料节点，可展开相关人物和史料，但不能直接进入。";
+        enterButton.disabled = !isAnomaly;
+      });
+    });
+    enterButton.addEventListener("click", () => showToast("已填入酒馆输入框：墟境探索 · 复兴纪元145年5月20日 · 配额名册被替换"));
+    document.querySelectorAll(".candidate-tab").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".candidate-tab").forEach(item => item.classList.toggle("active", item === button));
+        showToast(`已选择候选：${button.querySelector("strong").textContent}`);
+      });
+    });
+
+    document.getElementById("generate-button").addEventListener("click", event => {
+      const button = event.currentTarget;
+      const locationInput = document.getElementById("ruin-location");
+      const locationField = document.getElementById("location-field");
+      const location = locationInput.value.trim();
+      locationField.classList.toggle("invalid", !location);
+      if (!location) {
+        locationInput.focus();
+        showToast("请先填写地点范围；没有地点时不会调用墟境生成 API");
+        return;
+      }
+      const original = button.innerHTML;
+      button.disabled = true;
+      button.textContent = "正在检索世界书、前后文与谱系…";
+      showEyonWorking("ruin", 1800);
+      setTimeout(() => {
+        button.disabled = false;
+        button.innerHTML = original;
+        if (window.lucide) lucide.createIcons();
+        showToast("已生成3个候选墟境，当前展示可信度最高的一项");
+      }, 1200);
+    });
+    document.getElementById("ruin-location").addEventListener("input", event => {
+      if (event.target.value.trim()) document.getElementById("location-field").classList.remove("invalid");
+    });
+
+    const codexBook = document.getElementById("codex-book");
+    const codexCover = codexBook.querySelector(".codex-cover");
+    const codexSpread = codexBook.querySelector(".codex-spread");
+    const openCodex = () => codexBook.classList.add("open");
+    const closeCodex = () => codexBook.classList.remove("open");
+    codexCover.addEventListener("click", openCodex);
+    codexCover.addEventListener("keydown", event => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      openCodex();
+    });
+    document.getElementById("open-codex").addEventListener("click", event => {
+      event.stopPropagation();
+      openCodex();
+    });
+    codexSpread.addEventListener("click", event => {
+      if (event.target.closest("details, summary, button, a, input, select, textarea, label")) return;
+      closeCodex();
+    });
+
+    const biographyLibrary = {
+      iga: {
+        title: "《伊伽传》",
+        subtitle: "白圣林旁系、失踪名册与同行者未曾自述的来路",
+        meta: ["复兴纪元430—488年", "人物传记", "6个历史时期"],
+        originTitle: "起源（复兴纪元430年）",
+        origin: "伊伽出生于白圣林边缘一个不再被主脉承认的旁系。她最早记住的并非母亲的脸，而是祭礼长桌下垂落的银铃与长辈们刻意压低的争执。",
+        periods: [
+          ["稳定期（430—444年）", "旁系家族依靠林地药材贸易维持体面，与主脉的关系疏离却尚未断裂。三份家族名录对她父系来源的记载已经出现细微差异。"],
+          ["过渡期（445—451年）", "南部支院扩张使宗族内部开始重新分配祭礼权。伊伽的名字第一次离开白圣林，出现在教会的外来者名册中。"],
+          ["动荡期（451—454年）", "名册上的夜川姓氏被刮除，一名抄写员随之失踪。这段空白成为日后可供进入的墟境节点。"],
+          ["过渡期（455—468年）", "她开始有意识地切断宗族留下的称谓与习惯，却没有彻底遗忘旧日仪式。"],
+          ["稳定期（469—482年）", "伊伽以独立身份在南部地区生活，相关记录逐渐减少，只在零散任务回执中留下踪迹。"],
+          ["过渡期（483—488年）", "与夜见哉川同行后，旧日关系重新进入现世，传记中的数个历史断点也具备了被墟境探索重新触及的条件。"]
+        ],
+        statusTitle: "现状（复兴纪元488年）",
+        status: "伊伽如今以同行者身份活动，但她对南部支院暗门和旧祭礼的了解，仍明显超过本人愿意承认的程度。",
+        summary: "伊伽的来路并非一条被完整保存的血脉，而是一组在宗族名册、教会档案与个人沉默之间彼此抵牾的记录。"
+      },
+      yekawa: {
+        title: "《夜川家纪事》",
+        subtitle: "跨越旁系、姻亲与失落后代的宗族记录",
+        meta: ["英雄纪元末—复兴纪元488年", "宗族纪事", "7个历史时期"],
+        originTitle: "起源（英雄纪元末）",
+        origin: "夜川姓氏最初并非单一血脉，而是数个在迁徙中共同使用河谷地名的家系。后来的谱牒把他们整理成一支，掩去了收养与姻亲带来的裂缝。",
+        periods: [
+          ["奠基期", "第一批夜川族人沿旧河道定居，形成共享祭礼与仓储的家族联盟。"],
+          ["分支期", "父系支脉进入金谷城，母系支脉留在南方林地，两地开始使用不同的辈分称谓。"],
+          ["冲突期", "一场继承争议使两份族谱同时出现，堂表亲关系由此留下互相矛盾的记载。"],
+          ["离散期", "战争和宗教审查迫使数名后代改姓，部分旁系只在婚书与账册中保留踪迹。"]
+        ],
+        statusTitle: "现状（复兴纪元488年）",
+        status: "当前可确认的夜川关系横跨直系、旁系与姻亲三类，仍有两名后代仅存在于推断关系中。",
+        summary: "这不是一棵整齐的树，而是一张被迁徙、婚姻和改姓反复折叠的关系网。明确关系与推断关系将分别进入宗族谱系。"
+      },
+      brauer: {
+        title: "《布劳尔秘史》",
+        subtitle: "城堡、农庄与地方权力在百年间留下的暗线",
+        meta: ["复兴纪元181—488年", "地方史", "3个历史时期"],
+        originTitle: "起源（复兴纪元181年）",
+        origin: "布劳尔家族最早凭借城堡周边的水利与粮仓取得封地，但公开族史刻意略过了旧堡火灾和地下甬道中的资产转移。",
+        periods: [
+          ["扩张期（181—310年）", "家族以修复农田为名整合周边土地，数份水文资料却在权力交接时失踪。"],
+          ["定形期（310—395年）", "城堡、农庄和商路的边界固定下来，旧账本中的异常抵押成为地方黑市的资金来源。"],
+          ["衰变期（395—488年）", "后代保住了爵位，却逐渐失去对海贸、地下组织和部分农庄的实际控制。"]
+        ],
+        statusTitle: "现状（复兴纪元488年）",
+        status: "布劳尔家族仍占据城堡，但建筑修缮、旧债和失落凭证已经把数段历史重新推到现实表面。",
+        summary: "布劳尔秘史把地点本身视作证人。密道、账册和修补过的墙体都可作为墟境生成时的因果资料。"
+      },
+      frost: {
+        title: "《霜枝忏悔录》",
+        subtitle: "两份互不相容的供述与快乐教会的封存档案",
+        meta: ["复兴纪元145—168年", "冲突史料", "2个历史时期"],
+        originTitle: "起源（复兴纪元145年）",
+        origin: "伊芙琳·霜枝留下的私人供述声称自己试图阻止清洗，但教会档案却把她列为行动的组织者。两份材料在日期与见证人上均无法完全吻合。",
+        periods: [
+          ["行动期（145年）", "地下教堂的配额名册被替换，幸存者证词把责任指向三个不同的管理者。"],
+          ["审查期（146—168年）", "教会重写了事件结论，霜枝的私人手稿则不断增加与官方记载相冲突的旁注。"]
+        ],
+        statusTitle: "现状（资料冲突）",
+        status: "书库保留两套叙述，不替玩家决定哪一份为真。相关节点生成时必须标注证据来源与可信度。",
+        summary: "冲突不是需要自动修平的错误，而是可供宗族谱系、传记扩展与墟境探索共同追查的入口。"
+      }
+    };
+
+    function renderBiography(bookId) {
+      const book = biographyLibrary[bookId];
+      if (!book) return;
+      document.getElementById("codex-cover-title").textContent = book.title;
+      document.getElementById("codex-cover-subtitle").textContent = book.subtitle;
+      document.getElementById("codex-cover-meta").innerHTML = book.meta.map(item => `<span>${item}</span>`).join("");
+      const periodMarkup = book.periods.map(([title, copy]) => `
+        <details class="chapter">
+          <summary>${title}<i data-lucide="chevron-down"></i></summary>
+          <div class="chapter-body"><p>${copy}</p></div>
+        </details>`).join("");
+      document.getElementById("codex-page").innerHTML = `
+        <h4>${book.originTitle}</h4>
+        <p>${book.origin}</p>
+        ${periodMarkup}
+        <div class="codex-divider">现世续章</div>
+        <h4>${book.statusTitle}</h4>
+        <p>${book.status}</p>
+        <div class="codex-summary"><strong>传记总结</strong><p>${book.summary}</p></div>`;
+      codexBook.classList.remove("open");
+      if (window.lucide) lucide.createIcons();
+    }
+
+    document.querySelectorAll(".book-tab").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".book-tab").forEach(item => item.classList.toggle("active", item === button));
+        renderBiography(button.dataset.book);
+        showToast(`已选择${button.querySelector("strong").textContent}`);
+      });
+    });
+
+    document.querySelectorAll(".settings-tab").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".settings-tab").forEach(item => item.classList.toggle("active", item === button));
+        document.querySelectorAll(".settings-pane").forEach(pane => pane.classList.toggle("active", pane.id === `settings-${button.dataset.settings}`));
+      });
+    });
+    const appearanceStorageKey = "eyon-history-preview-appearance";
+    const appearanceKinds = ["mode", "accent", "text"];
+    function applyAppearance(kind, value, notify = false) {
+      if (!appearanceKinds.includes(kind)) return;
+      document.body.dataset[kind] = value;
+      document.querySelectorAll(`[data-appearance="${kind}"]`).forEach(item => {
+        item.classList.toggle("active", item.dataset.value === value);
+      });
+      document.documentElement.style.colorScheme = document.body.dataset.mode === "day" ? "light" : "dark";
+      const state = Object.fromEntries(appearanceKinds.map(key => [key, document.body.dataset[key]]));
+      try { localStorage.setItem(appearanceStorageKey, JSON.stringify(state)); } catch {}
+      if (notify) {
+        const selected = document.querySelector(`[data-appearance="${kind}"][data-value="${value}"] strong`);
+        showToast(`外观已切换：${selected?.textContent || value}`);
+      }
+    }
+    try {
+      const savedAppearance = JSON.parse(localStorage.getItem(appearanceStorageKey) || "{}");
+      appearanceKinds.forEach(kind => {
+        if (savedAppearance[kind]) applyAppearance(kind, savedAppearance[kind]);
+      });
+    } catch {}
+    document.querySelectorAll("[data-appearance]").forEach(button => {
+      button.addEventListener("click", () => applyAppearance(button.dataset.appearance, button.dataset.value, true));
+    });
+
+    const biographyRetrievalStorageKey = "eyon-history-biography-retrieval";
+    const biographyRetrievalToggle = document.getElementById("biography-retrieval-toggle");
+    function setBiographyRetrieval(enabled, notify = false) {
+      biographyRetrievalToggle.classList.toggle("active", enabled);
+      biographyRetrievalToggle.setAttribute("aria-pressed", String(enabled));
+      biographyRetrievalToggle.querySelector("span").textContent = enabled ? "已开启" : "已关闭";
+      try { localStorage.setItem(biographyRetrievalStorageKey, String(enabled)); } catch {}
+      if (notify) {
+        showToast(enabled ? "已开启当前聊天的传记智能检索" : "已关闭传记智能检索");
+      }
+    }
+    setBiographyRetrieval(localStorage.getItem(biographyRetrievalStorageKey) !== "false");
+    biographyRetrievalToggle.addEventListener("click", () => {
+      setBiographyRetrieval(biographyRetrievalToggle.getAttribute("aria-pressed") !== "true", true);
+    });
+
+    document.getElementById("api-test").addEventListener("click", event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.textContent = "正在测试…";
+      setTimeout(() => {
+        button.disabled = false;
+        button.innerHTML = '<i data-lucide="circle-check"></i>连接正常 · 842ms';
+        if (window.lucide) lucide.createIcons();
+        showToast("API连接、鉴权与模型调用均正常");
+      }, 900);
+    });
+
+    document.getElementById("api-default-route").addEventListener("change", event => {
+      showToast(event.target.value === "tavern"
+        ? "四个生成模块默认跟随酒馆插头当前模型"
+        : "四个生成模块默认使用设置中的独立API");
+    });
+    document.querySelectorAll(".module-route").forEach(select => {
+      select.addEventListener("change", () => showToast("模块调用来源已更新；仅在下次调用时生效"));
+    });
+
+    if (window.lucide) lucide.createIcons({ attrs: { "stroke-width": 1.7 } });
+  </script>
+  <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+</body>
+</html>

@@ -1,0 +1,92 @@
+---
+id: eyon.dice.tables
+version: 1
+consumer: script
+mode: data
+---
+
+# 使用方式
+
+- 脚本本地产生1至100的整数，并按闭区间命中。
+- 脚本把命中后的 `key`、`label`、`directions` 传给API。
+- API不得自行重掷，不得在可见结果中输出骰点或 `label` 原词。
+
+# table_1_stage_count
+
+01-45: 5
+46-75: 6
+76-92: 7
+93-100: 8
+
+# table_2_stable
+
+01-06 | astronomy_calendar | 天文定历 | 星象、历法、昼夜节律、天体征兆
+07-12 | geography_shape | 地理定形 | 山川、水文、道路、疆界、空间格局
+13-18 | artifact_standard | 器物定制 | 制造、修缮、收藏、流通
+19-24 | lineage_naming | 血脉定名 | 家系、师承、称号、继承、身份谱系
+25-30 | custom_code | 礼俗定章 | 节庆、婚丧、仪式、禁忌、日常习惯
+31-36 | knowledge_canon | 学识定本 | 典籍、口传、碑铭、档案
+37-42 | trade_route | 商路定流 | 货物流向、交换网络、行会默契
+43-48 | craft_lineage | 工艺定脉 | 技法、材料、配方、锻造谱系
+49-54 | settlement_order | 栖居定序 | 聚落布局、居住分层、房舍演化、场所分工
+55-60 | faith_anchor | 信仰定锚 | 神话、圣地、誓约、祈祷对象、精神寄托
+61-66 | social_protocol | 交往定则 | 盟友、邻里、访客、使节
+67-72 | memory_draft | 记忆定稿 | 地方传说、人物逸闻、器物来历、旧事版本
+73-78 | body_care | 身体定养 | 饮食、医护、训练、保养
+79-84 | ecology_habitat | 生态定栖 | 田地、牧场、林地、伴生生灵、季节物候
+85-90 | authority_seat | 权责定席 | 职位、职责、守望关系、庇护秩序
+91-96 | aesthetic_style | 审美定风 | 服饰、建筑、纹样、音乐、叙事趣味
+97-100 | comic_accident | 幽默意外 | 合理但出人意料的偶发事件
+
+# table_3_transition
+
+01-10 | calendar_rewrite | 星历改写 | 历法、占候、天象解释发生变化
+11-20 | terrain_shift | 地脉转向 | 河道、道路、疆界、活动中心迁移
+21-30 | title_change | 名号更迭 | 人名、地名、器名、爵位、称呼改变
+31-40 | craft_replacement | 技艺换代 | 工法、材料、传承链重组
+41-50 | ritual_collision | 礼制碰撞 | 旧礼俗与新风尚争执
+51-60 | affiliation_transfer | 归属转移 | 家庭、组织、地域、信仰归属改变
+61-70 | text_revision | 文本增删 | 碑文、档案、传记、账本、口述被重编
+71-80 | purpose_change | 用途改道 | 区域、物品或人物职能改变
+81-90 | relation_shuffle | 关系洗牌 | 盟友、亲缘、师徒、交易或敌对关系重排
+91-96 | era_misalignment | 时代错位 | 旧遗物或旧观念在新时代被重新解释
+97-100 | comic_accident | 幽默意外 | 合理但出人意料的偶发事件
+
+# table_4_turbulent
+
+01-06 | celestial_omen | 天灾异兆 | 异常星象、长夜、赤月、彗尾、天幕异变
+07-12 | terrain_collapse | 地貌崩裂 | 山崩、地陷、河决、火山、沙暴、地脉撕裂
+13-18 | war | 战火裹挟 | 战争、围城、剿灭、劫掠、武装迁徙
+19-24 | intrigue_backlash | 权谋反噬 | 争权、夺位、清洗、背叛、密谋失控
+25-30 | artifact_scatter | 失物离散 | 关键器物失窃、遗失、碎裂、封存、转手
+31-36 | reputation_collapse | 名誉倾覆 | 人物、家族、地区或宝物声望崩塌
+37-42 | lineage_break | 血缘断裂 | 继承人夭折、族谱中断、师门覆灭、认亲失败
+43-48 | faith_schism | 信仰决裂 | 圣地、神迹、祭司、誓约或信众分裂
+49-54 | plague | 疫病侵骨 | 疾病、诅咒、污染、瘟潮、精神失序
+55-60 | famine_migration | 饥寒流徙 | 歉收、封锁、寒灾、物资断绝、逃荒迁徙
+61-66 | archive_loss | 文书焚没 | 档案、地图、契约、碑文、遗稿损毁
+67-72 | arcane_backlash | 魔工反噬 | 仪式、炼金、工程、机关、实验失控
+73-78 | mass_frenzy | 群情狂乱 | 谣言、审判、狂热、献祭潮、群体模仿
+79-84 | foreign_intrusion | 异乡侵入 | 外族、异界生灵、流亡者、商团、宗教或技术侵入
+85-90 | passion_disaster | 爱憎成祸 | 嫉妒、私恋、复仇、殉情、执念扩大为公共灾难
+91-94 | final_redivision | 终局重划 | 版图、归属、身份、用途、象征意义被重划
+95-98 | uncanny_manifestation | 怪诞显圣 | 无法按常理解释的神秘现象改变历史
+99-100 | comic_accident | 幽默意外 | 合理但出人意料的偶发事件
+
+# table_5_candidate_count
+
+01-55 | stable | 稳态级 | 1
+56-82 | ripple | 涟漪级 | 2
+83-95 | surge | 响涛级 | 3
+96-100 | howl | 鸣啸级 | 4
+
+# table_6_butterfly_scope
+
+01-20 | person | 个人
+21-35 | pair | 双人
+36-50 | team | 小队
+51-65 | settlement | 聚落
+66-78 | city | 城市
+79-88 | region | 省份级地区
+89-96 | nation | 国家
+97-100 | transnational | 跨国

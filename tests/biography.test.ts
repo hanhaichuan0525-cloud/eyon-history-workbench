@@ -229,14 +229,6 @@ test('寻根溯源事务校验后落库，再注入同一条正文消息', async
       },
     },
     shell: {
-      async generateShell({ slot }) {
-        assistantMessage = [
-          '<eyon name="伊雍" mood="bright">「旧纸页上的墨迹已经醒来。」</eyon>',
-          '<eyon_court/>',
-          slot,
-        ].join('\n');
-        return { messageId: 77 };
-      },
       async readAssistantMessage() {
         return assistantMessage;
       },
@@ -266,7 +258,13 @@ test('寻根溯源事务校验后落库，再注入同一条正文消息', async
     },
   });
 
-  const result = await workflow.run(command);
+  const preparation = await workflow.prepare(command);
+  assistantMessage = [
+    '<eyon name="伊雍" mood="bright">「旧纸页上的墨迹已经醒来。」</eyon>',
+    '<eyon_court/>',
+    preparation.slot,
+  ].join('\n');
+  const result = await workflow.commit(preparation, 77);
   const record = await repository.get(
     biographyRecordKey(namespace, result.biographyId),
   );
@@ -284,7 +282,6 @@ test('生成期间切换聊天时停止事务，不写入任何存档', async ()
   const command = parseTextCommand(directive);
   assert.ok(command);
   let scopeReadCount = 0;
-  let shellCalled = false;
 
   const workflow = new BiographyWorkflow({
     contextAssembler: {
@@ -298,10 +295,6 @@ test('生成期间切换聊天时停止事务，不写入任何存档', async ()
       },
     },
     shell: {
-      async generateShell() {
-        shellCalled = true;
-        return { messageId: 1 };
-      },
       async readAssistantMessage() {
         return '';
       },
@@ -332,7 +325,6 @@ test('生成期间切换聊天时停止事务，不写入任何存档', async ()
     },
   });
 
-  await assert.rejects(() => workflow.run(command), /Chat changed/u);
-  assert.equal(shellCalled, false);
+  await assert.rejects(() => workflow.prepare(command), /Chat changed/u);
   assert.deepEqual(await repository.list(namespace), []);
 });

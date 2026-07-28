@@ -17,11 +17,6 @@ import { parseAndValidateBiography } from '../validators/biography.ts';
 import { insertRootTrace } from './messageAssembly.ts';
 
 export interface BiographyShellAdapter {
-  generateShell(input: {
-    requestId: string;
-    instruction: string;
-    slot: string;
-  }): Promise<{ messageId: number }>;
   readAssistantMessage(messageId: number): Promise<string>;
   writeAssistantMessage(messageId: number, content: string): Promise<void>;
   refreshAssistantMessage(messageId: number): Promise<void>;
@@ -53,6 +48,17 @@ export interface BiographyWorkflowResult {
   warning: 'none' | 'slot_missing' | 'court_missing';
 }
 
+export interface BiographyPreparation {
+  requestId: string;
+  biographyId: string;
+  recordKey: string;
+  scope: BiographyWorkflowScope;
+  sourceHash: string;
+  slot: string;
+  instruction: string;
+  rootTrace: string;
+}
+
 export class BiographyWorkflow {
   private readonly dependencies: BiographyWorkflowDependencies;
 
@@ -60,7 +66,7 @@ export class BiographyWorkflow {
     this.dependencies = dependencies;
   }
 
-  async run(command: WorkbenchCommand): Promise<BiographyWorkflowResult> {
+  async prepare(command: WorkbenchCommand): Promise<BiographyPreparation> {
     if (command.type !== 'biography.generate') {
       throw new Error('Biography workflow received a different command type');
     }
@@ -109,23 +115,42 @@ export class BiographyWorkflow {
     await this.dependencies.repository.saveValidated(record);
 
     const slot = createSlot('rootTrace', requestId);
-    const shellResult = await this.dependencies.shell.generateShell({
-      requestId,
-      instruction: buildBiographyShellInstruction(biography, slot),
-      slot,
-    });
-
-    await this.assertCurrentScope(initialScope);
-    const message = await this.dependencies.shell.readAssistantMessage(shellResult.messageId);
-    const assembled = insertRootTrace(message, slot, biography.rootTrace);
-    await this.dependencies.shell.writeAssistantMessage(shellResult.messageId, assembled.content);
-    await this.dependencies.shell.refreshAssistantMessage(shellResult.messageId);
-    await this.dependencies.repository.markCommitted(key, shellResult.messageId);
-
     return {
       requestId,
       biographyId,
-      assistantMessageId: shellResult.messageId,
+      recordKey: key,
+      scope: initialScope,
+      sourceHash: context.sourceHash,
+      slot,
+      instruction: buildBiographyShellInstruction(biography, slot),
+      rootTrace: biography.rootTrace,
+    };
+  }
+
+  async commit(
+    preparation: BiographyPreparation,
+    assistantMessageId: number,
+  ): Promise<BiographyWorkflowResult> {
+    const message = await this.dependencies.shell.readAssistantMessage(assistantMessageId);
+    const assembled = insertRootTrace(
+      message,
+      preparation.slot,
+      preparation.rootTrace,
+    );
+    await this.dependencies.shell.writeAssistantMessage(
+      assistantMessageId,
+      assembled.content,
+    );
+    await this.dependencies.shell.refreshAssistantMessage(assistantMessageId);
+    await this.dependencies.repository.markCommitted(
+      preparation.recordKey,
+      assistantMessageId,
+    );
+
+    return {
+      requestId: preparation.requestId,
+      biographyId: preparation.biographyId,
+      assistantMessageId,
       warning: assembled.warning,
     };
   }

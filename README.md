@@ -49,6 +49,9 @@ docs/       架构与同步说明
 manifest.json
 ```
 
+运行时采用“生成前准备，正文楼渲染后提交”的两阶段楼层事务。详见
+[`docs/RUNTIME.md`](docs/RUNTIME.md)。
+
 ## 本地验证
 
 需要 Node.js 22.18 或更高版本：

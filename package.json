@@ -1,11 +1,19 @@
 {
   "name": "eyon-history-workbench",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.ts",
-    "test:regex": "node scripts/verify-local-regex.mjs"
+    "test:regex": "node scripts/verify-local-regex.mjs",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=22.18"

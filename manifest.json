@@ -2,7 +2,7 @@
   "name": "eyon-history-workbench",
   "displayName": "伊雍历史工作台",
   "channel": "development",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "rulesVersion": "1.0.1",
   "schemaVersion": 1,
   "minimumLoaderVersion": "0.1.0",
@@ -11,8 +11,8 @@
   "publishedAt": "",
   "sha256": "",
   "notes": [
-    "同步最新版脚本嵌入规则与伊雍核心世界书",
-    "新增严格命令、命名空间、占位槽与固定原文序列化契约",
-    "新增不依赖酒馆运行环境的契约测试"
+    "世界书继续留在角色卡工程，不同步到工作台仓库",
+    "新增寻根溯源上下文、严格结果校验、聊天隔离与两阶段存储",
+    "正文模型自然生成伊雍对话，脚本仅替换已校验的 RootTrace 插槽"
   ]
 }

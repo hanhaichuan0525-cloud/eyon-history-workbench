@@ -69,3 +69,32 @@ export interface RuinContextAssembler {
     directive: string;
   }): Promise<RuinContextBundle>;
 }
+
+export interface GenealogyContextBundle {
+  schema: 'eyon.context.v1';
+  taskType: 'genealogy';
+  requestId: string;
+  scope: WorkbenchNamespace & {
+    triggerMessageId: number;
+  };
+  currentWorld: {
+    time: string;
+    location: string;
+  };
+  worldbookContext: ContextSource[];
+  recentContext: ContextSource[];
+  characterContext: ContextSource[];
+  biographyRefs: ContextSource[];
+  sourceIndex: ContextSource[];
+  warnings: string[];
+  sourceHash: string;
+}
+
+export interface GenealogyContextAssembler {
+  assemble(input: {
+    requestId: string;
+    namespace: WorkbenchNamespace;
+    triggerMessageId: number;
+    directive: string;
+  }): Promise<GenealogyContextBundle>;
+}

@@ -3,8 +3,10 @@ import retrievalContract from '../../rules/03_资料检索与上下文装配契�
 import validationContract from '../../rules/05_生成结果校验与失败恢复契约.txt?raw';
 import ruinGenerationContract from '../../rules/11_墟境历史期生成规则-API.txt?raw';
 import biographyGenerationContract from '../../rules/13_寻根溯源生成规则-API.txt?raw';
+import genealogyGenerationContract from '../../rules/09_宗族谱系生成规则-API.txt?raw';
 import type { BiographyRuleSet } from '../prompts/biography.ts';
 import type { RuinRuleSet } from '../prompts/ruin.ts';
+import type { GenealogyRuleSet } from '../prompts/genealogy.ts';
 
 export const embeddedBiographyRules: BiographyRuleSet = {
   sharedContext,
@@ -18,4 +20,11 @@ export const embeddedRuinRules: RuinRuleSet = {
   retrievalContract,
   validationContract,
   generationContract: ruinGenerationContract,
+};
+
+export const embeddedGenealogyRules: GenealogyRuleSet = {
+  sharedContext,
+  retrievalContract,
+  validationContract,
+  generationContract: genealogyGenerationContract,
 };

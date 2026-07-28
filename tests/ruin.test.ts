@@ -462,6 +462,20 @@ test('统一生命周期只将严格墟境命令路由给独立候选生成器',
         return makeInput();
       },
     },
+    genealogy: {
+      async generateFromText() {
+        calls.push('genealogy');
+        return {};
+      },
+      cancelPending() {
+        calls.push('genealogy:cancel');
+      },
+    },
+    genealogyInputProvider: {
+      async getInput() {
+        throw new Error('genealogy input should not be requested');
+      },
+    },
   });
 
   assert.equal(await lifecycle.beforeGeneration('normal'), true);
@@ -474,7 +488,10 @@ test('统一生命周期只将严格墟境命令路由给独立候选生成器',
   assert.equal(await lifecycle.beforeGeneration('normal'), false);
   assert.equal(await lifecycle.beforeGeneration('continue'), false);
   await lifecycle.onChatChanged();
-  assert.deepEqual(calls.slice(-2), ['ruin:cancel', 'biography:cancel']);
+  assert.deepEqual(
+    calls.slice(-3),
+    ['ruin:cancel', 'genealogy:cancel', 'biography:cancel'],
+  );
 });
 
 test('同一楼层同一输入的重复调用复用同一生成事务', async () => {

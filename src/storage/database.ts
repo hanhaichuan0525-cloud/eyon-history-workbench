@@ -1,8 +1,9 @@
 const DATABASE_NAME = 'eyon-history-system';
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 export const BIOGRAPHY_STORE = 'biographies';
 export const RUIN_STORE = 'ruinCandidates';
+export const GENEALOGY_STORE = 'genealogies';
 
 let databasePromise: Promise<IDBDatabase> | null = null;
 
@@ -20,6 +21,11 @@ export function historyDatabase(): Promise<IDBDatabase> {
       }
       if (!database.objectStoreNames.contains(RUIN_STORE)) {
         const store = database.createObjectStore(RUIN_STORE, { keyPath: 'key' });
+        store.createIndex('namespace', 'namespaceKey', { unique: false });
+        store.createIndex('requestId', 'requestId', { unique: true });
+      }
+      if (!database.objectStoreNames.contains(GENEALOGY_STORE)) {
+        const store = database.createObjectStore(GENEALOGY_STORE, { keyPath: 'key' });
         store.createIndex('namespace', 'namespaceKey', { unique: false });
         store.createIndex('requestId', 'requestId', { unique: true });
       }

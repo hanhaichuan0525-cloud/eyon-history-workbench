@@ -5,6 +5,7 @@ import type {
 } from '../adapters/host.ts';
 import type { WorkbenchNamespace } from '../core/namespace.ts';
 import type { BiographyRepository } from '../storage/biographies.ts';
+import type { GenealogyRepository } from '../storage/genealogies.ts';
 import type {
   RuntimeContextSourceProvider,
   TavernRuntime,
@@ -36,15 +37,18 @@ export interface TavernDataBindings {
 export class TavernContextSourceProvider implements RuntimeContextSourceProvider {
   private readonly bindings: TavernDataBindings;
   private readonly biographies: BiographyRepository;
+  private readonly genealogies: GenealogyRepository;
   private readonly getNamespace: () => WorkbenchNamespace;
 
   constructor(
     bindings: TavernDataBindings,
     biographies: BiographyRepository,
+    genealogies: GenealogyRepository,
     getNamespace: () => WorkbenchNamespace,
   ) {
     this.bindings = bindings;
     this.biographies = biographies;
+    this.genealogies = genealogies;
     this.getNamespace = getNamespace;
   }
 
@@ -87,7 +91,20 @@ export class TavernContextSourceProvider implements RuntimeContextSourceProvider
   }
 
   async getGenealogySources() {
-    return [];
+    const records = await this.genealogies.list(this.getNamespace());
+    const latestByFocus = new Map<string, (typeof records)[number]>();
+    for (const record of records) {
+      const focusId = record.result.focusCharacterId;
+      const current = latestByFocus.get(focusId);
+      if (!current || record.createdAt > current.createdAt) {
+        latestByFocus.set(focusId, record);
+      }
+    }
+    return [...latestByFocus.values()].map(record => ({
+      sourceId: `genealogy:${record.requestId}`,
+      title: `${record.result.focusCharacterName}宗族谱系`,
+      content: JSON.stringify(record.result),
+    }));
   }
 
   async getBiographySources() {

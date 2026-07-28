@@ -12,8 +12,16 @@ import {
   RuinTransactionGuard,
 } from './runtime/ruinController.ts';
 import { TavernRuinContextAssembler } from './runtime/ruinContext.ts';
+import { TavernGenealogyContextAssembler } from './runtime/genealogyContext.ts';
+import {
+  createGenealogyIdentityAssertion,
+  GenealogyController,
+  GenealogyTransactionGuard,
+} from './runtime/genealogyController.ts';
+import { TavernGenealogyInputProvider } from './runtime/genealogyInput.ts';
 import {
   embeddedBiographyRules,
+  embeddedGenealogyRules,
   embeddedRuinRules,
 } from './runtime/ruleBundle.ts';
 import { TavernBiographyShellAdapter } from './runtime/tavernBiographyShell.ts';
@@ -32,13 +40,19 @@ import {
 import { WorkbenchLifecycle } from './runtime/workbenchLifecycle.ts';
 import { IndexedDbBiographyRepository } from './storage/indexedDbBiographies.ts';
 import {
+  IndexedDbGenealogyRepository,
+  type GenealogyRecord,
+} from './storage/genealogies.ts';
+import {
   IndexedDbRuinCandidateRepository,
   type RuinCandidateRecord,
 } from './storage/ruins.ts';
 import type { RuinGenerationInput } from './schemas/ruin.ts';
+import type { GenealogyGenerationInput } from './schemas/genealogy.ts';
 import { BiographyWorkflow } from './workflows/biography.ts';
 import { RuinWorkflow } from './workflows/ruin.ts';
 import { RuinEntryWorkflow } from './workflows/ruinEntry.ts';
+import { GenealogyWorkflow } from './workflows/genealogy.ts';
 
 const GLOBAL_FACADE = 'EyonHistoryWorkbench';
 const STATUS_EVENT = 'eyon-history-workbench:status';
@@ -49,6 +63,8 @@ export interface EyonHistoryWorkbenchFacade {
   getSettings(): WorkbenchSettings;
   updateSettings(patch: Partial<WorkbenchSettings>): WorkbenchSettings;
   setRuinDraft(input: RuinGenerationInput | null): WorkbenchSettings;
+  generateGenealogy(input: GenealogyGenerationInput): Promise<GenealogyRecord>;
+  listGenealogies(): Promise<GenealogyRecord[]>;
   generateRuin(input: RuinGenerationInput): Promise<RuinCandidateRecord>;
   listRuins(): Promise<RuinCandidateRecord[]>;
   listBiographies(): Promise<unknown[]>;
@@ -71,11 +87,13 @@ async function bootstrap(): Promise<void> {
     createGlobalScriptVariableBindings(globalObject),
   );
   const biographies = new IndexedDbBiographyRepository();
+  const genealogies = new IndexedDbGenealogyRepository();
   const ruins = new IndexedDbRuinCandidateRepository();
   const host = new TavernWorkbenchHost(runtime, dataBindings);
   const sources = new TavernContextSourceProvider(
     dataBindings,
     biographies,
+    genealogies,
     () => scopeReader.getNamespace(),
   );
   const scopeReader = new TavernScopeReader(runtime, () =>
@@ -119,6 +137,22 @@ async function bootstrap(): Promise<void> {
     { onStatus: emitStatus },
     ruinGuard,
   );
+  const genealogyGuard = new GenealogyTransactionGuard();
+  const genealogyWorkflow = new GenealogyWorkflow({
+    contextAssembler: new TavernGenealogyContextAssembler(runtime, sources),
+    generator,
+    repository: genealogies,
+    rules: embeddedGenealogyRules,
+    createRequestId: () => crypto.randomUUID(),
+    now: Date.now,
+    assertCurrent: createGenealogyIdentityAssertion(runtime, genealogyGuard),
+  });
+  const genealogyController = new GenealogyController(
+    genealogyWorkflow,
+    runtime,
+    { onStatus: emitStatus },
+    genealogyGuard,
+  );
   const ruinEntry = new RuinEntryWorkflow({
     repository: ruins,
     host,
@@ -128,6 +162,8 @@ async function bootstrap(): Promise<void> {
     biography: biographyController,
     ruin: ruinController,
     ruinInputProvider: settings,
+    genealogy: genealogyController,
+    genealogyInputProvider: new TavernGenealogyInputProvider(sources, settings),
     runtime,
   });
   const events = createGlobalEventBridge(globalObject);
@@ -138,11 +174,13 @@ async function bootstrap(): Promise<void> {
     globalObject,
   );
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.5.0',
+    version: '0.6.0',
     getSettings: () => settings.read(),
     updateSettings: patch => settings.update(patch),
     setRuinDraft: input => settings.update({ ruinDraft: input }),
     generateRuin: input => ruinController.generateFromPanel(input),
+    generateGenealogy: input => genealogyController.generateFromPanel(input),
+    listGenealogies: async () => genealogies.list(scopeReader.getNamespace()),
     listRuins: async () => ruins.list(scopeReader.getNamespace()),
     listBiographies: async () => biographies.list(scopeReader.getNamespace()),
     enterRuin: (recordKey, candidateId, nodeId) =>

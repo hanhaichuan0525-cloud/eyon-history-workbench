@@ -9,6 +9,7 @@ import {
 } from '../src/runtime/tavernHost.ts';
 import { ScriptWorkbenchSettings } from '../src/runtime/workbenchSettings.ts';
 import { MemoryBiographyRepository } from '../src/storage/biographies.ts';
+import { MemoryGenealogyRepository } from '../src/storage/genealogies.ts';
 
 function runtime(messages: Array<{
   message_id: number;
@@ -93,6 +94,7 @@ test('资料源只读取当前绑定且启用的世界书条目', async () => {
       },
     }),
     new MemoryBiographyRepository(),
+    new MemoryGenealogyRepository(),
     () => ({ characterKey: '伊雍', chatId: 'chat-a' }),
   );
   const result = await sources.getWorldbookSources();

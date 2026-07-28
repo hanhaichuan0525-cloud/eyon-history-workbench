@@ -27,6 +27,13 @@ export const WorkbenchSettingsSchema = z.object({
     butterfly: { mode: 'follow_tavern' },
   }),
   ruinDraft: RuinGenerationInputSchema.nullable().default(null),
+  genealogyDepth: z.object({
+    ancestors: z.number().int().min(1).max(8).default(4),
+    descendants: z.number().int().min(0).max(6).default(3),
+  }).default({
+    ancestors: 4,
+    descendants: 3,
+  }),
 });
 
 export type WorkbenchSettings = z.infer<typeof WorkbenchSettingsSchema>;
@@ -83,5 +90,9 @@ implements GenerationSettingsProvider, RuinGenerationInputProvider {
       throw new Error('请先在伊雍历史工作台中填写墟境生成条件');
     }
     return draft;
+  }
+
+  getGenealogyDepth(): { ancestors: number; descendants: number } {
+    return this.read().genealogyDepth;
   }
 }

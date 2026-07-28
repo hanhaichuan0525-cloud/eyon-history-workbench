@@ -1,5 +1,6 @@
 import { parseTextCommand, type WorkbenchCommand } from '../core/commands.ts';
 import type { RuinGenerationInput } from '../schemas/ruin.ts';
+import type { GenealogyGenerationInput } from '../schemas/genealogy.ts';
 import type { TavernRuntime } from './contracts.ts';
 
 const SUPPORTED_GENERATION_TYPES = new Set<string | undefined>([
@@ -27,21 +28,39 @@ export interface RuinGenerationInputProvider {
   getInput(command: WorkbenchCommand): Promise<RuinGenerationInput>;
 }
 
+export interface GenealogyLifecycleController {
+  generateFromText(
+    text: string,
+    input: GenealogyGenerationInput,
+  ): Promise<unknown | null>;
+  cancelPending(): void;
+}
+
+export interface GenealogyGenerationInputProvider {
+  getInput(command: WorkbenchCommand): Promise<GenealogyGenerationInput>;
+}
+
 export class WorkbenchLifecycle {
   private readonly biography: WorkbenchBiographyController;
   private readonly ruin: RuinLifecycleController;
   private readonly ruinInputProvider: RuinGenerationInputProvider;
+  private readonly genealogy: GenealogyLifecycleController;
+  private readonly genealogyInputProvider: GenealogyGenerationInputProvider;
   private readonly runtime: TavernRuntime;
 
   constructor(options: {
     biography: WorkbenchBiographyController;
     ruin: RuinLifecycleController;
     ruinInputProvider: RuinGenerationInputProvider;
+    genealogy: GenealogyLifecycleController;
+    genealogyInputProvider: GenealogyGenerationInputProvider;
     runtime: TavernRuntime;
   }) {
     this.biography = options.biography;
     this.ruin = options.ruin;
     this.ruinInputProvider = options.ruinInputProvider;
+    this.genealogy = options.genealogy;
+    this.genealogyInputProvider = options.genealogyInputProvider;
     this.runtime = options.runtime;
   }
 
@@ -61,6 +80,12 @@ export class WorkbenchLifecycle {
         await this.ruin.generateFromText(userMessage.message, input)
       ) !== null;
     }
+    if (command.type === 'genealogy.generate') {
+      const input = await this.genealogyInputProvider.getInput(command);
+      return (
+        await this.genealogy.generateFromText(userMessage.message, input)
+      ) !== null;
+    }
     return false;
   }
 
@@ -70,6 +95,7 @@ export class WorkbenchLifecycle {
 
   async onChatChanged(): Promise<void> {
     this.ruin.cancelPending();
+    this.genealogy.cancelPending();
     await this.biography.cancelPending();
   }
 

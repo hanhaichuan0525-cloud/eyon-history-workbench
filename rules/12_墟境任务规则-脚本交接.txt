@@ -18,7 +18,30 @@ mode: prompt_template
 
 # A. 生成最终墟境面板
 
-玩家在界面选中候选和特异点后，脚本向酒馆输入框写入以下文本。此操作只要求正文模型生成最终候选面板，不代表进入。
+玩家在界面选中候选和特异点后，脚本先从已校验的结构化结果生成唯一 `ruinTraceRaw`。此步骤只生成语义原文，不生成HTML。
+
+固定序列化格式:
+
+```text
+[RuinTrace]
+Title:: {{candidate.title}}
+Type:: {{candidate.periodType}}
+Span:: {{candidate.span.label}}
+History:: {{candidate.historyProse}}
+Shift:: {{candidate.shift}}
+NodeTime:: {{node.time.label}}
+[/RuinTrace]
+```
+
+约束:
+
+- 字段名、双半角冒号、字段顺序和首尾标签必须完全一致。
+- `Type` 只能是 `稳定期`、`过渡期` 或 `动荡期`。
+- 任一字段内容中的换行可以保留，但不得生成第二组同名字段或第二个 `[RuinTrace]`。
+- `ruinTraceRaw` 必须由脚本从结构化JSON确定性生成，不允许正文模型或美化正则反向修改。
+- 脚本在发送正文前生成唯一 `requestId` 和唯一占位槽 `[EYON_RUINTRACE_SLOT::{{requestId}}]`，并把 `ruinTraceRaw` 保存在本次请求内存状态中。
+
+随后脚本向酒馆输入框写入以下文本。此操作只要求正文模型生成伊雍的确认语并保留占位槽，不代表进入。
 
 模板:
 
@@ -38,7 +61,21 @@ mode: prompt_template
 资料依据：{{sourceSummary}}
 玩家补充方向：{{supplementaryDirection || "无"}}
 
-请依据现有伊雍核心，把以上已经完成的史稿忠实转写为最终[RuinTrace]面板。不得重新构思、压缩、改写或替换其中的历史正文、节点时间、地点、人物与因果关系。本楼只展示并确认节点，不进入墟境，不改变世界时间，不更新墟境流程状态。
+以上史稿已经由历史工作台完成。请只依据现有伊雍核心生成一段简短确认语，不得重新构思、压缩、改写或复述史稿。确认语结束后，单独原样输出以下占位槽并立即结束:
+[EYON_RUINTRACE_SLOT::{{requestId}}]
+
+本楼只展示并确认节点，不进入墟境，不改变世界时间，不更新墟境流程状态。
+
+正文流式输出结束后:
+
+1. 精确取得本次请求对应的AI消息ID。
+2. 查找完全匹配的 `[EYON_RUINTRACE_SLOT::{{requestId}}]`。
+3. 用内存中的 `ruinTraceRaw` 原样替换该占位槽。
+4. 不进行Markdown转义、格式化、压缩、重排或HTML转换。
+5. 更新同一条AI消息并触发重新渲染，使现有墟境美化正则生效。
+6. 若占位槽缺失但消息中存在唯一 `[RuinTrace]...[/RuinTrace]`，用 `ruinTraceRaw` 替换该区段。
+7. 若两者都不存在，在最后一个 `<eyon_court/>` 后追加 `ruinTraceRaw`；若没有 `<eyon_court/>`，则追加到消息末尾并记录格式警告。
+8. 同一 `requestId` 只能完成一次替换或追加，不得生成重复面板。
 
 # B. 明确进入节点
 

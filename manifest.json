@@ -2,8 +2,8 @@
   "name": "eyon-history-workbench",
   "displayName": "伊雍历史工作台",
   "channel": "development",
-  "version": "0.1.0",
-  "rulesVersion": "1.0.0",
+  "version": "0.1.1",
+  "rulesVersion": "1.0.1",
   "schemaVersion": 1,
   "minimumLoaderVersion": "0.1.0",
   "entry": "",
@@ -11,7 +11,8 @@
   "publishedAt": "",
   "sha256": "",
   "notes": [
-    "初始化私有开发仓库",
-    "纳入交互原型与脚本嵌入规则"
+    "同步最新版脚本嵌入规则与伊雍核心世界书",
+    "新增严格命令、命名空间、占位槽与固定原文序列化契约",
+    "新增不依赖酒馆运行环境的契约测试"
   ]
 }

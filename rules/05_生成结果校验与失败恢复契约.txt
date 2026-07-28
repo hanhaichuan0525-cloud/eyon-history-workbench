@@ -150,6 +150,10 @@ butterfly失败且冻结快照仍完整
 - `selectedCharacters`逐项出现在 `selectedCharacterUsage`。
 - 参与模式为 `actor` 的人物出现在 `cast`和至少一个节点。
 - 纪元、地点和玩家补充方向符合输入。
+- 选定候选生成的 `ruinTraceRaw` 同时包含唯一 `[RuinTrace]` 与 `[/RuinTrace]`。
+- `ruinTraceRaw` 字段严格按 `Title::`、`Type::`、`Span::`、`History::`、`Shift::`、`NodeTime::` 顺序各出现一次。
+- `ruinTraceRaw` 能被现有墟境美化正则完整匹配，且捕获值与选定候选及特异点的结构化字段一致。
+- 格式校验失败时只允许从已校验JSON重新序列化，不得重新调用生成API，也不得让正文模型修补格式。
 
 ## 6.3 寻根溯源
 

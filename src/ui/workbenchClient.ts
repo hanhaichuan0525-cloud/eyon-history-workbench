@@ -77,6 +77,22 @@ export class WorkbenchUiClient {
     return this.facade().syncCharacters();
   }
 
+  createCharacterGroup(name: string) {
+    return this.facade().createCharacterGroup(name);
+  }
+
+  renameCharacterGroup(groupId: string, name: string) {
+    return this.facade().renameCharacterGroup(groupId, name);
+  }
+
+  deleteCharacterGroup(groupId: string) {
+    return this.facade().deleteCharacterGroup(groupId);
+  }
+
+  moveCharacterToGroup(characterId: string, groupId: string | null) {
+    return this.facade().moveCharacterToGroup(characterId, groupId);
+  }
+
   setGeneration(
     taskType: GenerationTaskType,
     settings: GenerationSettings,

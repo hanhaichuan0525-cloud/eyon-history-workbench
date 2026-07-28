@@ -27,8 +27,16 @@ export interface WorkbenchCharacter {
 
 export interface WorkbenchCharacterCatalog {
   characters: WorkbenchCharacter[];
+  groups: WorkbenchCharacterGroup[];
   hiddenCount: number;
   totalCount: number;
+}
+
+export interface WorkbenchCharacterGroup {
+  id: string;
+  name: string;
+  characterIds: string[];
+  order: number;
 }
 
 export interface EyonHistoryWorkbenchFacade {
@@ -52,6 +60,16 @@ export interface EyonHistoryWorkbenchFacade {
   getCharacterCatalog(): Promise<WorkbenchCharacterCatalog>;
   hideCharacter(characterId: string): Promise<WorkbenchCharacterCatalog>;
   syncCharacters(): Promise<WorkbenchCharacterCatalog>;
+  createCharacterGroup(name: string): Promise<WorkbenchCharacterCatalog>;
+  renameCharacterGroup(
+    groupId: string,
+    name: string,
+  ): Promise<WorkbenchCharacterCatalog>;
+  deleteCharacterGroup(groupId: string): Promise<WorkbenchCharacterCatalog>;
+  moveCharacterToGroup(
+    characterId: string,
+    groupId: string | null,
+  ): Promise<WorkbenchCharacterCatalog>;
   enterRuin(
     recordKey: string,
     candidateId: string,

@@ -35,16 +35,43 @@ function makeFacade(): EyonHistoryWorkbenchFacade {
     listButterflies: async () => [],
     getCharacterCatalog: async () => ({
       characters: [],
+      groups: [],
       hiddenCount: 0,
       totalCount: 0,
     }),
     hideCharacter: async () => ({
       characters: [],
+      groups: [],
       hiddenCount: 0,
       totalCount: 0,
     }),
     syncCharacters: async () => ({
       characters: [],
+      groups: [],
+      hiddenCount: 0,
+      totalCount: 0,
+    }),
+    createCharacterGroup: async () => ({
+      characters: [],
+      groups: [],
+      hiddenCount: 0,
+      totalCount: 0,
+    }),
+    renameCharacterGroup: async () => ({
+      characters: [],
+      groups: [],
+      hiddenCount: 0,
+      totalCount: 0,
+    }),
+    deleteCharacterGroup: async () => ({
+      characters: [],
+      groups: [],
+      hiddenCount: 0,
+      totalCount: 0,
+    }),
+    moveCharacterToGroup: async () => ({
+      characters: [],
+      groups: [],
       hiddenCount: 0,
       totalCount: 0,
     }),
@@ -69,6 +96,7 @@ test('UI客户端只通过公开门面读取当前命名空间快照', async () 
     butterflies: [],
     characterCatalog: {
       characters: [],
+      groups: [],
       hiddenCount: 0,
       totalCount: 0,
     },
@@ -80,11 +108,11 @@ test('UI客户端将人物隐藏与同步严格转交给公开门面', async () 
   const facade = makeFacade();
   facade.hideCharacter = async id => {
     calls.push(`hide:${id}`);
-    return { characters: [], hiddenCount: 1, totalCount: 1 };
+    return { characters: [], groups: [], hiddenCount: 1, totalCount: 1 };
   };
   facade.syncCharacters = async () => {
     calls.push('sync');
-    return { characters: [], hiddenCount: 0, totalCount: 1 };
+    return { characters: [], groups: [], hiddenCount: 0, totalCount: 1 };
   };
   const client = new WorkbenchUiClient(
     { [WORKBENCH_GLOBAL]: facade },
@@ -115,4 +143,41 @@ test('UI客户端订阅并释放工作台状态与就绪事件', () => {
   }));
   assert.deepEqual(statuses, ['generating_ruin']);
   assert.deepEqual(ready, ['test']);
+});
+
+test('UI client forwards local character group operations', async () => {
+  const calls: string[] = [];
+  const facade = makeFacade();
+  facade.createCharacterGroup = async name => {
+    calls.push(`create:${name}`);
+    return { characters: [], groups: [], hiddenCount: 0, totalCount: 0 };
+  };
+  facade.renameCharacterGroup = async (id, name) => {
+    calls.push(`rename:${id}:${name}`);
+    return { characters: [], groups: [], hiddenCount: 0, totalCount: 0 };
+  };
+  facade.moveCharacterToGroup = async (characterId, groupId) => {
+    calls.push(`move:${characterId}:${groupId ?? 'none'}`);
+    return { characters: [], groups: [], hiddenCount: 0, totalCount: 0 };
+  };
+  facade.deleteCharacterGroup = async id => {
+    calls.push(`delete:${id}`);
+    return { characters: [], groups: [], hiddenCount: 0, totalCount: 0 };
+  };
+  const client = new WorkbenchUiClient(
+    { [WORKBENCH_GLOBAL]: facade },
+    new EventTarget(),
+  );
+  await client.createCharacterGroup('重点溯源');
+  await client.renameCharacterGroup('group-1', '墟境关联');
+  await client.moveCharacterToGroup('维奥莱塔', 'group-1');
+  await client.moveCharacterToGroup('维奥莱塔', null);
+  await client.deleteCharacterGroup('group-1');
+  assert.deepEqual(calls, [
+    'create:重点溯源',
+    'rename:group-1:墟境关联',
+    'move:维奥莱塔:group-1',
+    'move:维奥莱塔:none',
+    'delete:group-1',
+  ]);
 });

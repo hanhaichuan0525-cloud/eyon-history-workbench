@@ -200,7 +200,7 @@ async function bootstrap(): Promise<void> {
   );
 
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.8.0',
+    version: '0.9.0',
     getSettings: () => settings.read(),
     updateSettings: patch => settings.update(patch),
     setGenerationSettings: (taskType, next) =>
@@ -223,6 +223,31 @@ async function bootstrap(): Promise<void> {
     syncCharacters: async () => {
       const catalog = await characterCatalog.sync();
       emitStatus('characters_changed', '已重新同步当前MVU人物');
+      return catalog;
+    },
+    createCharacterGroup: async name => {
+      const catalog = await characterCatalog.createGroup(name);
+      emitStatus('characters_changed', `已新建自定义组别：${name.trim()}`);
+      return catalog;
+    },
+    renameCharacterGroup: async (groupId, name) => {
+      const catalog = await characterCatalog.renameGroup(groupId, name);
+      emitStatus('characters_changed', `已重命名自定义组别：${name.trim()}`);
+      return catalog;
+    },
+    deleteCharacterGroup: async groupId => {
+      const catalog = await characterCatalog.deleteGroup(groupId);
+      emitStatus('characters_changed', '已删除自定义组别');
+      return catalog;
+    },
+    moveCharacterToGroup: async (characterId, groupId) => {
+      const catalog = await characterCatalog.moveCharacter(characterId, groupId);
+      emitStatus(
+        'characters_changed',
+        groupId === null
+          ? `已取消人物归类：${characterId.trim()}`
+          : `已更新人物归类：${characterId.trim()}`,
+      );
       return catalog;
     },
     enterRuin: (recordKey, candidateId, nodeId) =>

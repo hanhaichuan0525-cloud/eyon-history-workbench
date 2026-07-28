@@ -11,7 +11,15 @@ export interface CharacterVisibilityRecord {
   key: string;
   namespace: WorkbenchNamespace;
   hiddenCharacterIds: string[];
+  groups?: CharacterGroupRecord[];
   updatedAt: number;
+}
+
+export interface CharacterGroupRecord {
+  id: string;
+  name: string;
+  characterIds: string[];
+  order: number;
 }
 
 export interface CharacterVisibilityRepository {

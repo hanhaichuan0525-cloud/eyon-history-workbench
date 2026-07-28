@@ -99,3 +99,100 @@ test('人物目录修改期间切换聊天会拒绝落库', async () => {
   assert.equal(await repository.get(chatA), null);
   assert.equal(await repository.get(chatB), null);
 });
+
+test('custom groups support create, rename, and single-group assignment', async () => {
+  const repository = new MemoryCharacterVisibilityRepository();
+  const ids = ['a', 'b'];
+  const service = new CharacterCatalogService(
+    sources(),
+    repository,
+    () => chatA,
+    () => 100,
+    () => ids.shift() ?? 'fallback',
+  );
+
+  let catalog = await service.createGroup('重点溯源');
+  assert.deepEqual(catalog.groups, [{
+    id: 'group-a',
+    name: '重点溯源',
+    characterIds: [],
+    order: 0,
+  }]);
+  catalog = await service.createGroup('墟境关联');
+  catalog = await service.moveCharacter('维奥莱塔', 'group-a');
+  catalog = await service.moveCharacter('维奥莱塔', 'group-b');
+  assert.deepEqual(catalog.groups.map(group => group.characterIds), [
+    [],
+    ['维奥莱塔'],
+  ]);
+
+  catalog = await service.renameGroup('group-b', '王庭档案');
+  assert.equal(catalog.groups[1]?.name, '王庭档案');
+});
+
+test('deleting a group only unassigns characters, while sync preserves groups', async () => {
+  const repository = new MemoryCharacterVisibilityRepository();
+  const service = new CharacterCatalogService(
+    sources(),
+    repository,
+    () => chatA,
+    () => 100,
+    () => 'stable',
+  );
+
+  await service.createGroup('重点溯源');
+  await service.moveCharacter('伊伽', 'group-stable');
+  await service.hide('伊伽');
+  const synced = await service.sync();
+  assert.deepEqual(synced.characters.map(character => character.id), [
+    '维奥莱塔',
+    '伊伽',
+  ]);
+  assert.deepEqual(synced.groups[0]?.characterIds, ['伊伽']);
+
+  const deleted = await service.deleteGroup('group-stable');
+  assert.deepEqual(deleted.groups, []);
+  assert.deepEqual(deleted.characters.map(character => character.id), [
+    '维奥莱塔',
+    '伊伽',
+  ]);
+});
+
+test('custom groups reject empty names, duplicate names, and unknown characters', async () => {
+  const service = new CharacterCatalogService(
+    sources(),
+    new MemoryCharacterVisibilityRepository(),
+    () => chatA,
+    Date.now,
+    () => 'stable',
+  );
+  assert.throws(() => service.createGroup('  '), /组别名称不能为空/u);
+  await service.createGroup('重点溯源');
+  await assert.rejects(() => service.createGroup('重点溯源'), /同名组别/u);
+  await assert.rejects(
+    () => service.moveCharacter('不存在的人物', 'group-stable'),
+    /没有这个人物/u,
+  );
+});
+
+test('custom groups are isolated by character card and chat', async () => {
+  const repository = new MemoryCharacterVisibilityRepository();
+  let namespace = chatA;
+  const service = new CharacterCatalogService(
+    sources(),
+    repository,
+    () => namespace,
+    () => 100,
+    () => namespace.chatId,
+  );
+
+  await service.createGroup('存档一组别');
+  namespace = chatB;
+  assert.deepEqual((await service.getCatalog()).groups, []);
+  await service.createGroup('存档二组别');
+  namespace = chatA;
+  assert.deepEqual(
+    (await service.getCatalog()).groups.map(group => group.name),
+    ['存档一组别'],
+  );
+});

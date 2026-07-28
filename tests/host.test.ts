@@ -206,6 +206,21 @@ test('脚本设置保留其他脚本变量，并为四个生成模块提供默�
     },
   });
   assert.deepEqual(await settings.get('ruin'), { mode: 'follow_tavern' });
+  settings.setGeneration('ruin', {
+    mode: 'custom',
+    custom: {
+      apiurl: 'https://example.com/v1',
+      key: 'secret',
+      model: 'model-a',
+      source: 'openai',
+      maxTokens: 4096,
+      temperature: 0.7,
+    },
+  });
+  assert.deepEqual(await settings.get('genealogy'), { mode: 'follow_tavern' });
+  assert.equal((await settings.get('ruin')).mode, 'custom');
+  settings.applyGenerationToAll({ mode: 'follow_tavern' });
+  assert.deepEqual(await settings.get('butterfly'), { mode: 'follow_tavern' });
   settings.update({ ruinDraft: null });
   assert.equal(variables.unrelated, 7);
   assert.ok('eyonHistoryWorkbench' in variables);

@@ -18,6 +18,15 @@ const TaskSettingsSchema = z.object({
   butterfly: GenerationSettingsSchema.default({ mode: 'follow_tavern' }),
 });
 
+export const GENERATION_TASK_TYPES = [
+  'genealogy',
+  'ruin',
+  'biography',
+  'butterfly',
+] as const;
+
+export type GenerationTaskType = typeof GENERATION_TASK_TYPES[number];
+
 export const WorkbenchSettingsSchema = z.object({
   schemaVersion: z.literal(1).default(1),
   generation: TaskSettingsSchema.default({
@@ -79,9 +88,38 @@ implements GenerationSettingsProvider, RuinGenerationInputProvider {
   }
 
   async get(
-    taskType: 'genealogy' | 'ruin' | 'biography' | 'butterfly',
+    taskType: GenerationTaskType,
   ): Promise<GenerationSettings> {
     return this.read().generation[taskType];
+  }
+
+  setGeneration(
+    taskType: GenerationTaskType,
+    next: GenerationSettings,
+  ): WorkbenchSettings {
+    const parsed = GenerationSettingsSchema.parse(next);
+    const current = this.read();
+    return this.write({
+      ...current,
+      generation: {
+        ...current.generation,
+        [taskType]: parsed,
+      },
+    });
+  }
+
+  applyGenerationToAll(next: GenerationSettings): WorkbenchSettings {
+    const parsed = GenerationSettingsSchema.parse(next);
+    const current = this.read();
+    return this.write({
+      ...current,
+      generation: {
+        genealogy: structuredClone(parsed),
+        ruin: structuredClone(parsed),
+        biography: structuredClone(parsed),
+        butterfly: structuredClone(parsed),
+      },
+    });
   }
 
   async getInput(_command: WorkbenchCommand): Promise<RuinGenerationInput> {

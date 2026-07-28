@@ -39,7 +39,6 @@ import { createGlobalTavernRuntime } from './runtime/tavernRuntimeAdapter.ts';
 import { TavernScopeReader } from './runtime/tavernScope.ts';
 import {
   ScriptWorkbenchSettings,
-  type WorkbenchSettings,
 } from './runtime/workbenchSettings.ts';
 import { WorkbenchLifecycle } from './runtime/workbenchLifecycle.ts';
 import { IndexedDbBiographyRepository } from './storage/indexedDbBiographies.ts';
@@ -52,38 +51,18 @@ import {
   type RuinCandidateRecord,
 } from './storage/ruins.ts';
 import type { RuinGenerationInput } from './schemas/ruin.ts';
-import type { GenealogyGenerationInput } from './schemas/genealogy.ts';
 import { BiographyWorkflow } from './workflows/biography.ts';
 import { RuinWorkflow } from './workflows/ruin.ts';
 import { RuinEntryWorkflow } from './workflows/ruinEntry.ts';
 import { GenealogyWorkflow } from './workflows/genealogy.ts';
 import { ButterflyWorkflow } from './workflows/butterfly.ts';
 import { IndexedDbButterflyRepository } from './storage/butterflies.ts';
-
-const GLOBAL_FACADE = 'EyonHistoryWorkbench';
-const STATUS_EVENT = 'eyon-history-workbench:status';
-const READY_EVENT = 'eyon-history-workbench:ready';
-
-export interface EyonHistoryWorkbenchFacade {
-  version: string;
-  getSettings(): WorkbenchSettings;
-  updateSettings(patch: Partial<WorkbenchSettings>): WorkbenchSettings;
-  setRuinDraft(input: RuinGenerationInput | null): WorkbenchSettings;
-  generateGenealogy(input: GenealogyGenerationInput): Promise<GenealogyRecord>;
-  listGenealogies(): Promise<GenealogyRecord[]>;
-  generateRuin(input: RuinGenerationInput): Promise<RuinCandidateRecord>;
-  listRuins(): Promise<RuinCandidateRecord[]>;
-  listBiographies(): Promise<unknown[]>;
-  listButterflies(): Promise<unknown[]>;
-  enterRuin(
-    recordKey: string,
-    candidateId: string,
-    nodeId: string,
-  ): Promise<unknown>;
-  returnRuin(): Promise<unknown>;
-  retryButterfly(runId: string): Promise<unknown>;
-  dispose(): void;
-}
+import {
+  WORKBENCH_GLOBAL,
+  WORKBENCH_READY_EVENT,
+  WORKBENCH_STATUS_EVENT,
+  type EyonHistoryWorkbenchFacade,
+} from './runtime/facade.ts';
 
 let disposeCurrent: (() => void) | null = null;
 
@@ -210,9 +189,13 @@ async function bootstrap(): Promise<void> {
     globalObject,
   );
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.7.0',
+    version: '0.7.1',
     getSettings: () => settings.read(),
     updateSettings: patch => settings.update(patch),
+    setGenerationSettings: (taskType, next) =>
+      settings.setGeneration(taskType, next),
+    applyGenerationSettingsToAll: next =>
+      settings.applyGenerationToAll(next),
     setRuinDraft: input => settings.update({ ruinDraft: input }),
     generateRuin: input => ruinController.generateFromPanel(input),
     generateGenealogy: input => genealogyController.generateFromPanel(input),
@@ -226,14 +209,14 @@ async function bootstrap(): Promise<void> {
     retryButterfly: runId => butterflyController.retry(runId),
     dispose() {
       registration.dispose();
-      if (globalObject[GLOBAL_FACADE] === facade) {
-        delete globalObject[GLOBAL_FACADE];
+      if (globalObject[WORKBENCH_GLOBAL] === facade) {
+        delete globalObject[WORKBENCH_GLOBAL];
       }
     },
   };
-  globalObject[GLOBAL_FACADE] = facade;
+  globalObject[WORKBENCH_GLOBAL] = facade;
   disposeCurrent = () => facade.dispose();
-  globalThis.dispatchEvent(new CustomEvent(READY_EVENT, { detail: facade }));
+  globalThis.dispatchEvent(new CustomEvent(WORKBENCH_READY_EVENT, { detail: facade }));
   emitStatus('ready', '伊雍历史工作台已就绪');
 }
 
@@ -252,7 +235,7 @@ function latestVisibleUserMessageId(
 }
 
 function emitStatus(status: string, detail?: string): void {
-  globalThis.dispatchEvent(new CustomEvent(STATUS_EVENT, {
+  globalThis.dispatchEvent(new CustomEvent(WORKBENCH_STATUS_EVENT, {
     detail: { status, detail: detail ?? '' },
   }));
 }

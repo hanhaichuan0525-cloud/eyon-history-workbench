@@ -154,6 +154,78 @@ export function mountCharacterViewer(
         if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
       });
     });
+    root.querySelectorAll<HTMLElement>('[data-drag-handle]').forEach(handle => {
+      handle.addEventListener('pointerdown', event => {
+        if (event.button !== 0 || state.busy) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const characterId = handle.dataset.dragHandle?.trim();
+        const card = handle.closest<HTMLElement>('[data-character-id]');
+        if (!characterId || !card) return;
+        const startX = event.clientX;
+        const startY = event.clientY;
+        let dragging = false;
+
+        const clearDragState = () => {
+          card.classList.remove('pointer-dragging');
+          root.querySelectorAll<HTMLElement>('[data-drop-group]').forEach(target => {
+            target.classList.remove('drag-ready', 'drag-over');
+          });
+        };
+        const findDropTarget = (clientX: number, clientY: number) =>
+          root.elementFromPoint(clientX, clientY)
+            ?.closest<HTMLElement>('[data-drop-group]') ?? null;
+        const onPointerMove = (moveEvent: PointerEvent) => {
+          if (
+            !dragging
+            && Math.hypot(
+              moveEvent.clientX - startX,
+              moveEvent.clientY - startY,
+            ) < 7
+          ) {
+            return;
+          }
+          if (!dragging) {
+            dragging = true;
+            card.classList.add('pointer-dragging');
+            root.querySelectorAll<HTMLElement>('[data-drop-group]')
+              .forEach(target => target.classList.add('drag-ready'));
+          }
+          root.querySelectorAll<HTMLElement>('.drag-over')
+            .forEach(target => target.classList.remove('drag-over'));
+          findDropTarget(moveEvent.clientX, moveEvent.clientY)
+            ?.classList.add('drag-over');
+        };
+        const onPointerEnd = (endEvent: PointerEvent) => {
+          handle.removeEventListener('pointermove', onPointerMove);
+          handle.removeEventListener('pointerup', onPointerEnd);
+          handle.removeEventListener('pointercancel', onPointerCancel);
+          const target = dragging
+            ? findDropTarget(endEvent.clientX, endEvent.clientY)
+            : null;
+          clearDragState();
+          if (!target) return;
+          const groupId = target.dataset.dropGroup || null;
+          state.selectedCharacterId = characterId;
+          state.activeGroupId = groupId;
+          void run(
+            () => client.moveCharacterToGroup(characterId, groupId),
+            groupId ? '人物归类已更新' : '人物已移出自定义组',
+          );
+        };
+        const onPointerCancel = () => {
+          handle.removeEventListener('pointermove', onPointerMove);
+          handle.removeEventListener('pointerup', onPointerEnd);
+          handle.removeEventListener('pointercancel', onPointerCancel);
+          clearDragState();
+        };
+
+        handle.setPointerCapture(event.pointerId);
+        handle.addEventListener('pointermove', onPointerMove);
+        handle.addEventListener('pointerup', onPointerEnd);
+        handle.addEventListener('pointercancel', onPointerCancel);
+      });
+    });
     root.querySelectorAll<HTMLElement>('[data-drop-group]').forEach(element => {
       element.addEventListener('dragover', event => {
         event.preventDefault();
@@ -285,7 +357,7 @@ function renderViewer(state: ViewerState, theme: 'dark' | 'light'): string {
         <header class="topbar">
           <div class="heading">
             <h2>人物查看</h2>
-            <p>读取当前聊天的MVU人物；隐藏与自定义组别仅保存在本地</p>
+            <p>当前聊天人物档案与本地分类</p>
           </div>
           <button class="sync-button" data-sync ${state.busy ? 'disabled' : ''}>
             ${state.busy ? '读取中' : `同步变量${catalog?.hiddenCount ? ` · 恢复${catalog.hiddenCount}` : ''}`}
@@ -308,10 +380,44 @@ function renderViewer(state: ViewerState, theme: 'dark' | 'light'): string {
             <option value="no" ${state.contract === 'no' ? 'selected' : ''}>未缔约</option>
           </select>
         </div>
-        <div class="workbench">
-          <aside class="index">
+        <section class="group-workspace" aria-label="人物分类工作区">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">分类工作区</span>
+              <h3>自定义组别</h3>
+            </div>
+            <span class="section-count">${groups.length} 个组别 · 当前聊天本地保存</span>
+          </div>
+          <form class="group-create" data-create-group>
+            <input name="group-name" maxlength="24" placeholder="新组别名称" aria-label="新组别名称">
+            <button type="submit" title="新建组别" aria-label="新建组别" ${state.busy ? 'disabled' : ''}>＋</button>
+          </form>
+          <div class="group-rail">
+            <button
+              class="group-filter-card all-group ${state.activeGroupId === undefined ? 'active' : ''}"
+              data-filter-group="all"
+            >
+              <span>全部人物</span>
+              <strong>${characters.length}</strong>
+            </button>
+            <button
+              class="group-filter-card unassigned-group ${state.activeGroupId === null ? 'active' : ''}"
+              data-filter-group=""
+              data-drop-group=""
+            >
+              <span>未归类</span>
+              <strong>${countUnassigned(characters, groups)}</strong>
+            </button>
+            ${groups.map(group => renderGroup(group, characters, state.activeGroupId)).join('')}
+          </div>
+        </section>
+        <div class="content-workspace">
+          <aside class="index" aria-label="人物索引">
             <div class="panel-head">
-              <strong>MVU人物</strong>
+              <div>
+                <span class="panel-kicker">人物索引</span>
+                <strong>${renderActiveGroupName(state.activeGroupId, groups)}</strong>
+              </div>
               <span>${visibleCharacters.length} / ${catalog?.totalCount ?? 0}</span>
             </div>
             <div class="character-list">
@@ -319,39 +425,16 @@ function renderViewer(state: ViewerState, theme: 'dark' | 'light'): string {
                 ? visibleCharacters.map(character =>
                   renderCharacterCard(character, character.id === state.selectedCharacterId),
                 ).join('')
-                : '<div class="empty">当前筛选下没有人物</div>'}
+                : '<div class="empty">当前分类中没有人物</div>'}
             </div>
           </aside>
-          <article class="detail">
+          <article class="detail" aria-label="人物档案">
             ${selected ? renderCharacterDetail(selected, groups) : `
               <div class="detail-empty">
-                <p>${state.busy ? '正在读取当前聊天的人物资料' : '选择一名人物查看完整MVU字段'}</p>
+                <p>${state.busy ? '正在读取当前聊天的人物资料' : '从人物索引选择一名人物'}</p>
               </div>
             `}
           </article>
-          <aside class="groups">
-            <div class="panel-head">
-              <strong>自定义组别</strong>
-              <span>当前聊天本地保存</span>
-            </div>
-            <form class="group-create" data-create-group>
-              <input name="group-name" maxlength="24" placeholder="新组别名称" aria-label="新组别名称">
-              <button type="submit" title="新建组别" ${state.busy ? 'disabled' : ''}>＋</button>
-            </form>
-            <div class="group-list">
-              <button class="all-group ${state.activeGroupId === undefined ? 'active' : ''}" data-filter-group="all">
-                全部人物 · ${characters.length}
-              </button>
-              <button
-                class="unassigned-group ${state.activeGroupId === null ? 'active' : ''}"
-                data-filter-group=""
-                data-drop-group=""
-              >
-                未归类 · ${countUnassigned(characters, groups)}
-              </button>
-              ${groups.map(group => renderGroup(group, characters, state.activeGroupId)).join('')}
-            </div>
-          </aside>
         </div>
       </section>
       <div class="status" data-status role="status" aria-live="polite"></div>
@@ -367,8 +450,6 @@ function renderCharacterCard(
   const summary = [
     readString(data, '种族'),
     readArray(data, '身份')[0],
-    readString(data, '生命层级'),
-    readNumber(data, '等级') !== null ? `Lv.${readNumber(data, '等级')}` : '',
   ].filter(Boolean).join(' · ');
   return `
     <button
@@ -380,8 +461,17 @@ function renderCharacterCard(
       <span class="character-copy">
         <strong>${escapeHtml(character.name)}</strong>
         <small>${escapeHtml(summary || 'MVU人物资料')}</small>
+        <span class="character-meta">
+          ${escapeHtml(readString(data, '生命层级') || '层级未知')}
+          ${readNumber(data, '等级') !== null ? ` · Lv.${readNumber(data, '等级')}` : ''}
+        </span>
       </span>
       <span class="presence ${readBoolean(data, '在场') ? 'on' : ''}" title="${readBoolean(data, '在场') ? '在场' : '不在场'}"></span>
+      <span
+        class="drag-handle"
+        data-drag-handle="${escapeAttribute(character.id)}"
+        aria-hidden="true"
+      >⋮⋮</span>
     </button>
   `;
 }
@@ -401,17 +491,25 @@ function renderCharacterDetail(
     readBoolean(data, '命定契约') ? '命定契约' : '未缔约',
   ].filter(Boolean);
   const sections: Array<[string, string, boolean?]> = [
-    ['性格', readString(data, '性格')],
-    ['喜爱', readString(data, '喜爱')],
-    ['外貌', readString(data, '外貌')],
-    ['着装', readString(data, '着装')],
-    ['心里话', readString(data, '心里话'), true],
-    ['背景故事', readString(data, '背景故事'), true],
+    ['性格与喜好', joinRecords(
+      ['性格', readString(data, '性格')],
+      ['喜爱', readString(data, '喜爱')],
+    ), true],
+    ['外观记录', joinRecords(
+      ['外貌', readString(data, '外貌')],
+      ['着装', readString(data, '着装')],
+    )],
+    ['心里话', readString(data, '心里话')],
+    ['背景故事', readString(data, '背景故事')],
   ];
   const assignedGroupId = groups.find(group =>
     group.characterIds.includes(character.id)
   )?.id ?? '';
   return `
+    <div class="detail-label">
+      <span>人物档案</span>
+      <span>${readBoolean(data, '在场') ? '当前在场' : '当前不在场'}</span>
+    </div>
     <header class="detail-head">
       <div class="detail-avatar">${escapeHtml(character.name.slice(0, 1))}</div>
       <div class="detail-title">
@@ -421,7 +519,7 @@ function renderCharacterDetail(
       </div>
       <div class="detail-actions">
         <label class="assignment">
-          <span>所属组别</span>
+          <span>所属分类</span>
           <select data-assign-selected aria-label="所属组别">
             <option value="" ${assignedGroupId ? '' : 'selected'}>未归类</option>
             ${groups.map(group => `
@@ -434,15 +532,15 @@ function renderCharacterDetail(
             `).join('')}
           </select>
         </label>
-        <button class="text-button" data-hide-selected title="仅从当前界面隐藏，不修改MVU">隐藏人物</button>
+        <button class="text-button" data-hide-selected title="仅从当前界面隐藏，不修改MVU">隐藏</button>
       </div>
     </header>
     <div class="detail-sections">
-      ${sections.map(([title, content, wide]) => `
-        <section class="detail-section ${wide ? 'wide' : ''}">
-          <h4>${escapeHtml(title)}</h4>
+      ${sections.map(([title, content, expanded]) => `
+        <details class="detail-section" ${expanded ? 'open' : ''}>
+          <summary>${escapeHtml(title)}</summary>
           <p>${escapeHtml(content || '暂无记录')}</p>
-        </section>
+        </details>
       `).join('')}
     </div>
   `;
@@ -462,8 +560,10 @@ function renderGroup(
       data-drop-group="${escapeAttribute(group.id)}"
     >
       <div class="group-head">
-        <button data-filter-group="${escapeAttribute(group.id)}" title="筛选此组">${escapeHtml(group.name)}</button>
-        <span>${members.length}人</span>
+        <button data-filter-group="${escapeAttribute(group.id)}" title="查看此组">
+          <span>${escapeHtml(group.name)}</span>
+          <strong>${members.length}</strong>
+        </button>
         <button class="group-tool" data-rename-group="${escapeAttribute(group.id)}" title="重命名组别">✎</button>
         <button class="group-tool" data-delete-group="${escapeAttribute(group.id)}" title="删除组别">×</button>
       </div>
@@ -471,13 +571,32 @@ function renderGroup(
         ${members.length
           ? members.map(member => `
             <button class="member" data-character-id="${escapeAttribute(member.id)}" draggable="true">
+              <span>${escapeHtml(member.name.slice(0, 1))}</span>
               ${escapeHtml(member.name)}
             </button>
           `).join('')
-          : '<span class="group-empty">拖入人物建立分类</span>'}
+          : '<span class="group-empty">＋</span>'}
       </div>
     </section>
   `;
+}
+
+function renderActiveGroupName(
+  activeGroupId: string | null | undefined,
+  groups: WorkbenchCharacterGroup[],
+): string {
+  if (activeGroupId === undefined) return '全部人物';
+  if (activeGroupId === null) return '未归类';
+  return escapeHtml(
+    groups.find(group => group.id === activeGroupId)?.name ?? '自定义组别',
+  );
+}
+
+function joinRecords(...records: Array<[string, string]>): string {
+  return records
+    .filter(([, content]) => Boolean(content))
+    .map(([title, content]) => `${title}：${content}`)
+    .join('\n\n');
 }
 
 function filterCharacters(

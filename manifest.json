@@ -12,7 +12,7 @@
   "style": "",
   "publishedAt": "2026-07-28",
   "sha256": "87ae9879b0e59fc81ff81471b7bd29cd637fb15f9cd41c76704ee1a1cd69cdb7",
-  "characterViewerSha256": "72b5cf9f51a9f2a86476c4f70e63cbe10099a30d3aa91430ee38842d03d418c7",
+  "characterViewerSha256": "1df110abc546e7935c6d313faba1552eff50c2832ba347a23a283c769755966f",
   "notes": [
     "内测版新增正式人物查看器构建入口：直接读取当前聊天MVU人物，并以完整字段展示人物资料",
     "自定义组别成为人物查看器核心工作区；支持拖放与所属组别选择器，触屏和键盘操作不依赖拖拽",

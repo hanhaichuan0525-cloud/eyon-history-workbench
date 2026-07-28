@@ -1,5 +1,8 @@
 node_modules/
 dist/
+!dist/
+dist/*
+!dist/index.js
 .vite/
 coverage/
 .env

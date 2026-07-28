@@ -4,9 +4,11 @@ import validationContract from '../../rules/05_生成结果校验与失败恢复
 import ruinGenerationContract from '../../rules/11_墟境历史期生成规则-API.txt?raw';
 import biographyGenerationContract from '../../rules/13_寻根溯源生成规则-API.txt?raw';
 import genealogyGenerationContract from '../../rules/09_宗族谱系生成规则-API.txt?raw';
+import butterflyGenerationContract from '../../rules/15_蝴蝶效应生成规则-API.txt?raw';
 import type { BiographyRuleSet } from '../prompts/biography.ts';
 import type { RuinRuleSet } from '../prompts/ruin.ts';
 import type { GenealogyRuleSet } from '../prompts/genealogy.ts';
+import type { ButterflyRuleSet } from '../prompts/butterfly.ts';
 
 export const embeddedBiographyRules: BiographyRuleSet = {
   sharedContext,
@@ -27,4 +29,11 @@ export const embeddedGenealogyRules: GenealogyRuleSet = {
   retrievalContract,
   validationContract,
   generationContract: genealogyGenerationContract,
+};
+
+export const embeddedButterflyRules: ButterflyRuleSet = {
+  sharedContext,
+  retrievalContract,
+  validationContract,
+  generationContract: butterflyGenerationContract,
 };

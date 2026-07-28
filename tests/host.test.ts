@@ -75,6 +75,69 @@ test('宿主快照只读取墟境系统根变量，并在探索时保留现实�
   });
 });
 
+test('蝴蝶冻结拒绝用旧归档轮次或旧快照冒充当前活动轮次', async () => {
+  const host = new TavernWorkbenchHost(runtime(), bindings({
+    getChatVariables: () => ({
+      stat_data: {
+        墟境系统: {
+          运行状态: {
+            墟境流程状态: 'returning',
+            墟境轮次: '',
+            归档轮次: 'run-old',
+            归档现实时间: '旧现实时间',
+            归档现实地点: '旧现实地点',
+            归档墟境进入时间: '旧进入时间',
+            归档墟境进入地点: '旧进入地点',
+            归档墟境离开时间: '旧离开时间',
+            归档墟境离开地点: '旧离开地点',
+          },
+          虚嗣指南快照: {
+            runId: 'run-old',
+            lockedRealTime: '旧现实时间',
+            lockedRealLocation: '旧现实地点',
+            entryRuinTime: '旧进入时间',
+            entryRuinLocation: '旧进入地点',
+            exitRuinTime: '旧离开时间',
+            exitRuinLocation: '旧离开地点',
+          },
+        },
+      },
+    }),
+  }));
+  await assert.rejects(
+    () => host.getButterflyFreezeSnapshot(),
+    /缺少完整/u,
+  );
+});
+
+test('蝴蝶提交严格核对相邻楼、最新楼与当前 swipe', async () => {
+  const messages = [
+    { message_id: 9, role: 'user' as const, message: '遣返' },
+    { message_id: 10, role: 'assistant' as const, message: '返回现实' },
+  ];
+  const host = new TavernWorkbenchHost({
+    ...runtime(messages),
+    getMessageSwipeId: () => 2,
+  }, bindings());
+  await host.assertButterflyTarget({
+    requestId: 'request-1',
+    userMessageId: 9,
+    assistantMessageId: 10,
+    assistantSwipeId: 2,
+    rawCommand: '遣返',
+  });
+  await assert.rejects(
+    () => host.assertButterflyTarget({
+      requestId: 'request-1',
+      userMessageId: 9,
+      assistantMessageId: 10,
+      assistantSwipeId: 1,
+      rawCommand: '遣返',
+    }),
+    /身份已经变化/u,
+  );
+});
+
 test('资料源只读取当前绑定且启用的世界书条目', async () => {
   const requested: string[] = [];
   const sources = new TavernContextSourceProvider(

@@ -1,4 +1,6 @@
 import { BiographyController } from './runtime/biographyController.ts';
+import { ButterflyController } from './runtime/butterflyController.ts';
+import { TavernButterflyContextAssembler } from './runtime/butterflyContext.ts';
 import { TavernBiographyContextAssembler } from './runtime/biographyContext.ts';
 import {
   createGlobalDataBindings,
@@ -22,6 +24,7 @@ import { TavernGenealogyInputProvider } from './runtime/genealogyInput.ts';
 import {
   embeddedBiographyRules,
   embeddedGenealogyRules,
+  embeddedButterflyRules,
   embeddedRuinRules,
 } from './runtime/ruleBundle.ts';
 import { TavernBiographyShellAdapter } from './runtime/tavernBiographyShell.ts';
@@ -29,6 +32,7 @@ import { TavernGenerationAdapter } from './runtime/tavernGeneration.ts';
 import {
   SerializedTavernUserTurnAdapter,
   TavernContextSourceProvider,
+  TavernButterflyArchiveAdapter,
   TavernWorkbenchHost,
 } from './runtime/tavernHost.ts';
 import { createGlobalTavernRuntime } from './runtime/tavernRuntimeAdapter.ts';
@@ -53,6 +57,8 @@ import { BiographyWorkflow } from './workflows/biography.ts';
 import { RuinWorkflow } from './workflows/ruin.ts';
 import { RuinEntryWorkflow } from './workflows/ruinEntry.ts';
 import { GenealogyWorkflow } from './workflows/genealogy.ts';
+import { ButterflyWorkflow } from './workflows/butterfly.ts';
+import { IndexedDbButterflyRepository } from './storage/butterflies.ts';
 
 const GLOBAL_FACADE = 'EyonHistoryWorkbench';
 const STATUS_EVENT = 'eyon-history-workbench:status';
@@ -68,11 +74,14 @@ export interface EyonHistoryWorkbenchFacade {
   generateRuin(input: RuinGenerationInput): Promise<RuinCandidateRecord>;
   listRuins(): Promise<RuinCandidateRecord[]>;
   listBiographies(): Promise<unknown[]>;
+  listButterflies(): Promise<unknown[]>;
   enterRuin(
     recordKey: string,
     candidateId: string,
     nodeId: string,
   ): Promise<unknown>;
+  returnRuin(): Promise<unknown>;
+  retryButterfly(runId: string): Promise<unknown>;
   dispose(): void;
 }
 
@@ -89,6 +98,7 @@ async function bootstrap(): Promise<void> {
   const biographies = new IndexedDbBiographyRepository();
   const genealogies = new IndexedDbGenealogyRepository();
   const ruins = new IndexedDbRuinCandidateRepository();
+  const butterflies = new IndexedDbButterflyRepository();
   const host = new TavernWorkbenchHost(runtime, dataBindings);
   const sources = new TavernContextSourceProvider(
     dataBindings,
@@ -153,17 +163,43 @@ async function bootstrap(): Promise<void> {
     { onStatus: emitStatus },
     genealogyGuard,
   );
+  const userTurns = new SerializedTavernUserTurnAdapter(runtime, dataBindings);
   const ruinEntry = new RuinEntryWorkflow({
     repository: ruins,
     host,
-    userTurns: new SerializedTavernUserTurnAdapter(runtime, dataBindings),
+    userTurns,
   });
+  const butterflyContext = new TavernButterflyContextAssembler(
+    runtime,
+    sources,
+    host,
+  );
+  const butterflyWorkflow = new ButterflyWorkflow({
+    generator,
+    repository: butterflies,
+    host,
+    archive: new TavernButterflyArchiveAdapter(dataBindings),
+    rules: embeddedButterflyRules,
+    now: Date.now,
+  });
+  const butterflyController = new ButterflyController({
+    assembler: butterflyContext,
+    workflow: butterflyWorkflow,
+    repository: butterflies,
+    runtime,
+    createRequestId: () => crypto.randomUUID(),
+    roll: () => crypto.getRandomValues(new Uint32Array(1))[0] % 100 + 1,
+    now: Date.now,
+    hooks: { onStatus: emitStatus },
+  });
+  await butterflyController.activateCurrentNamespace();
   const lifecycle = new WorkbenchLifecycle({
     biography: biographyController,
     ruin: ruinController,
     ruinInputProvider: settings,
     genealogy: genealogyController,
     genealogyInputProvider: new TavernGenealogyInputProvider(sources, settings),
+    butterfly: butterflyController,
     runtime,
   });
   const events = createGlobalEventBridge(globalObject);
@@ -174,7 +210,7 @@ async function bootstrap(): Promise<void> {
     globalObject,
   );
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.6.0',
+    version: '0.7.0',
     getSettings: () => settings.read(),
     updateSettings: patch => settings.update(patch),
     setRuinDraft: input => settings.update({ ruinDraft: input }),
@@ -183,8 +219,11 @@ async function bootstrap(): Promise<void> {
     listGenealogies: async () => genealogies.list(scopeReader.getNamespace()),
     listRuins: async () => ruins.list(scopeReader.getNamespace()),
     listBiographies: async () => biographies.list(scopeReader.getNamespace()),
+    listButterflies: async () => butterflies.list(scopeReader.getNamespace()),
     enterRuin: (recordKey, candidateId, nodeId) =>
       ruinEntry.enter(recordKey, candidateId, nodeId),
+    returnRuin: () => userTurns.sendUserTurn('遣返'),
+    retryButterfly: runId => butterflyController.retry(runId),
     dispose() {
       registration.dispose();
       if (globalObject[GLOBAL_FACADE] === facade) {

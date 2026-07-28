@@ -27,6 +27,30 @@ export function createGlobalDataBindings(
   const getWorldbook = requireFunction<
     (name: string) => Promise<HostWorldbookEntry[]>
   >(globalObject.getWorldbook, 'getWorldbook');
+  const getWorldbookNames = requireFunction<() => string[]>(
+    globalObject.getWorldbookNames,
+    'getWorldbookNames',
+  );
+  const createWorldbook = requireFunction<
+    (name: string, entries?: HostWorldbookEntry[]) => Promise<boolean>
+  >(globalObject.createWorldbook, 'createWorldbook');
+  const rebindGlobalWorldbooks = requireFunction<
+    (names: string[]) => Promise<void>
+  >(globalObject.rebindGlobalWorldbooks, 'rebindGlobalWorldbooks');
+  const createWorldbookEntries = requireFunction<
+    (
+      name: string,
+      entries: Array<Partial<HostWorldbookEntry>>,
+      options?: { render?: 'debounced' | 'immediate' },
+    ) => Promise<{ new_entries: HostWorldbookEntry[] }>
+  >(globalObject.createWorldbookEntries, 'createWorldbookEntries');
+  const updateWorldbookWith = requireFunction<
+    (
+      name: string,
+      updater: (entries: HostWorldbookEntry[]) => HostWorldbookEntry[],
+      options?: { render?: 'debounced' | 'immediate' },
+    ) => Promise<HostWorldbookEntry[]>
+  >(globalObject.updateWorldbookWith, 'updateWorldbookWith');
   const createChatMessages = requireFunction<
     (
       messages: Array<{ role: 'user'; message: string }>,
@@ -44,6 +68,15 @@ export function createGlobalDataBindings(
     getChatWorldbookName: () => getChatWorldbookName('current'),
     getGlobalWorldbookNames,
     getWorldbook,
+    getWorldbookNames,
+    createWorldbook: async name => {
+      await createWorldbook(name, []);
+    },
+    rebindGlobalWorldbooks,
+    createWorldbookEntries: (name, entries) =>
+      createWorldbookEntries(name, entries, { render: 'debounced' }),
+    updateWorldbookWith: (name, updater) =>
+      updateWorldbookWith(name, updater, { render: 'debounced' }),
     createUserMessage: text =>
       createChatMessages(
         [{ role: 'user', message: text }],

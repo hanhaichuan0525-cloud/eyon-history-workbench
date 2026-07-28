@@ -19,6 +19,18 @@ export interface WorkbenchStatusDetail {
   detail: string;
 }
 
+export interface WorkbenchCharacter {
+  id: string;
+  name: string;
+  data: Record<string, unknown>;
+}
+
+export interface WorkbenchCharacterCatalog {
+  characters: WorkbenchCharacter[];
+  hiddenCount: number;
+  totalCount: number;
+}
+
 export interface EyonHistoryWorkbenchFacade {
   version: string;
   getSettings(): WorkbenchSettings;
@@ -37,6 +49,9 @@ export interface EyonHistoryWorkbenchFacade {
   listRuins(): Promise<RuinCandidateRecord[]>;
   listBiographies(): Promise<BiographyRecord[]>;
   listButterflies(): Promise<ButterflyRecord[]>;
+  getCharacterCatalog(): Promise<WorkbenchCharacterCatalog>;
+  hideCharacter(characterId: string): Promise<WorkbenchCharacterCatalog>;
+  syncCharacters(): Promise<WorkbenchCharacterCatalog>;
   enterRuin(
     recordKey: string,
     candidateId: string,

@@ -1,11 +1,12 @@
 const DATABASE_NAME = 'eyon-history-system';
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 
 export const BIOGRAPHY_STORE = 'biographies';
 export const RUIN_STORE = 'ruinCandidates';
 export const GENEALOGY_STORE = 'genealogies';
 export const BUTTERFLY_STORE = 'butterflyRecords';
 export const PENDING_SETTLEMENT_STORE = 'pendingSettlements';
+export const CHARACTER_VISIBILITY_STORE = 'characterVisibility';
 
 let databasePromise: Promise<IDBDatabase> | null = null;
 
@@ -38,6 +39,9 @@ export function historyDatabase(): Promise<IDBDatabase> {
           store.createIndex('runId', 'runId', { unique: false });
           store.createIndex('requestId', 'request.requestId', { unique: true });
         }
+      }
+      if (!database.objectStoreNames.contains(CHARACTER_VISIBILITY_STORE)) {
+        database.createObjectStore(CHARACTER_VISIBILITY_STORE, { keyPath: 'key' });
       }
     };
     request.onsuccess = () => {

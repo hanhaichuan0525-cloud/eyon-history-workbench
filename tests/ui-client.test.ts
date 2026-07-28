@@ -33,6 +33,21 @@ function makeFacade(): EyonHistoryWorkbenchFacade {
     listRuins: async () => [],
     listBiographies: async () => [],
     listButterflies: async () => [],
+    getCharacterCatalog: async () => ({
+      characters: [],
+      hiddenCount: 0,
+      totalCount: 0,
+    }),
+    hideCharacter: async () => ({
+      characters: [],
+      hiddenCount: 0,
+      totalCount: 0,
+    }),
+    syncCharacters: async () => ({
+      characters: [],
+      hiddenCount: 0,
+      totalCount: 0,
+    }),
     enterRuin: async () => undefined,
     returnRuin: async () => undefined,
     retryButterfly: async () => undefined,
@@ -52,7 +67,32 @@ test('UI客户端只通过公开门面读取当前命名空间快照', async () 
     genealogies: [],
     ruins: [],
     butterflies: [],
+    characterCatalog: {
+      characters: [],
+      hiddenCount: 0,
+      totalCount: 0,
+    },
   });
+});
+
+test('UI客户端将人物隐藏与同步严格转交给公开门面', async () => {
+  const calls: string[] = [];
+  const facade = makeFacade();
+  facade.hideCharacter = async id => {
+    calls.push(`hide:${id}`);
+    return { characters: [], hiddenCount: 1, totalCount: 1 };
+  };
+  facade.syncCharacters = async () => {
+    calls.push('sync');
+    return { characters: [], hiddenCount: 0, totalCount: 1 };
+  };
+  const client = new WorkbenchUiClient(
+    { [WORKBENCH_GLOBAL]: facade },
+    new EventTarget(),
+  );
+  assert.equal((await client.hideCharacter('维奥莱塔')).hiddenCount, 1);
+  assert.equal((await client.syncCharacters()).hiddenCount, 0);
+  assert.deepEqual(calls, ['hide:维奥莱塔', 'sync']);
 });
 
 test('UI客户端订阅并释放工作台状态与就绪事件', () => {

@@ -58,6 +58,10 @@ import { GenealogyWorkflow } from './workflows/genealogy.ts';
 import { ButterflyWorkflow } from './workflows/butterfly.ts';
 import { IndexedDbButterflyRepository } from './storage/butterflies.ts';
 import {
+  IndexedDbCharacterVisibilityRepository,
+} from './storage/characterVisibility.ts';
+import { CharacterCatalogService } from './runtime/characterCatalog.ts';
+import {
   WORKBENCH_GLOBAL,
   WORKBENCH_READY_EVENT,
   WORKBENCH_STATUS_EVENT,
@@ -78,6 +82,7 @@ async function bootstrap(): Promise<void> {
   const genealogies = new IndexedDbGenealogyRepository();
   const ruins = new IndexedDbRuinCandidateRepository();
   const butterflies = new IndexedDbButterflyRepository();
+  const characterVisibility = new IndexedDbCharacterVisibilityRepository();
   const host = new TavernWorkbenchHost(runtime, dataBindings);
   const sources = new TavernContextSourceProvider(
     dataBindings,
@@ -188,8 +193,14 @@ async function bootstrap(): Promise<void> {
     events.names,
     globalObject,
   );
+  const characterCatalog = new CharacterCatalogService(
+    sources,
+    characterVisibility,
+    () => scopeReader.getNamespace(),
+  );
+
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.7.1',
+    version: '0.8.0',
     getSettings: () => settings.read(),
     updateSettings: patch => settings.update(patch),
     setGenerationSettings: (taskType, next) =>
@@ -203,6 +214,17 @@ async function bootstrap(): Promise<void> {
     listRuins: async () => ruins.list(scopeReader.getNamespace()),
     listBiographies: async () => biographies.list(scopeReader.getNamespace()),
     listButterflies: async () => butterflies.list(scopeReader.getNamespace()),
+    getCharacterCatalog: () => characterCatalog.getCatalog(),
+    hideCharacter: async characterId => {
+      const catalog = await characterCatalog.hide(characterId);
+      emitStatus('characters_changed', `已从界面隐藏：${characterId.trim()}`);
+      return catalog;
+    },
+    syncCharacters: async () => {
+      const catalog = await characterCatalog.sync();
+      emitStatus('characters_changed', '已重新同步当前MVU人物');
+      return catalog;
+    },
     enterRuin: (recordKey, candidateId, nodeId) =>
       ruinEntry.enter(recordKey, candidateId, nodeId),
     returnRuin: () => userTurns.sendUserTurn('遣返'),

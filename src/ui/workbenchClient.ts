@@ -3,6 +3,7 @@ import {
   WORKBENCH_READY_EVENT,
   WORKBENCH_STATUS_EVENT,
   type EyonHistoryWorkbenchFacade,
+  type WorkbenchCharacterCatalog,
   type WorkbenchStatusDetail,
 } from '../runtime/facade.ts';
 import type { GenerationSettings } from '../runtime/settings.ts';
@@ -15,6 +16,7 @@ export interface WorkbenchUiSnapshot {
   genealogies: Awaited<ReturnType<EyonHistoryWorkbenchFacade['listGenealogies']>>;
   ruins: Awaited<ReturnType<EyonHistoryWorkbenchFacade['listRuins']>>;
   butterflies: Awaited<ReturnType<EyonHistoryWorkbenchFacade['listButterflies']>>;
+  characterCatalog: WorkbenchCharacterCatalog;
 }
 
 export class WorkbenchUiClient {
@@ -43,11 +45,18 @@ export class WorkbenchUiClient {
 
   async readSnapshot(): Promise<WorkbenchUiSnapshot> {
     const facade = this.facade();
-    const [biographies, genealogies, ruins, butterflies] = await Promise.all([
+    const [
+      biographies,
+      genealogies,
+      ruins,
+      butterflies,
+      characterCatalog,
+    ] = await Promise.all([
       facade.listBiographies(),
       facade.listGenealogies(),
       facade.listRuins(),
       facade.listButterflies(),
+      facade.getCharacterCatalog(),
     ]);
     return {
       version: facade.version,
@@ -56,7 +65,16 @@ export class WorkbenchUiClient {
       genealogies,
       ruins,
       butterflies,
+      characterCatalog,
     };
+  }
+
+  hideCharacter(characterId: string) {
+    return this.facade().hideCharacter(characterId);
+  }
+
+  syncCharacters() {
+    return this.facade().syncCharacters();
   }
 
   setGeneration(

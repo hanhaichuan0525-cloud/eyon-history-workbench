@@ -39,6 +39,7 @@ export * from './runtime/transactionIdentity.ts';
 export * from './runtime/workbenchSettings.ts';
 export * from './runtime/workbenchLifecycle.ts';
 export * from './ui/workbenchClient.ts';
+export * from './ui/characterViewer.ts';
 export * from './schemas/biography.ts';
 export * from './schemas/ruin.ts';
 export * from './schemas/genealogy.ts';

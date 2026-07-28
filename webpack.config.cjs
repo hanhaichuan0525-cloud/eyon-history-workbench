@@ -2,14 +2,17 @@ const path = require('node:path');
 
 module.exports = {
   mode: 'production',
-  entry: path.resolve(__dirname, 'src/entry.ts'),
+  entry: {
+    index: path.resolve(__dirname, 'src/entry.ts'),
+    'character-viewer': path.resolve(__dirname, 'src/ui/characterViewerPage.ts'),
+  },
   target: ['web', 'es2022'],
   experiments: {
     outputModule: true,
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'index.js',
+    filename: '[name].js',
     module: true,
     clean: true,
   },

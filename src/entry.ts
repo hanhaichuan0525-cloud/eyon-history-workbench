@@ -200,7 +200,7 @@ async function bootstrap(): Promise<void> {
   );
 
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.9.0',
+    version: '0.10.0-internal.1',
     getSettings: () => settings.read(),
     updateSettings: patch => settings.update(patch),
     setGenerationSettings: (taskType, next) =>

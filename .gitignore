@@ -3,6 +3,7 @@ dist/
 !dist/
 dist/*
 !dist/index.js
+!dist/character-viewer.js
 .vite/
 coverage/
 .env

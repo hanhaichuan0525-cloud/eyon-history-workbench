@@ -87,6 +87,26 @@ export function mountCharacterViewer(
     toastTimer = window.setTimeout(() => status.classList.remove('show'), 2200);
   };
 
+  const activateGroupFilter = (value: string | undefined) => {
+    state.activeGroupId = value === 'all'
+      ? undefined
+      : value || null;
+    if (state.activeGroupId === undefined || !state.catalog) return;
+    const assigned = new Set(
+      state.catalog.groups.flatMap(group => group.characterIds),
+    );
+    const visibleIds = state.activeGroupId === null
+      ? state.catalog.characters
+        .filter(character => !assigned.has(character.id))
+        .map(character => character.id)
+      : state.catalog.groups.find(group =>
+        group.id === state.activeGroupId
+      )?.characterIds ?? [];
+    if (!visibleIds.includes(state.selectedCharacterId ?? '')) {
+      state.selectedCharacterId = visibleIds[0] ?? null;
+    }
+  };
+
   const bind = () => {
     const search = root.querySelector<HTMLInputElement>('[data-search]');
     search?.addEventListener('input', () => {
@@ -150,6 +170,8 @@ export function mountCharacterViewer(
         ).trim();
         if (!characterId) return;
         const groupId = element.dataset.dropGroup || null;
+        state.selectedCharacterId = characterId;
+        state.activeGroupId = groupId;
         void run(
           () => client.moveCharacterToGroup(characterId, groupId),
           groupId ? '人物归类已更新' : '人物已移出自定义组',
@@ -158,10 +180,7 @@ export function mountCharacterViewer(
     });
     root.querySelectorAll<HTMLElement>('[data-filter-group]').forEach(element => {
       element.addEventListener('click', () => {
-        const value = element.dataset.filterGroup;
-        state.activeGroupId = value === 'all'
-          ? undefined
-          : value || null;
+        activateGroupFilter(element.dataset.filterGroup);
         render();
       });
     });
@@ -169,6 +188,7 @@ export function mountCharacterViewer(
       ?.addEventListener('change', event => {
         if (!state.selectedCharacterId) return;
         const groupId = (event.currentTarget as HTMLSelectElement).value || null;
+        state.activeGroupId = groupId;
         void run(
           () => client.moveCharacterToGroup(
             state.selectedCharacterId ?? '',

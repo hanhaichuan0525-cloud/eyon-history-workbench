@@ -51,6 +51,8 @@ summary:focus-visible {
     var(--bg);
   background-size: 32px 32px;
   border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .viewer[data-theme="light"] {
@@ -107,6 +109,7 @@ summary:focus-visible {
 .group-create button {
   min-height: 40px;
   border: 1px solid var(--line);
+  border-radius: 6px;
   background: var(--surface-raised);
 }
 
@@ -153,6 +156,7 @@ summary:focus-visible {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--line);
+  border-radius: 6px;
   color: var(--ink);
   background: var(--bg);
 }
@@ -230,7 +234,9 @@ summary:focus-visible {
   min-width: 0;
   min-height: 92px;
   border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--surface-soft);
+  overflow: hidden;
 }
 
 .group-filter-card {
@@ -311,8 +317,39 @@ summary:focus-visible {
   height: 30px;
   padding: 0;
   border: 1px solid transparent;
+  border-radius: 5px;
   color: var(--muted);
   background: transparent;
+}
+
+.group-rename {
+  min-height: 43px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px 30px;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px 5px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.group-rename input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.group-rename button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
 }
 
 .group-members {
@@ -329,14 +366,23 @@ summary:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 8px 4px 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: 5px 8px 5px 5px;
   border: 1px solid var(--line);
+  border-radius: 6px;
   color: var(--muted);
   background: var(--surface-raised);
   font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.member:active {
+  cursor: grabbing;
 }
 
 .member span {
@@ -349,6 +395,10 @@ summary:focus-visible {
   color: var(--gold);
   background: var(--bg);
   font-size: 10px;
+}
+
+.member-drag {
+  flex: 0 0 auto;
 }
 
 .group-empty {
@@ -407,6 +457,7 @@ summary:focus-visible {
   padding: 10px;
   text-align: left;
   border: 1px solid transparent;
+  border-radius: 8px;
   background: var(--surface-soft);
 }
 
@@ -456,13 +507,14 @@ summary:focus-visible {
 }
 
 .character-copy strong {
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 1.35;
 }
 
 .character-copy small {
-  margin-top: 3px;
+  margin-top: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .character-meta {
@@ -604,7 +656,9 @@ summary:focus-visible {
 
 .detail-section {
   border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--surface-soft);
+  overflow: hidden;
 }
 
 .detail-section summary {
@@ -640,13 +694,153 @@ summary:focus-visible {
   content: "−";
 }
 
-.detail-section p {
+.detail-section-body {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.detail-section-body > p,
+.profile-field p,
+.module-split p,
+.history-summary p,
+.record-item p {
   margin: 0;
-  padding: 14px 15px 16px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.75;
   white-space: pre-wrap;
+}
+
+.profile-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+}
+
+.profile-field {
+  min-width: 0;
+  padding: 15px;
+  background: var(--bg);
+}
+
+.profile-field:nth-last-child(-n + 2) {
+  grid-column: 1 / -1;
+}
+
+.profile-field h4,
+.module-split h4,
+.history-summary h4 {
+  margin: 0 0 8px;
+  color: var(--gold);
+  font-size: 14px;
+}
+
+.module-split,
+.history-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+}
+
+.module-split > section,
+.history-summary > section {
+  min-width: 0;
+  padding: 15px;
+  background: var(--bg);
+}
+
+.attribute-list {
+  display: grid;
+  gap: 9px;
+}
+
+.attribute-row {
+  display: grid;
+  grid-template-columns: minmax(42px, auto) minmax(70px, 1fr) 28px;
+  align-items: center;
+  gap: 9px;
+}
+
+.attribute-row > span:first-child {
+  color: var(--ink);
+}
+
+.attribute-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-raised);
+}
+
+.attribute-track > span {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold), var(--accent));
+}
+
+.attribute-row strong {
+  color: var(--ink);
+  text-align: right;
+}
+
+.module-empty {
+  color: var(--faint) !important;
+}
+
+.value-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.value-chips > span {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+}
+
+.nested-value {
+  width: 100%;
+}
+
+.record-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 9px;
+  padding: 12px;
+}
+
+.record-list.nested {
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 7px 0 0;
+}
+
+.record-item {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+}
+
+.record-list.nested > .record-item {
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.record-item h5 {
+  margin: 0 0 7px;
+  color: var(--gold);
+  font-size: 13px;
 }
 
 .status {
@@ -828,11 +1022,20 @@ summary:focus-visible {
   }
 
   .character-copy strong {
-    font-size: 14px;
+    overflow: visible;
+    font-size: 16px;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
   }
 
   .character-copy small {
-    font-size: 11px;
+    overflow: visible;
+    font-size: 13px;
+    line-height: 1.4;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
   }
 
   .detail {
@@ -869,6 +1072,21 @@ summary:focus-visible {
 
   .detail-section summary {
     min-height: 52px;
+  }
+
+  .profile-fields,
+  .module-split,
+  .history-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-field,
+  .profile-field:nth-last-child(-n + 2) {
+    grid-column: auto;
+  }
+
+  .record-list {
+    grid-template-columns: 1fr;
   }
 }
 

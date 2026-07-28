@@ -30,6 +30,7 @@ export function mountCharacterViewer(
     query: '',
     lifeLevel: '',
     contract: '',
+    renamingGroupId: null,
     busy: false,
     disposed: false,
   };
@@ -37,11 +38,19 @@ export function mountCharacterViewer(
 
   const render = () => {
     if (state.disposed) return;
+    const groupScrollLeft =
+      root.querySelector<HTMLElement>('.group-rail')?.scrollLeft ?? 0;
+    const characterScrollTop =
+      root.querySelector<HTMLElement>('.character-list')?.scrollTop ?? 0;
     root.innerHTML = `
       <style>${characterViewerCss}</style>
       ${renderViewer(state, options.theme ?? 'dark')}
     `;
     bind();
+    const nextGroupRail = root.querySelector<HTMLElement>('.group-rail');
+    const nextCharacterList = root.querySelector<HTMLElement>('.character-list');
+    if (nextGroupRail) nextGroupRail.scrollLeft = groupScrollLeft;
+    if (nextCharacterList) nextCharacterList.scrollTop = characterScrollTop;
   };
 
   const updateCatalog = (catalog: WorkbenchCharacterCatalog) => {
@@ -200,6 +209,12 @@ export function mountCharacterViewer(
           handle.removeEventListener('pointermove', onPointerMove);
           handle.removeEventListener('pointerup', onPointerEnd);
           handle.removeEventListener('pointercancel', onPointerCancel);
+          if (!dragging) {
+            clearDragState();
+            state.selectedCharacterId = characterId;
+            render();
+            return;
+          }
           const target = dragging
             ? findDropTarget(endEvent.clientX, endEvent.clientY)
             : null;
@@ -272,18 +287,35 @@ export function mountCharacterViewer(
     root.querySelectorAll<HTMLElement>('[data-rename-group]').forEach(element => {
       element.addEventListener('click', event => {
         event.stopPropagation();
-        const groupId = element.dataset.renameGroup ?? '';
-        const group = state.catalog?.groups.find(item => item.id === groupId);
-        const nextName = host.ownerDocument.defaultView?.prompt(
-          '重命名自定义组别',
-          group?.name ?? '',
-        );
-        if (!nextName?.trim() || nextName.trim() === group?.name) return;
+        state.renamingGroupId = element.dataset.renameGroup ?? null;
+        render();
+        root.querySelector<HTMLInputElement>('[data-rename-input]')?.focus();
+      });
+    });
+    root.querySelector<HTMLFormElement>('[data-rename-form]')
+      ?.addEventListener('submit', event => {
+        event.preventDefault();
+        const form = event.currentTarget as HTMLFormElement;
+        const groupId = form.dataset.renameForm ?? '';
+        const input = form.elements.namedItem('rename-group') as HTMLInputElement | null;
+        const nextName = input?.value.trim() ?? '';
+        const currentName = state.catalog?.groups.find(group =>
+          group.id === groupId
+        )?.name ?? '';
+        if (!nextName || nextName === currentName) {
+          state.renamingGroupId = null;
+          render();
+          return;
+        }
+        state.renamingGroupId = null;
         void run(
           () => client.renameCharacterGroup(groupId, nextName),
-          `组别已重命名为：${nextName.trim()}`,
+          `组别已重命名为：${nextName}`,
         );
       });
+    root.querySelector('[data-cancel-rename]')?.addEventListener('click', () => {
+      state.renamingGroupId = null;
+      render();
     });
     root.querySelectorAll<HTMLElement>('[data-delete-group]').forEach(element => {
       element.addEventListener('click', event => {
@@ -340,6 +372,7 @@ interface ViewerState {
   query: string;
   lifeLevel: string;
   contract: string;
+  renamingGroupId: string | null;
   busy: boolean;
   disposed: boolean;
 }
@@ -408,7 +441,12 @@ function renderViewer(state: ViewerState, theme: 'dark' | 'light'): string {
               <span>未归类</span>
               <strong>${countUnassigned(characters, groups)}</strong>
             </button>
-            ${groups.map(group => renderGroup(group, characters, state.activeGroupId)).join('')}
+            ${groups.map(group => renderGroup(
+              group,
+              characters,
+              state.activeGroupId,
+              state.renamingGroupId,
+            )).join('')}
           </div>
         </section>
         <div class="content-workspace">
@@ -490,17 +528,16 @@ function renderCharacterDetail(
     readNumber(data, '等级') !== null ? `Lv.${readNumber(data, '等级')}` : '',
     readBoolean(data, '命定契约') ? '命定契约' : '未缔约',
   ].filter(Boolean);
-  const sections: Array<[string, string, boolean?]> = [
-    ['性格与喜好', joinRecords(
-      ['性格', readString(data, '性格')],
-      ['喜爱', readString(data, '喜爱')],
-    ), true],
-    ['外观记录', joinRecords(
-      ['外貌', readString(data, '外貌')],
-      ['着装', readString(data, '着装')],
+  const modules: Array<[string, string, boolean?]> = [
+    ['人物侧写', renderProfileModule(data), true],
+    ['属性与状态', renderStatusModule(data)],
+    ['装备与背包', renderCombinedRecords(
+      ['装备', data['装备']],
+      ['背包', data['背包']],
     )],
-    ['心里话', readString(data, '心里话')],
-    ['背景故事', readString(data, '背景故事')],
+    ['技能', renderStructuredValue(data['技能'])],
+    ['登神长阶', renderStructuredValue(data['登神长阶'])],
+    ['历史关联', renderHistoryModule(data)],
   ];
   const assignedGroupId = groups.find(group =>
     group.characterIds.includes(character.id)
@@ -536,10 +573,10 @@ function renderCharacterDetail(
       </div>
     </header>
     <div class="detail-sections">
-      ${sections.map(([title, content, expanded]) => `
+      ${modules.map(([title, content, expanded]) => `
         <details class="detail-section" ${expanded ? 'open' : ''}>
           <summary>${escapeHtml(title)}</summary>
-          <p>${escapeHtml(content || '暂无记录')}</p>
+          <div class="detail-section-body">${content}</div>
         </details>
       `).join('')}
     </div>
@@ -550,6 +587,7 @@ function renderGroup(
   group: WorkbenchCharacterGroup,
   characters: WorkbenchCharacter[],
   activeGroupId: string | null | undefined,
+  renamingGroupId: string | null,
 ): string {
   const members = group.characterIds
     .map(id => characters.find(character => character.id === id))
@@ -559,19 +597,39 @@ function renderGroup(
       class="group ${activeGroupId === group.id ? 'active' : ''}"
       data-drop-group="${escapeAttribute(group.id)}"
     >
-      <div class="group-head">
-        <button data-filter-group="${escapeAttribute(group.id)}" title="查看此组">
-          <span>${escapeHtml(group.name)}</span>
-          <strong>${members.length}</strong>
-        </button>
-        <button class="group-tool" data-rename-group="${escapeAttribute(group.id)}" title="重命名组别">✎</button>
-        <button class="group-tool" data-delete-group="${escapeAttribute(group.id)}" title="删除组别">×</button>
-      </div>
+      ${renamingGroupId === group.id ? `
+        <form class="group-rename" data-rename-form="${escapeAttribute(group.id)}">
+          <input
+            name="rename-group"
+            data-rename-input
+            maxlength="24"
+            value="${escapeAttribute(group.name)}"
+            aria-label="组别新名称"
+          >
+          <button type="submit" title="确认改名">✓</button>
+          <button type="button" data-cancel-rename title="取消改名">×</button>
+        </form>
+      ` : `
+        <div class="group-head">
+          <button data-filter-group="${escapeAttribute(group.id)}" title="查看此组">
+            <span>${escapeHtml(group.name)}</span>
+            <strong>${members.length}</strong>
+          </button>
+          <button class="group-tool" data-rename-group="${escapeAttribute(group.id)}" title="重命名组别">✎</button>
+          <button class="group-tool" data-delete-group="${escapeAttribute(group.id)}" title="删除组别">×</button>
+        </div>
+      `}
       <div class="group-members">
         ${members.length
           ? members.map(member => `
-            <button class="member" data-character-id="${escapeAttribute(member.id)}" draggable="true">
-              <span>${escapeHtml(member.name.slice(0, 1))}</span>
+            <button
+              class="member"
+              data-character-id="${escapeAttribute(member.id)}"
+              data-drag-handle="${escapeAttribute(member.id)}"
+              draggable="true"
+              title="点击查看，按住拖动分类"
+            >
+              <span class="member-drag">${escapeHtml(member.name.slice(0, 1))}</span>
               ${escapeHtml(member.name)}
             </button>
           `).join('')
@@ -592,11 +650,137 @@ function renderActiveGroupName(
   );
 }
 
-function joinRecords(...records: Array<[string, string]>): string {
-  return records
-    .filter(([, content]) => Boolean(content))
-    .map(([title, content]) => `${title}：${content}`)
-    .join('\n\n');
+function renderProfileModule(data: Record<string, unknown>): string {
+  const fields: Array<[string, string]> = [
+    ['性格', readString(data, '性格')],
+    ['喜爱', readString(data, '喜爱')],
+    ['外貌', readString(data, '外貌')],
+    ['着装', readString(data, '着装')],
+    ['心里话', readString(data, '心里话')],
+    ['背景故事', readString(data, '背景故事')],
+  ];
+  return `
+    <div class="profile-fields">
+      ${fields.map(([title, content]) => `
+        <section class="profile-field">
+          <h4>${escapeHtml(title)}</h4>
+          <p>${escapeHtml(content || '暂无记录')}</p>
+        </section>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderStatusModule(data: Record<string, unknown>): string {
+  const attributes = isRecord(data['属性']) ? data['属性'] : {};
+  const numericAttributes = Object.entries(attributes)
+    .filter((entry): entry is [string, number] =>
+      typeof entry[1] === 'number' && Number.isFinite(entry[1])
+    );
+  const maximum = Math.max(20, ...numericAttributes.map(([, value]) => value));
+  const attributeHtml = numericAttributes.length
+    ? `
+      <div class="attribute-list">
+        ${numericAttributes.map(([name, value]) => `
+          <div class="attribute-row">
+            <span>${escapeHtml(name)}</span>
+            <span class="attribute-track">
+              <span style="width:${Math.max(0, Math.min(100, value / maximum * 100))}%"></span>
+            </span>
+            <strong>${value}</strong>
+          </div>
+        `).join('')}
+      </div>
+    `
+    : '<p class="module-empty">暂无基础属性记录</p>';
+  return `
+    <div class="module-split">
+      <section>
+        <h4>基础属性</h4>
+        ${attributeHtml}
+      </section>
+      <section>
+        <h4>状态效果</h4>
+        ${renderStructuredValue(data['状态效果'])}
+      </section>
+    </div>
+  `;
+}
+
+function renderCombinedRecords(
+  ...records: Array<[string, unknown]>
+): string {
+  return `
+    <div class="module-split">
+      ${records.map(([title, value]) => `
+        <section>
+          <h4>${escapeHtml(title)}</h4>
+          ${renderStructuredValue(value)}
+        </section>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderHistoryModule(data: Record<string, unknown>): string {
+  const explicit = data['历史关联'];
+  if (explicit !== undefined && explicit !== null && explicit !== '') {
+    return renderStructuredValue(explicit);
+  }
+  const identities = readArray(data, '身份');
+  return `
+    <div class="history-summary">
+      <section>
+        <h4>身份线索</h4>
+        ${renderStructuredValue(identities)}
+      </section>
+      <section>
+        <h4>背景记录</h4>
+        <p>${escapeHtml(readString(data, '背景故事') || '暂无可确认的历史关联')}</p>
+      </section>
+    </div>
+  `;
+}
+
+function renderStructuredValue(value: unknown, depth = 0): string {
+  if (value === null || value === undefined || value === '') {
+    return '<p class="module-empty">暂无记录</p>';
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    return `<p>${escapeHtml(String(value))}</p>`;
+  }
+  if (typeof value === 'boolean') {
+    return `<p>${value ? '是' : '否'}</p>`;
+  }
+  if (Array.isArray(value)) {
+    if (!value.length) return '<p class="module-empty">暂无记录</p>';
+    return `
+      <div class="value-chips">
+        ${value.map(item =>
+          typeof item === 'object' && item !== null
+            ? `<div class="nested-value">${renderStructuredValue(item, depth + 1)}</div>`
+            : `<span>${escapeHtml(String(item))}</span>`
+        ).join('')}
+      </div>
+    `;
+  }
+  if (!isRecord(value) || !Object.keys(value).length) {
+    return '<p class="module-empty">暂无记录</p>';
+  }
+  return `
+    <div class="record-list ${depth ? 'nested' : ''}">
+      ${Object.entries(value).map(([key, nested]) => `
+        <section class="record-item">
+          <h5>${escapeHtml(key)}</h5>
+          <div>${renderStructuredValue(nested, depth + 1)}</div>
+        </section>
+      `).join('')}
+    </div>
+  `;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function filterCharacters(

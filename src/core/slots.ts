@@ -1,8 +1,7 @@
-export type SlotType = 'rootTrace' | 'ruinTrace';
+export type SlotType = 'rootTrace';
 
 const SLOT_PREFIX: Record<SlotType, string> = {
   rootTrace: 'EYON_ROOTTRACE_SLOT',
-  ruinTrace: 'EYON_RUINTRACE_SLOT',
 };
 
 export function createSlot(type: SlotType, requestId: string): string {

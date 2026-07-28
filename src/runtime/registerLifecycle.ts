@@ -1,4 +1,8 @@
-import type { BiographyLifecycle } from './biographyLifecycle.ts';
+export interface WorkbenchGenerationLifecycle {
+  beforeGeneration(type?: string): Promise<boolean>;
+  onAssistantRendered(messageId: number): Promise<void>;
+  onChatChanged(): Promise<void>;
+}
 
 export interface TavernEventBridge {
   on(event: string, listener: (...args: unknown[]) => void): void;
@@ -15,7 +19,7 @@ export interface LifecycleRegistration {
 }
 
 export function registerBiographyLifecycle(
-  lifecycle: BiographyLifecycle,
+  lifecycle: WorkbenchGenerationLifecycle,
   events: TavernEventBridge,
   eventNames: BiographyLifecycleEvents,
   globalObject: Record<string, unknown> = globalThis as Record<string, unknown>,
@@ -73,3 +77,5 @@ export function registerBiographyLifecycle(
     },
   };
 }
+
+export const registerWorkbenchLifecycle = registerBiographyLifecycle;

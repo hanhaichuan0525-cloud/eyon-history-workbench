@@ -1,6 +1,6 @@
 ---
 id: eyon.ruin.handoff
-version: 1
+version: 2
 consumer: script
 mode: prompt_template
 ---
@@ -16,9 +16,22 @@ mode: prompt_template
 - 蝴蝶效应内容由独立API生成，脚本校验、排版、追加并归档。
 - 正文模型不得再自行生成第二份蝴蝶效应面板。
 
-# A. 生成最终墟境面板
+# A. 单楼选定并进入
 
-玩家在界面选中候选和特异点后，脚本先从已校验的结构化结果生成唯一 `ruinTraceRaw`。此步骤只生成语义原文，不生成HTML。
+玩家在界面选中候选和特异点并点击“进入此节点”后，脚本从已校验的结构化结果生成唯一 `ruinTraceRaw`，并在同一次玩家发送中提交进入契约。候选的后台生成、切换和浏览不创建聊天楼；只有点击“进入此节点”才创建一条玩家楼。
+
+本流程固定为:
+
+```text
+玩家楼: 进入节点 + 单楼进入契约 + 唯一RuinTrace
+紧邻助手楼: 承接上一楼现实剧情 -> 自然穿越 -> 墟境任务正文与面板 -> 唯一完整变量更新
+```
+
+不得再创建“先展示候选面板、下一楼再次进入”的中间确认楼。
+
+## A.1 RuinTrace
+
+`ruinTraceRaw`只生成语义原文，不生成HTML。
 
 固定序列化格式:
 
@@ -39,65 +52,83 @@ NodeTime:: {{node.time.label}}
 - `Type` 只能是 `稳定期`、`过渡期` 或 `动荡期`。
 - 任一字段内容中的换行可以保留，但不得生成第二组同名字段或第二个 `[RuinTrace]`。
 - `ruinTraceRaw` 必须由脚本从结构化JSON确定性生成，不允许正文模型或美化正则反向修改。
-- 脚本在发送正文前生成唯一 `requestId` 和唯一占位槽 `[EYON_RUINTRACE_SLOT::{{requestId}}]`，并把 `ruinTraceRaw` 保存在本次请求内存状态中。
+- `Type` 与 `Shift` 中的时期名称必须使用中文显示值，不能把 `stable|transition|turbulent` 暴露给正文或美化。
 
-随后脚本向酒馆输入框写入以下文本。此操作只要求正文模型生成伊雍的确认语并保留占位槽，不代表进入。
+## A.2 发送前硬校验
 
-模板:
+脚本只有在以下条件全部成立时才允许发送:
 
-墟境探索
+1. 候选记录存在于当前 `characterKey + chatId` 的本地命名空间。
+2. 候选和节点ID能够在该已校验记录中唯一找到。
+3. 节点为 `kind=anomaly`、`enterable=true`，且至少有两个可能分支。
+4. 当前墟境流程状态严格为 `idle`。
+5. 点击瞬间能够读取非空的现实时间与现实地点。
+6. 发送前再次核对聊天命名空间没有变化。
 
-【脚本选定候选】
-候选标题：{{candidate.title}}
-纪元与跨度：{{response.era}}；{{candidate.span.label}}
-地点：{{node.location}}
-选定特异点：{{node.time.label}}；{{node.title}}
-缘起与经过：{{candidate.historyProse}}
-节点局势：{{node.summary}}
-在场人物与组织：{{join(node.participants, "、")}}
-核心冲突：{{node.conflict}}
-可介入条件：{{node.intervention}}
-可能转向：{{node.possibleShift}}
-资料依据：{{sourceSummary}}
-玩家补充方向：{{supplementaryDirection || "无"}}
+任一条件失败时不发送半截命令，不创建玩家楼，不改变量。
 
-以上史稿已经由历史工作台完成。请只依据现有伊雍核心生成一段简短确认语，不得重新构思、压缩、改写或复述史稿。确认语结束后，单独原样输出以下占位槽并立即结束:
-[EYON_RUINTRACE_SLOT::{{requestId}}]
+## A.3 唯一玩家楼
 
-本楼只展示并确认节点，不进入墟境，不改变世界时间，不更新墟境流程状态。
+脚本发送下列确定性文本:
 
-正文流式输出结束后:
-
-1. 精确取得本次请求对应的AI消息ID。
-2. 查找完全匹配的 `[EYON_RUINTRACE_SLOT::{{requestId}}]`。
-3. 用内存中的 `ruinTraceRaw` 原样替换该占位槽。
-4. 不进行Markdown转义、格式化、压缩、重排或HTML转换。
-5. 更新同一条AI消息并触发重新渲染，使现有墟境美化正则生效。
-6. 若占位槽缺失但消息中存在唯一 `[RuinTrace]...[/RuinTrace]`，用 `ruinTraceRaw` 替换该区段。
-7. 若两者都不存在，在最后一个 `<eyon_court/>` 后追加 `ruinTraceRaw`；若没有 `<eyon_court/>`，则追加到消息末尾并记录格式警告。
-8. 同一 `requestId` 只能完成一次替换或追加，不得生成重复面板。
-
-# B. 明确进入节点
-
-只有玩家再次点击“进入节点”时，脚本才写入:
-
+```text
 进入节点
 
-【已确认墟境节点】
-标题：{{selectedRuin.title}}
-进入时间：{{selectedNode.time.label}}
-进入地点：{{selectedNode.location}}
-节点局势：{{selectedNode.summary}}
-在场人物与组织：{{join(selectedNode.participants, "、")}}
-核心冲突：{{selectedNode.conflict}}
-可介入条件：{{selectedNode.intervention}}
-资料标识：{{selectedRuin.id}} / {{selectedNode.id}}
+【历史工作台·单楼进入契约】
+现实锚点时间：{{clickTimeReality.time}}
+现实锚点地点：{{clickTimeReality.location}}
+目标纪元：{{response.era}}
+目标墟境时间：{{node.time.label}}
+目标墟境地点：{{node.location}}
+史案标题：{{candidate.title}}
+特异点：{{node.title}}
+节点局势：{{node.summary}}
+直接成因：{{node.cause}}
+因果机制：{{node.causalMechanism}}
+参与人物与组织：{{join(node.participants, "、") || "无明确资料"}}
+利益与恐惧：{{format(node.interests)}}
+物质条件：{{join(node.materialConditions, "、") || "无明确资料"}}
+对立关系：{{node.opposition || "无明确资料"}}
+可感知痕迹：{{node.visibleTrace}}
+玩家可介入条件：{{node.intervention}}
+可能分支：{{format(node.possibleBranches)}}
+参与人物用途：{{format(candidate.selectedCharacterUsage) || "未指定参与人物"}}
+玩家补充方向：{{supplementaryDirection || "无"}}
+资料标识：{{requestId}} / {{candidate.id}} / {{node.id}}
 
-请严格按现有墟境任务与变量规则执行进入楼：保留进入前现实锚点，以此处的墟境时间地点作为进入锚点，并在回复末尾输出唯一、完整的变量更新块。
+请直接承接上一楼尚未结束的动作、人物关系与现场氛围，自然描写从现实锚点进入上述历史节点的过程；不要把史稿复述成说明书。进入完成后，按现有伊雍墟境任务与变量规则，在本楼建立唯一新轮次、锁定现实锚点、把目标时地写入世界与墟境当前时地，并将流程状态更新为 exploring。回复末尾只输出一份完整变量更新。
+
+{{ruinTraceRaw}}
+```
+
+现实锚点必须在点击时读取，不能沿用候选生成时的旧世界快照。候选可以在同一聊天中稍后进入，但不能跨聊天使用。
+
+## A.4 正文联动
+
+正文模型收到此玩家楼后必须:
+
+1. 把它视为玩家已经明确选择并执行“进入节点”，而非请求再次介绍候选。
+2. 承接紧邻上一楼的动作、在场人物、情绪和未完对话，描写现实场景被历史坐标接管的连续过程。
+3. 不复读完整史稿，不把字段逐项解释给玩家。
+4. 允许伊雍依据现有核心自然说话；脚本不代写伊雍台词。
+5. 以契约中的现实锚点冻结本轮现实时间地点。
+6. 以目标墟境时地建立本轮进入时地、当前时地和世界时地。
+7. 新建唯一墟境轮次，设置任务规则锁，状态写为 `exploring`。
+8. 在同一助手楼输出正式墟境面板及唯一完整变量更新，不等待第二条“进入节点”命令。
+
+脚本不得在助手楼生成前抢先写 `exploring` 或覆盖世界时地。变量写入仍由正文/MVU与现有时间控制模块完成。
+
+# B. 幂等与失败
+
+- 同一 `chatId + recordKey + candidateId + nodeId` 的连续双击只允许发送一个玩家楼。
+- 发送接口失败时允许重试；发送成功后禁止同一按钮再次发送。
+- 发送成功只代表玩家楼已建立，不代表脚本自行确认变量写入成功。
+- 正文或MVU更新失败时由现有变量恢复流程处理，候选生成器不得补写或猜测状态。
+- 不使用占位槽，不在助手楼渲染后追加第二份 `RuinTrace`。
 
 # C. 禁止隐式动作
 
-- “墟境探索”只能生成或确认面板，不能进入。
+- “墟境探索”只在后台或界面生成候选，不能进入。
 - “进入节点”只由玩家点击或明确输入触发。
 - “遣返”只由玩家点击或明确输入触发。
 - 界面浏览、API生成、切换候选、查看族谱、打开传记都不得向正文发送状态指令。

@@ -38,3 +38,34 @@ export interface BiographyContextAssembler {
     directive: string;
   }): Promise<BiographyContextBundle>;
 }
+
+export interface RuinContextBundle {
+  schema: 'eyon.context.v1';
+  taskType: 'ruin';
+  requestId: string;
+  scope: WorkbenchNamespace & {
+    triggerMessageId: number;
+  };
+  currentWorld: {
+    time: string;
+    location: string;
+  };
+  worldbookContext: ContextSource[];
+  recentContext: ContextSource[];
+  characterContext: ContextSource[];
+  genealogyRefs: ContextSource[];
+  biographyRefs: ContextSource[];
+  butterflyRefs: ContextSource[];
+  sourceIndex: ContextSource[];
+  warnings: string[];
+  sourceHash: string;
+}
+
+export interface RuinContextAssembler {
+  assemble(input: {
+    requestId: string;
+    namespace: WorkbenchNamespace;
+    triggerMessageId: number;
+    directive: string;
+  }): Promise<RuinContextBundle>;
+}

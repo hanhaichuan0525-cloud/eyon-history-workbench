@@ -19,7 +19,7 @@ test('持久化键严格包含角色卡和聊天', () => {
 
 test('占位槽只接受可控 requestId', () => {
   assert.equal(createSlot('rootTrace', 'bio-20260728-01'), '[EYON_ROOTTRACE_SLOT::bio-20260728-01]');
-  assert.throws(() => createSlot('ruinTrace', '../run'));
+  assert.throws(() => createSlot('rootTrace', '../run'));
 });
 
 test('RuinTrace 使用美化正则约定的固定字段顺序', () => {

@@ -23,3 +23,9 @@ export interface GenerationAdapter {
 export interface ArchiveAdapter {
   mirrorButterflyRecord(runId: string, entry: string): Promise<void>;
 }
+
+export interface UserTurnAdapter {
+  sendUserTurn(text: string): Promise<{
+    messageId: number;
+  }>;
+}

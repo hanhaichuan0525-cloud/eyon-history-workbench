@@ -4,55 +4,18 @@ import type {
   BiographyRecord,
   BiographyRepository,
 } from './biographies.ts';
-
-const DATABASE_NAME = 'eyon-history-system';
-const DATABASE_VERSION = 1;
-const STORE_NAME = 'biographies';
-
-function requestResult<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
-  });
-}
-
-function transactionComplete(transaction: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'));
-    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'));
-  });
-}
+import {
+  BIOGRAPHY_STORE,
+  historyDatabase,
+  requestResult,
+  transactionComplete,
+} from './database.ts';
 
 export class IndexedDbBiographyRepository implements BiographyRepository {
-  private databasePromise: Promise<IDBDatabase> | null = null;
-
-  private database(): Promise<IDBDatabase> {
-    if (this.databasePromise) {
-      return this.databasePromise;
-    }
-
-    this.databasePromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-      request.onupgradeneeded = () => {
-        const database = request.result;
-        if (!database.objectStoreNames.contains(STORE_NAME)) {
-          const store = database.createObjectStore(STORE_NAME, { keyPath: 'key' });
-          store.createIndex('namespace', 'namespaceKey', { unique: false });
-          store.createIndex('requestId', 'requestId', { unique: true });
-        }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error ?? new Error('Unable to open IndexedDB'));
-    });
-
-    return this.databasePromise;
-  }
-
   async saveValidated(record: BiographyRecord): Promise<void> {
-    const database = await this.database();
-    const transaction = database.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
+    const database = await historyDatabase();
+    const transaction = database.transaction(BIOGRAPHY_STORE, 'readwrite');
+    const store = transaction.objectStore(BIOGRAPHY_STORE);
     const existing = await requestResult(store.get(record.key));
     if (existing) {
       transaction.abort();
@@ -66,9 +29,9 @@ export class IndexedDbBiographyRepository implements BiographyRepository {
   }
 
   async markCommitted(key: string, assistantMessageId: number): Promise<void> {
-    const database = await this.database();
-    const transaction = database.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
+    const database = await historyDatabase();
+    const transaction = database.transaction(BIOGRAPHY_STORE, 'readwrite');
+    const store = transaction.objectStore(BIOGRAPHY_STORE);
     const record = await requestResult<(BiographyRecord & { namespaceKey: string }) | undefined>(
       store.get(key),
     );
@@ -87,10 +50,10 @@ export class IndexedDbBiographyRepository implements BiographyRepository {
   }
 
   async get(key: string): Promise<BiographyRecord | null> {
-    const database = await this.database();
-    const transaction = database.transaction(STORE_NAME, 'readonly');
+    const database = await historyDatabase();
+    const transaction = database.transaction(BIOGRAPHY_STORE, 'readonly');
     const record = await requestResult<(BiographyRecord & { namespaceKey: string }) | undefined>(
-      transaction.objectStore(STORE_NAME).get(key),
+      transaction.objectStore(BIOGRAPHY_STORE).get(key),
     );
     await transactionComplete(transaction);
     if (!record) {
@@ -101,9 +64,9 @@ export class IndexedDbBiographyRepository implements BiographyRepository {
   }
 
   async list(namespace: WorkbenchNamespace): Promise<BiographyRecord[]> {
-    const database = await this.database();
-    const transaction = database.transaction(STORE_NAME, 'readonly');
-    const index = transaction.objectStore(STORE_NAME).index('namespace');
+    const database = await historyDatabase();
+    const transaction = database.transaction(BIOGRAPHY_STORE, 'readonly');
+    const index = transaction.objectStore(BIOGRAPHY_STORE).index('namespace');
     const records = await requestResult<Array<BiographyRecord & { namespaceKey: string }>>(
       index.getAll(namespaceKey(namespace)),
     );

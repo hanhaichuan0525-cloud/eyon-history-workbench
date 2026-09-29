@@ -1,20 +1,26 @@
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const manifestPath = resolve(root, 'manifest.json');
 const distRuntimePath = resolve(root, 'dist/index.js');
 const distWorkbenchPath = resolve(root, 'dist/workbench.js');
 const releaseDir = resolve(root, 'release');
-const outputPath = resolve(releaseDir, '酒馆助手脚本-伊雍历史工作台-自动更新.json');
+
+// β1：清单与 bundle 全部走 jsDelivr。GitHub raw 对 .js 返回 text/plain，静态 import 会被
+// 浏览器按 MIME 拒绝（真机病历：加载器整段不执行、控制台无日志）；jsDelivr 返回
+// application/javascript，且分支缓存可用 purge 接口刷新，因此加载器整段内联、不再依赖
+// 宿主的模块加载路径。
+const CDN_BASE = 'https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@main';
+const MANIFEST_URL = `${CDN_BASE}/manifest.json`;
+const RELEASE_LABEL = 'β1';
+const AUTO_LOADER_VERSION = '0.3.0';
+const AUTO_LOADER_ID = 'eyon-history-workbench-auto-loader';
+
+const outputPath = resolve(releaseDir, `酒馆助手脚本-伊雍历史工作台-${RELEASE_LABEL}.json`);
 const sumsPath = resolve(releaseDir, 'SHA256SUMS.txt');
 const remoteLoaderPath = resolve(root, 'extension/auto-loader.js');
-
-const MANIFEST_URL = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/manifest.json';
-const REMOTE_LOADER_URL = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/extension/auto-loader.js';
-const AUTO_LOADER_VERSION = '0.2.0';
-const AUTO_LOADER_ID = 'eyon-history-workbench-auto-loader';
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -46,8 +52,6 @@ function createLoaderContent() {
   const INSTANCE_KEY = '__eyonHistoryWorkbenchAutoLoader';
   const LEGACY_INSTANCE_KEY = '__eyonHistoryWorkbenchInternalLoader';
   const LEGACY_EXTENSION_KEY = '__eyonHistoryWorkbenchExtension';
-  const WAND_ENTRY_ID = 'eyon-history-workbench-wand-entry';
-  const WAND_STYLE_ID = 'eyon-history-workbench-wand-style';
 
   const scriptWindow = window;
   const hostWindow = window.parent && window.parent !== window ? window.parent : window;
@@ -64,8 +68,6 @@ function createLoaderContent() {
     moduleScript: null,
     overlay: null,
     style: null,
-    observer: null,
-    uiTimer: null,
     runtimeWaitCancel: null,
   };
 
@@ -93,22 +95,6 @@ function createLoaderContent() {
     if (level === 'error') console.error('[伊雍工作台]', detail);
   };
 
-  const hostMenu = () => hostDocument.querySelector('#sp_wand_container')
-    || hostDocument.querySelector('#extensionsMenu')
-    || hostDocument.querySelector('.extensionsMenu');
-
-  const ensureEntryStyle = () => {
-    if (hostDocument.getElementById(WAND_STYLE_ID)) return;
-    const style = hostDocument.createElement('style');
-    style.id = WAND_STYLE_ID;
-    style.textContent = [
-      '#' + WAND_ENTRY_ID + '{display:flex;align-items:center;gap:.55em;cursor:pointer;}',
-      '#' + WAND_ENTRY_ID + '.eyon-loader-pending{opacity:.72;}',
-      '#' + WAND_ENTRY_ID + '.eyon-loader-error{color:#b65a5a;}',
-    ].join('');
-    (hostDocument.head || hostDocument.documentElement).appendChild(style);
-  };
-
   const openWorkbench = () => {
     state.openRequested = true;
     if (hostWindow.EyonHistoryWorkbenchShell && typeof hostWindow.EyonHistoryWorkbenchShell.open === 'function') {
@@ -118,59 +104,10 @@ function createLoaderContent() {
     void load();
   };
 
-  const createWandEntry = (menu) => {
-    let entry = hostDocument.getElementById(WAND_ENTRY_ID);
-    if (!entry) {
-      entry = hostDocument.createElement('div');
-      entry.id = WAND_ENTRY_ID;
-      entry.className = 'list-group-item flex-container flexGap5 interactable';
-      entry.setAttribute('role', 'button');
-      entry.setAttribute('tabindex', '0');
-      entry.innerHTML = '<i class="fa-solid fa-book-open"></i><span>伊雍历史工作台</span>';
-      entry.addEventListener('click', openWorkbench);
-      entry.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openWorkbench(); }
-      });
-    }
-    entry.classList.toggle('eyon-loader-pending', !state.facade);
-    entry.classList.toggle('eyon-loader-error', false);
-    const label = entry.querySelector('span');
-    const nextLabel = state.version ? '伊雍历史工作台' : '伊雍历史工作台（加载中）';
-    if (label && label.textContent !== nextLabel) label.textContent = nextLabel;
-    if (entry.parentElement !== menu) menu.appendChild(entry);
-  };
-
-  const ensureEntryControls = () => {
-    ensureEntryStyle();
-    const menu = hostMenu();
-    if (menu) createWandEntry(menu);
-  };
-
-  const markEntryError = () => {
-    const entry = hostDocument.getElementById(WAND_ENTRY_ID);
-    if (!entry) return;
-    entry.classList.remove('eyon-loader-pending');
-    entry.classList.add('eyon-loader-error');
-    const label = entry.querySelector('span');
-    if (label && label.textContent !== '伊雍历史工作台（加载失败）') {
-      label.textContent = '伊雍历史工作台（加载失败）';
-    }
-  };
-
-  const observeHostUi = () => {
-    if (state.observer || !hostDocument.documentElement) return;
-    const target = hostDocument.body || hostDocument.documentElement;
-    if (!target) return;
-    const schedule = () => {
-      if (state.uiTimer || state.disposed) return;
-      state.uiTimer = setTimeout(() => {
-        state.uiTimer = null;
-        if (!state.disposed) ensureEntryControls();
-      }, 120);
-    };
-    state.observer = new MutationObserver(schedule);
-    state.observer.observe(target, { childList: true, subtree: true });
-  };
+  // β1：魔术棒入口整段退役。工作台只由角色卡悬浮球打开——悬浮球点击派发
+  // eyon-history-workbench:open，该事件此前只有原生扩展入口在监听，脚本通道
+  // 必须自己接上，否则点了悬浮球没有任何反应。
+  const onOpenRequest = () => openWorkbench();
 
   const bytesToHex = (bytes) => Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, '0')).join('');
   const sha256Bytes = async (bytes) => {
@@ -295,7 +232,6 @@ function createLoaderContent() {
     if (!facade) throw new Error('远端运行时加载后没有暴露 EyonHistoryWorkbench');
     state.facade = facade;
     hostWindow.EyonHistoryWorkbench = facade;
-    ensureEntryControls();
     try { hostWindow.dispatchEvent(new CustomEvent('eyon-history-workbench:ready', { detail: { facade, version: state.version } })); } catch {}
   };
 
@@ -410,13 +346,15 @@ function createLoaderContent() {
       const facade = await importRuntime(artifacts.runtimeBytes);
       publishFacade(facade);
       await mountWorkbench(artifacts.workbenchBytes);
-      ensureEntryControls();
       if (state.openRequested && hostWindow.EyonHistoryWorkbenchShell) hostWindow.EyonHistoryWorkbenchShell.open();
       emitStatus('ready', '伊雍历史工作台已就绪');
+      // 运行时的通知表只在 error / success / cancelled 上安排退场，phase:'ready' 会永久驻留
+      // （真机现象：悬浮球停在"加载完毕"动作，不回 idle 日常循环）。保留 ready 事件兼容其它
+      // 消费者，随后补一次 success 让同 key 条目自然退场。
+      setTimeout(() => emitStatus('success', '伊雍历史工作台已就绪'), 150);
       return facade;
     })().catch((error) => {
       state.loading = null;
-      markEntryError();
       emitStatus('error', '伊雍历史工作台加载失败：' + (error && error.message ? error.message : String(error)), 'error');
       throw error;
     });
@@ -426,25 +364,18 @@ function createLoaderContent() {
   state.dispose = () => {
     if (state.disposed) return;
     state.disposed = true;
-    if (state.observer) state.observer.disconnect();
-    if (state.uiTimer) clearTimeout(state.uiTimer);
-    state.uiTimer = null;
     state.runtimeWaitCancel?.(new Error('伊雍历史工作台加载器已停止'));
+    hostWindow.removeEventListener('eyon-history-workbench:open', onOpenRequest);
     if (state.moduleScript && state.moduleScript.isConnected) state.moduleScript.remove();
     if (state.overlay) state.overlay.remove();
     if (state.style) state.style.remove();
     if (hostWindow.EyonHistoryWorkbenchShell && typeof hostWindow.EyonHistoryWorkbenchShell.dispose === 'function') {
       try { hostWindow.EyonHistoryWorkbenchShell.dispose(); } catch {}
     }
-    const entry = hostDocument.getElementById(WAND_ENTRY_ID);
-    if (entry) entry.remove();
-    const style = hostDocument.getElementById(WAND_STYLE_ID);
-    if (style) style.remove();
     if (hostWindow[INSTANCE_KEY] === state) delete hostWindow[INSTANCE_KEY];
   };
 
-  ensureEntryControls();
-  observeHostUi();
+  hostWindow.addEventListener('eyon-history-workbench:open', onOpenRequest);
   void load().catch(() => {});
 })();`;
 }
@@ -460,28 +391,32 @@ if (workbenchHash !== manifest.workbenchSha256) throw new Error(`dist/workbench.
 
 const remoteLoaderContent = createLoaderContent();
 await writeFile(remoteLoaderPath, `${remoteLoaderContent}\n`, 'utf8');
-// Match Tavern Helper's proven remote-module pattern: the imported script stays
-// tiny, while its implementation can be repaired independently of the card.
-// The loader version query also prevents a browser from reusing an older loader
-// module after a loader-only fix.
-const content = `import ${JSON.stringify(`${REMOTE_LOADER_URL}?eyon_loader=${AUTO_LOADER_VERSION}`)};`;
+// β1：不再生成"只 import 远端模块"的一行脚本。那条路径在 GitHub raw 上会因为
+// text/plain 被浏览器按 MIME 拒绝；现在把实现整段内联进脚本，远端只提供 manifest 与
+// dist（全部经 jsDelivr + SHA-256 校验），修加载器本身与修 bundle 因此互不牵连。
 const artifact = {
   type: 'script',
   enabled: true,
-  name: `伊雍历史工作台自动更新加载器 ${manifest.version}`,
+  name: `伊雍历史工作台-${RELEASE_LABEL}（自动更新加载器）`,
   id: AUTO_LOADER_ID,
-  info: `伊雍历史工作台 ${manifest.version} 远端自动更新加载器（loader ${AUTO_LOADER_VERSION}）。通过 Tavern Helper 直接导入 GitHub 远端模块，每次酒馆载入时读取最新 manifest，先校验 SHA-256 再加载；网络不可用时使用最后一次已验证缓存。请停用旧版原生扩展和旧内嵌整合脚本，避免重复监听。`,
+  info: `伊雍历史工作台 ${RELEASE_LABEL}（内部版本 ${manifest.version}，loader ${AUTO_LOADER_VERSION}）。`
+    + `①加载器整段内联，无静态 import，规避 GitHub raw 的 text/plain 导致的 module MIME 拒绝；`
+    + `②manifest 与 dist 全走 jsDelivr，读取后逐字节校验 SHA-256，失败则回退最后一次已验证缓存；`
+    + `③魔术棒入口已退役，工作台只由角色卡悬浮球打开，并已接上 eyon-history-workbench:open 桥接；`
+    + `④ready 通知后补一次 success，避免通知条目永久驻留导致悬浮球不回日常动作。`
+    + `请停用旧版原生扩展和旧版自动更新脚本，避免重复监听。`,
   button: { enabled: true, buttons: [] },
   data: {},
   export_with: { data: true, button: true },
-  content,
+  content: remoteLoaderContent,
 };
 await writeFile(outputPath, JSON.stringify(artifact, null, 2) + '\n', 'utf8');
 
+const artifactName = basename(outputPath);
 const sums = [
   `# Release checksums (SHA-256)`,
   `${sha256(await readFile(resolve(releaseDir, `酒馆助手脚本-伊雍历史工作台-v${manifest.version}.json`)))}  酒馆助手脚本-伊雍历史工作台-v${manifest.version}.json`,
-  `${sha256(await readFile(outputPath))}  酒馆助手脚本-伊雍历史工作台-自动更新.json`,
+  `${sha256(await readFile(outputPath))}  ${artifactName}`,
   `${sha256(await readFile(remoteLoaderPath))}  extension/auto-loader.js`,
 ];
 const releaseRegexDir = resolve(releaseDir, 'regex');

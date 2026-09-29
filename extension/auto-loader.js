@@ -3,14 +3,12 @@
 
   // This script is intentionally small: runtime and UI bytes are fetched from the
   // public release manifest and are executed only after SHA-256 verification.
-  const MANIFEST_URL = "https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/manifest.json";
-  const LOADER_VERSION = "0.2.0";
+  const MANIFEST_URL = "https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@main/manifest.json";
+  const LOADER_VERSION = "0.3.0";
   const CACHE_NAME = 'eyon-history-workbench-verified-v1';
   const INSTANCE_KEY = '__eyonHistoryWorkbenchAutoLoader';
   const LEGACY_INSTANCE_KEY = '__eyonHistoryWorkbenchInternalLoader';
   const LEGACY_EXTENSION_KEY = '__eyonHistoryWorkbenchExtension';
-  const WAND_ENTRY_ID = 'eyon-history-workbench-wand-entry';
-  const WAND_STYLE_ID = 'eyon-history-workbench-wand-style';
 
   const scriptWindow = window;
   const hostWindow = window.parent && window.parent !== window ? window.parent : window;
@@ -27,8 +25,6 @@
     moduleScript: null,
     overlay: null,
     style: null,
-    observer: null,
-    uiTimer: null,
     runtimeWaitCancel: null,
   };
 
@@ -56,22 +52,6 @@
     if (level === 'error') console.error('[伊雍工作台]', detail);
   };
 
-  const hostMenu = () => hostDocument.querySelector('#sp_wand_container')
-    || hostDocument.querySelector('#extensionsMenu')
-    || hostDocument.querySelector('.extensionsMenu');
-
-  const ensureEntryStyle = () => {
-    if (hostDocument.getElementById(WAND_STYLE_ID)) return;
-    const style = hostDocument.createElement('style');
-    style.id = WAND_STYLE_ID;
-    style.textContent = [
-      '#' + WAND_ENTRY_ID + '{display:flex;align-items:center;gap:.55em;cursor:pointer;}',
-      '#' + WAND_ENTRY_ID + '.eyon-loader-pending{opacity:.72;}',
-      '#' + WAND_ENTRY_ID + '.eyon-loader-error{color:#b65a5a;}',
-    ].join('');
-    (hostDocument.head || hostDocument.documentElement).appendChild(style);
-  };
-
   const openWorkbench = () => {
     state.openRequested = true;
     if (hostWindow.EyonHistoryWorkbenchShell && typeof hostWindow.EyonHistoryWorkbenchShell.open === 'function') {
@@ -81,59 +61,10 @@
     void load();
   };
 
-  const createWandEntry = (menu) => {
-    let entry = hostDocument.getElementById(WAND_ENTRY_ID);
-    if (!entry) {
-      entry = hostDocument.createElement('div');
-      entry.id = WAND_ENTRY_ID;
-      entry.className = 'list-group-item flex-container flexGap5 interactable';
-      entry.setAttribute('role', 'button');
-      entry.setAttribute('tabindex', '0');
-      entry.innerHTML = '<i class="fa-solid fa-book-open"></i><span>伊雍历史工作台</span>';
-      entry.addEventListener('click', openWorkbench);
-      entry.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openWorkbench(); }
-      });
-    }
-    entry.classList.toggle('eyon-loader-pending', !state.facade);
-    entry.classList.toggle('eyon-loader-error', false);
-    const label = entry.querySelector('span');
-    const nextLabel = state.version ? '伊雍历史工作台' : '伊雍历史工作台（加载中）';
-    if (label && label.textContent !== nextLabel) label.textContent = nextLabel;
-    if (entry.parentElement !== menu) menu.appendChild(entry);
-  };
-
-  const ensureEntryControls = () => {
-    ensureEntryStyle();
-    const menu = hostMenu();
-    if (menu) createWandEntry(menu);
-  };
-
-  const markEntryError = () => {
-    const entry = hostDocument.getElementById(WAND_ENTRY_ID);
-    if (!entry) return;
-    entry.classList.remove('eyon-loader-pending');
-    entry.classList.add('eyon-loader-error');
-    const label = entry.querySelector('span');
-    if (label && label.textContent !== '伊雍历史工作台（加载失败）') {
-      label.textContent = '伊雍历史工作台（加载失败）';
-    }
-  };
-
-  const observeHostUi = () => {
-    if (state.observer || !hostDocument.documentElement) return;
-    const target = hostDocument.body || hostDocument.documentElement;
-    if (!target) return;
-    const schedule = () => {
-      if (state.uiTimer || state.disposed) return;
-      state.uiTimer = setTimeout(() => {
-        state.uiTimer = null;
-        if (!state.disposed) ensureEntryControls();
-      }, 120);
-    };
-    state.observer = new MutationObserver(schedule);
-    state.observer.observe(target, { childList: true, subtree: true });
-  };
+  // β1：魔术棒入口整段退役。工作台只由角色卡悬浮球打开——悬浮球点击派发
+  // eyon-history-workbench:open，该事件此前只有原生扩展入口在监听，脚本通道
+  // 必须自己接上，否则点了悬浮球没有任何反应。
+  const onOpenRequest = () => openWorkbench();
 
   const bytesToHex = (bytes) => Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, '0')).join('');
   const sha256Bytes = async (bytes) => {
@@ -258,7 +189,6 @@
     if (!facade) throw new Error('远端运行时加载后没有暴露 EyonHistoryWorkbench');
     state.facade = facade;
     hostWindow.EyonHistoryWorkbench = facade;
-    ensureEntryControls();
     try { hostWindow.dispatchEvent(new CustomEvent('eyon-history-workbench:ready', { detail: { facade, version: state.version } })); } catch {}
   };
 
@@ -373,13 +303,15 @@
       const facade = await importRuntime(artifacts.runtimeBytes);
       publishFacade(facade);
       await mountWorkbench(artifacts.workbenchBytes);
-      ensureEntryControls();
       if (state.openRequested && hostWindow.EyonHistoryWorkbenchShell) hostWindow.EyonHistoryWorkbenchShell.open();
       emitStatus('ready', '伊雍历史工作台已就绪');
+      // 运行时的通知表只在 error / success / cancelled 上安排退场，phase:'ready' 会永久驻留
+      // （真机现象：悬浮球停在"加载完毕"动作，不回 idle 日常循环）。保留 ready 事件兼容其它
+      // 消费者，随后补一次 success 让同 key 条目自然退场。
+      setTimeout(() => emitStatus('success', '伊雍历史工作台已就绪'), 150);
       return facade;
     })().catch((error) => {
       state.loading = null;
-      markEntryError();
       emitStatus('error', '伊雍历史工作台加载失败：' + (error && error.message ? error.message : String(error)), 'error');
       throw error;
     });
@@ -389,24 +321,17 @@
   state.dispose = () => {
     if (state.disposed) return;
     state.disposed = true;
-    if (state.observer) state.observer.disconnect();
-    if (state.uiTimer) clearTimeout(state.uiTimer);
-    state.uiTimer = null;
     state.runtimeWaitCancel?.(new Error('伊雍历史工作台加载器已停止'));
+    hostWindow.removeEventListener('eyon-history-workbench:open', onOpenRequest);
     if (state.moduleScript && state.moduleScript.isConnected) state.moduleScript.remove();
     if (state.overlay) state.overlay.remove();
     if (state.style) state.style.remove();
     if (hostWindow.EyonHistoryWorkbenchShell && typeof hostWindow.EyonHistoryWorkbenchShell.dispose === 'function') {
       try { hostWindow.EyonHistoryWorkbenchShell.dispose(); } catch {}
     }
-    const entry = hostDocument.getElementById(WAND_ENTRY_ID);
-    if (entry) entry.remove();
-    const style = hostDocument.getElementById(WAND_STYLE_ID);
-    if (style) style.remove();
     if (hostWindow[INSTANCE_KEY] === state) delete hostWindow[INSTANCE_KEY];
   };
 
-  ensureEntryControls();
-  observeHostUi();
+  hostWindow.addEventListener('eyon-history-workbench:open', onOpenRequest);
   void load().catch(() => {});
 })();

@@ -1,4 +1,4 @@
-const VERSION = '0.11.9';
+const VERSION = '0.12.0';
 const RUNTIME_URL = new URL('../dist/index.js', import.meta.url).href;
 const WORKBENCH_URL = new URL('../dist/workbench.js', import.meta.url).href;
 const INSTANCE_KEY = '__eyonHistoryWorkbenchExtension';
@@ -332,22 +332,11 @@ function createWandEntry(doc) {
 }
 
 function refreshWandEntry() {
-  const doc = hostDocument();
-  const host = menuHost(doc);
-  let entry = doc.getElementById(WAND_ENTRY_ID);
-  if (!host) {
-    // ST 顶栏尚未挂载时等待 MutationObserver；不要把按钮散落到正文 body。
-    entry?.remove();
-    return false;
-  }
-  ensureEntryStyle();
-  if (!entry) entry = createWandEntry(doc);
-  if (entry.parentNode !== host) host.append(entry);
-  const label = entry.querySelector('span');
-  if (label) label.textContent = '伊雍历史工作台';
-  // 入口始终保留，设置页中的开关停用功能后仍可返回设置恢复。
-  entry.hidden = false;
-  return true;
+  // β1：魔术棒入口退役。工作台只由角色卡悬浮球打开（悬浮球的 :open 事件在下方绑到
+  // openWorkbench），因此这里不再创建入口，只负责清掉升级前可能残留的那一条。
+  // createWandEntry / ensureEntryStyle 保留为历史实现，不再有调用点。
+  hostDocument().getElementById(WAND_ENTRY_ID)?.remove();
+  return false;
 }
 
 function ensureEntryControls() {
@@ -358,18 +347,11 @@ function ensureEntryControls() {
 }
 
 function observeHostUi() {
-  if (state.uiObserver || typeof MutationObserver === 'undefined') return;
-  const doc = hostDocument();
-  const target = doc.body || doc.documentElement;
-  if (!target) return;
-  state.uiObserver = new MutationObserver(() => {
-    if (state.uiObserverTimer) return;
-    state.uiObserverTimer = setTimeout(() => {
-      state.uiObserverTimer = null;
-      if (!state.stopped) ensureEntryControls();
-    }, 120);
-  });
-  state.uiObserver.observe(target, { childList: true, subtree: true });
+  // β1：入口退役后不再需要在宿主顶栏重绘时重挂按钮，避免整页 MutationObserver 空转。
+  state.uiObserver?.disconnect();
+  state.uiObserver = null;
+  if (state.uiObserverTimer) clearTimeout(state.uiObserverTimer);
+  state.uiObserverTimer = null;
 }
 
 function removeEntryControls() {

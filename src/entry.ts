@@ -1,4 +1,5 @@
 import { BiographyController } from './runtime/biographyController.ts';
+import { WORKBENCH_VERSION } from './core/version.ts';
 import { ButterflyController } from './runtime/butterflyController.ts';
 import { TavernButterflyNarrativeShell } from './runtime/tavernButterflyShell.ts';
 import { TavernButterflyContextAssembler } from './runtime/butterflyContext.ts';
@@ -751,15 +752,14 @@ async function bootstrap(): Promise<void> {
     }));
     return next;
   };
-  // 与柏宝书的总开关模式保持一致：运行时可以一直挂载，设置页停用后
-  // 仍允许打开设置恢复，但所有会改写历史/聊天的主动工作流都 fail-closed。
+  // β1：设置页的启用/停用开关已退役（工作台只由角色卡悬浮球打开，没有可用的恢复
+  // 入口），因此这里不再 fail-closed。历史上写下的 workbenchEnabled:false 只是旧字段，
+  // 不能把工作台永久锁死；要停用请直接用酒馆自己的扩展/脚本开关。
   const assertWorkbenchEnabled = (): void => {
-    if (settings.read().workbenchEnabled === false) {
-      throw new Error('伊雍历史工作台已停用，请在工作台设置页重新启用');
-    }
+    void settings.read().workbenchEnabled;
   };
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.11.9',
+    version: WORKBENCH_VERSION,
     resolveDisplayText: text => resolveWorkbenchDisplayText(text, globalObject),
     getSettings: () => settings.read(),
     updateSettings,

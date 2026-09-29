@@ -17,6 +17,7 @@ import {
   type WorkbenchIconName,
 } from './lucideIcons.ts';
 import { WorkbenchUiClient, type WorkbenchUiSnapshot } from './workbenchClient.ts';
+import { WORKBENCH_VERSION, WORKBENCH_VERSION_LABEL } from '../core/version.ts';
 
 type CanonConsumptionInspection = Awaited<
   ReturnType<WorkbenchUiClient['inspectCurrentArtifactCanonConsumption']>
@@ -71,8 +72,9 @@ const EMPTY_CUSTOM: GenerationSettings = {
   temperature: 0.8,
 };
 
-const CURRENT_EXTENSION_VERSION = '0.11.9';
-const REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/manifest.json';
+// β1：对外版本名与内部数字版本分离（更新机制要求 manifest.version 为 x.y.z）。
+const CURRENT_EXTENSION_VERSION = WORKBENCH_VERSION;
+const REMOTE_MANIFEST_URL = 'https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@main/manifest.json';
 const EXTENSION_ID = 'eyon-history-workbench';
 
 type UpdateState = {
@@ -120,11 +122,10 @@ export function mountSettingsWorkbench(
     ...FALLBACK_SETTINGS.appearance,
     mode: options.theme ?? FALLBACK_SETTINGS.appearance.mode,
   };
-  let launcherEnabled = client.isWorkbenchEnabled();
   let updateState: UpdateState = {
     latest: null,
     available: false,
-    message: '当前版本 0.11.9；点击检查更新以读取 GitHub 稳定版。',
+    message: `当前版本 ${WORKBENCH_VERSION_LABEL}（内部版本 ${WORKBENCH_VERSION}）；点击检查更新以读取远端稳定版。`,
   };
   let busy = false;
   let status = '';
@@ -145,7 +146,6 @@ export function mountSettingsWorkbench(
         client.listCharacterWorldbookEntries(),
       ]);
       appearance = snapshot.settings.appearance;
-      launcherEnabled = snapshot.settings.workbenchEnabled !== false;
       syncCustomDrafts(snapshot.settings);
       error = '';
     } catch (cause) {
@@ -161,9 +161,6 @@ export function mountSettingsWorkbench(
   function render(): void {
     const current = settings();
     appearance = current?.appearance ?? appearance;
-    if (current?.workbenchEnabled !== undefined) {
-      launcherEnabled = current.workbenchEnabled !== false;
-    }
     host.dataset.theme = appearance.mode;
     // internal.86：每次渲染同步读取最近一次蝴蝶记忆注入快照（只读、无副作用）。
     try {
@@ -174,7 +171,7 @@ export function mountSettingsWorkbench(
     root.innerHTML = `
       <style>${settingsCss}</style>
       <div class="settings">
-        ${renderLauncherBanner()}
+        ${renderVersionBar()}
         <nav class="settings-nav" aria-label="设置分类">
           ${TABS.map(item => tabButton(item)).join('')}
         </nav>
@@ -200,25 +197,21 @@ export function mountSettingsWorkbench(
       </button>`;
   }
 
-  function renderLauncherBanner(): string {
-    const enabled = launcherEnabled;
+  function renderVersionBar(): string {
     const updateButton = updateState.available
       ? `<button class="primary-button" type="button" data-action="update-extension" ${busy ? 'disabled' : ''}>${icon('download')}更新到 ${escapeHtml(updateState.latest ?? '')}</button>`
       : `<button class="quiet-button" type="button" data-action="check-update" ${busy ? 'disabled' : ''}>${icon('refresh-cw')}检查更新</button>`;
+    // β1：启动开关与"魔术棒入口"说明一并退役——工作台由角色卡悬浮球打开，版本号常驻
+    // 工作台左上角，这里只保留更新检查与版本说明。
     return `
-      <section class="launcher-banner" aria-label="伊雍历史工作台启动与更新">
+      <section class="launcher-banner" aria-label="伊雍历史工作台版本与更新">
         <div class="launcher-copy">
           <div class="launcher-kicker">EYON HISTORY WORKBENCH · CONTROL</div>
-          <h1>工作台启动与版本</h1>
-          <p>扩展加载后会自动启动；魔术棒只负责打开工作台。这里的开关用于停用或恢复工作台功能，更新只在你点击按钮后执行。</p>
+          <h1>伊雍历史工作台 <span class="launcher-version">${WORKBENCH_VERSION_LABEL}</span></h1>
+          <p>当前版本 ${WORKBENCH_VERSION_LABEL}（内部版本 ${WORKBENCH_VERSION}）。工作台由角色卡悬浮球打开，更新只在你点击按钮后执行，不会自动联网。</p>
           <small class="launcher-update-status">${escapeHtml(updateState.message)}</small>
         </div>
         <div class="launcher-actions">
-          <label class="launcher-toggle">
-            <span>启用伊雍历史工作台</span>
-            <input id="workbench-enabled" type="checkbox" ${enabled ? 'checked' : ''}>
-            <i aria-hidden="true"></i>
-          </label>
           ${updateButton}
         </div>
       </section>`;
@@ -595,14 +588,6 @@ export function mountSettingsWorkbench(
         options.onAppearanceChange?.(next);
       });
     });
-    root.querySelector<HTMLInputElement>('#workbench-enabled')?.addEventListener('change', async event => {
-      const enabled = (event.currentTarget as HTMLInputElement).checked;
-      launcherEnabled = enabled;
-      await persist(
-        async () => client.updateSettings({ workbenchEnabled: enabled }),
-        enabled ? '伊雍历史工作台已启用' : '伊雍历史工作台已停用；仍可从魔术棒进入设置恢复',
-      );
-    });
     root.querySelector<HTMLButtonElement>('[data-action="check-update"]')?.addEventListener('click', async () => {
       await checkForUpdate();
     });
@@ -852,7 +837,7 @@ export function mountSettingsWorkbench(
     error = '';
     updateState = {
       ...updateState,
-      message: '正在读取 GitHub 稳定版信息…',
+      message: '正在读取远端稳定版信息…',
     };
     render();
     try {
@@ -867,8 +852,8 @@ export function mountSettingsWorkbench(
         latest,
         available,
         message: available
-          ? `发现新版本 ${latest}（当前 ${CURRENT_EXTENSION_VERSION}），可点击右侧按钮更新。`
-          : `当前已是最新稳定版（${CURRENT_EXTENSION_VERSION}）。`,
+          ? `发现新版本 ${latest}（当前 ${WORKBENCH_VERSION_LABEL}／${CURRENT_EXTENSION_VERSION}），可点击右侧按钮更新。`
+          : `当前已是最新稳定版（${WORKBENCH_VERSION_LABEL}／${CURRENT_EXTENSION_VERSION}）。`,
       };
     } catch (cause) {
       updateState = {
@@ -929,15 +914,15 @@ export function mountSettingsWorkbench(
       status = message;
       if (isWorkbenchSettings(result) && snapshot) {
         snapshot = { ...snapshot, settings: result };
-        launcherEnabled = result.workbenchEnabled !== false;
       } else if (isLauncherPatch(result)) {
-        launcherEnabled = result.workbenchEnabled === true;
+        // β1：启动开关已退役。旧版留下的 workbenchEnabled 只有 schema 兼容意义，
+        // 不再驱动任何可见状态，也不再阻断工作流（避免历史 false 把工作台锁死）。
       } else if (client.isReady()) {
         snapshot = await client.readSnapshot();
       } else {
-        // The launcher toggle is deliberately available while the runtime is
-        // still waiting for Tavern Helper/MVU; do not turn that valid action
-        // into a false "runtime failed" message.
+        // Settings writes are still accepted while the runtime is waiting for
+        // Tavern Helper/MVU; do not turn a valid write into a false
+        // "runtime failed" message.
         return true;
       }
       if (snapshot) {

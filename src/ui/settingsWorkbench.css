@@ -56,6 +56,18 @@ button {
   color: var(--ink, #f1eee5);
   font: 800 18px/1.25 "Noto Serif SC", "Songti SC", serif;
 }
+/* β1：启动开关退役，版本徽标顶上；版本号同时常驻工作台左上角。 */
+.launcher-version {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--gold-2, #dfc77e) 45%, transparent);
+  border-radius: 999px;
+  color: var(--gold-2, #dfc77e);
+  font-size: 12px;
+  letter-spacing: .06em;
+  vertical-align: 2px;
+}
 
 .launcher-copy p {
   max-width: 720px;

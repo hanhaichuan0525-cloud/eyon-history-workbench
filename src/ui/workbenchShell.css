@@ -117,6 +117,18 @@ button:focus-visible {
   font-size: 9px;
   letter-spacing: .16em;
 }
+/* β1：魔术棒入口与设置页启动开关退役后，版本号常驻工作台左上角。 */
+.brand-version {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius: 999px;
+  color: var(--gold);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .08em;
+}
 
 .rail-label {
   margin: 24px 10px 10px;
@@ -239,6 +251,15 @@ button:focus-visible {
 .top-copy p, .top-copy h2 { margin: 0; }
 .top-copy p { color: var(--muted); font-size: 10px; letter-spacing: .04em; }
 .top-copy p span { margin: 0 3px; color: var(--gold); }
+.top-copy p .top-version {
+  margin: 0 2px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
+  border-radius: 999px;
+  color: var(--gold);
+  font-weight: 650;
+  letter-spacing: .06em;
+}
 .top-copy p b { color: var(--muted); font-weight: 500; }
 .top-copy h2 { margin-top: 4px; color: var(--ink); font: 650 16px/1.3 var(--font-reading); }
 .top-actions { display: flex; gap: 8px; }

@@ -5,6 +5,7 @@ import { mountSettingsWorkbench, type SettingsWorkbenchHandle } from './settings
 import { mountTimelineWorkbench, type TimelineWorkbenchHandle } from './timelineWorkbench.ts';
 import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
 import { WORKBENCH_APPEARANCE_EVENT } from '../runtime/facade.ts';
+import { WORKBENCH_VERSION, WORKBENCH_VERSION_LABEL } from '../core/version.ts';
 import { companionPresentation } from './companionPresentation.ts';
 import { WorkbenchUiClient, type WorkbenchUiSnapshot } from './workbenchClient.ts';
 import {
@@ -90,6 +91,7 @@ export function mountWorkbenchShell(
             <div>
               <strong>虚嗣王庭</strong>
               <small>ROYAL SCRIPTORIUM</small>
+              <span class="brand-version" title="伊雍历史工作台 ${WORKBENCH_VERSION}">${WORKBENCH_VERSION_LABEL}</span>
             </div>
           </div>
           <span class="rail-label">见证档案院</span>
@@ -118,7 +120,7 @@ export function mountWorkbenchShell(
         <main class="workspace">
           <header class="topbar">
             <div class="top-copy">
-              <p>伊雍历史工作台 <span aria-hidden="true">/</span> <b data-route></b></p>
+              <p>伊雍历史工作台 <span class="top-version" title="内部版本 ${WORKBENCH_VERSION}">${WORKBENCH_VERSION_LABEL}</span> <span aria-hidden="true">/</span> <b data-route></b></p>
               <h2 data-context></h2>
             </div>
             <div class="top-actions">

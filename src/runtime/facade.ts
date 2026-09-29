@@ -35,6 +35,8 @@ export const WORKBENCH_CANCEL_TASK_EVENT = 'eyon-history-workbench:cancel-task';
 export const WORKBENCH_APPEARANCE_EVENT = 'eyon-history-workbench:appearance';
 export const WORKBENCH_READY_EVENT = 'eyon-history-workbench:ready';
 export const WORKBENCH_OPEN_EVENT = 'eyon-history-workbench:open';
+export const WORKBENCH_SETTINGS_CHANGED_EVENT =
+  'eyon-history-workbench:settings-changed';
 export const WORKBENCH_RUIN_REFERENCES_EVENT =
   'eyon-history-workbench:ruin-references';
 export const WORKBENCH_DATA_CHANGED_EVENT =

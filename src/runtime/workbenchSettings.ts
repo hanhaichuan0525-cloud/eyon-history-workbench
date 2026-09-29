@@ -78,6 +78,10 @@ const ErrorLogEntrySchema = z.object({
 
 export const WorkbenchSettingsSchema = z.object({
   schemaVersion: z.literal(1).default(1),
+  // 工作台入口开关：只控制可见入口，不停止后台的消息监听与任务链路。
+  // 保持默认开启，兼容旧版脚本设置与首次安装。
+  // 旧设置没有这个字段时按“开启”解释；保持 optional 让旧版测试夹具/备份无需迁移。
+  workbenchEnabled: z.boolean().optional(),
   generation: TaskSettingsSchema.default(() => ({
     genealogy: emptyGenerationSettings(),
     ruin: emptyGenerationSettings(),

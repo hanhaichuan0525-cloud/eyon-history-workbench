@@ -106,6 +106,7 @@ import {
   WORKBENCH_GLOBAL,
   WORKBENCH_READY_EVENT,
   WORKBENCH_RUIN_REFERENCES_EVENT,
+  WORKBENCH_SETTINGS_CHANGED_EVENT,
   WORKBENCH_STATUS_EVENT,
   type EyonHistoryWorkbenchFacade,
   type GenealogyCharacterOption,
@@ -697,11 +698,18 @@ async function bootstrap(): Promise<void> {
     });
   };
   globalThis.addEventListener(WORKBENCH_CANCEL_TASK_EVENT, onCancelTask);
+  const updateSettings = (patch: Partial<import('./runtime/workbenchSettings.ts').WorkbenchSettings>) => {
+    const next = settings.update(patch);
+    globalThis.dispatchEvent(new CustomEvent(WORKBENCH_SETTINGS_CHANGED_EVENT, {
+      detail: { settings: structuredClone(next) },
+    }));
+    return next;
+  };
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.11.0',
+    version: '0.11.1',
     resolveDisplayText: text => resolveWorkbenchDisplayText(text, globalObject),
     getSettings: () => settings.read(),
-    updateSettings: patch => settings.update(patch),
+    updateSettings,
     setGenerationSettings: (taskType, next) =>
       settings.setGeneration(taskType, next),
     applyGenerationSettingsToAll: next =>

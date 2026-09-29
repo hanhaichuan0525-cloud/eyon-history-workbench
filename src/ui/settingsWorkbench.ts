@@ -255,10 +255,19 @@ export function mountSettingsWorkbench(
   }
 
   function renderAppearance(current: WorkbenchAppearance): string {
+    const workbenchEnabled = settings()?.workbenchEnabled !== false;
     return `
       <section class="section">
         ${sectionHeader('palette', '外观皮肤', '分别设置明暗模式、界面强调色与正文字色')}
         <div class="section-body appearance-stack">
+          <div class="appearance-block launcher-block">
+            ${appearanceHeading('工作台入口', '控制魔术棒菜单与工作台快捷入口是否显示；关闭不会停止传记、墟境任务或遣返等后台链路。')}
+            ${settingRow(
+              '启用伊雍历史工作台',
+              '停用后可在酒馆扩展设置区重新开启；如果只想暂停入口，不必关闭整个扩展。',
+              `<label class="toggle"><input id="workbench-enabled" type="checkbox" ${workbenchEnabled ? 'checked' : ''}><span></span></label>`,
+            )}
+          </div>
           <div class="appearance-block">
             ${appearanceHeading('明暗模式', '日间使用雾紫纸面，夜间使用明度克制的深紫灰档案底色。')}
             <div class="mode-grid">
@@ -560,6 +569,13 @@ export function mountSettingsWorkbench(
         await persist(async () => client.updateSettings({ appearance: next }), '外观设置已保存');
         options.onAppearanceChange?.(next);
       });
+    });
+    root.querySelector<HTMLInputElement>('#workbench-enabled')?.addEventListener('change', async event => {
+      const enabled = (event.currentTarget as HTMLInputElement).checked;
+      await persist(
+        async () => client.updateSettings({ workbenchEnabled: enabled }),
+        enabled ? '伊雍历史工作台入口已启用' : '伊雍历史工作台入口已关闭；可在酒馆扩展设置中重新开启',
+      );
     });
     root.querySelector<HTMLInputElement>('#merge-aliases')?.addEventListener('change', async event => {
       const current = settings()?.retrieval ?? FALLBACK_SETTINGS.retrieval;

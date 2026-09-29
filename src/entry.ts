@@ -698,7 +698,7 @@ async function bootstrap(): Promise<void> {
   };
   globalThis.addEventListener(WORKBENCH_CANCEL_TASK_EVENT, onCancelTask);
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.10.0-internal.140',
+    version: '0.11.0',
     resolveDisplayText: text => resolveWorkbenchDisplayText(text, globalObject),
     getSettings: () => settings.read(),
     updateSettings: patch => settings.update(patch),

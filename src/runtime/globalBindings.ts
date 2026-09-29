@@ -4,6 +4,7 @@ import type {
   HostWorldbookEntry,
   TavernDataBindings,
 } from './tavernHost.ts';
+import { resolveTavernHelperFunction } from './tavernRuntimeAdapter.ts';
 
 type GlobalRecord = Record<string, unknown>;
 type Listener = (...args: unknown[]) => unknown;
@@ -11,7 +12,9 @@ type Listener = (...args: unknown[]) => unknown;
 export async function waitForGlobalMvu(
   globalObject: GlobalRecord = globalThis as GlobalRecord,
 ): Promise<void> {
-  const waitGlobalInitialized = globalObject.waitGlobalInitialized;
+  const waitGlobalInitialized = resolveTavernHelperFunction<
+    (name: string) => Promise<void>
+  >(globalObject, 'waitGlobalInitialized') ?? globalObject.waitGlobalInitialized;
   if (typeof waitGlobalInitialized === 'function') {
     await (waitGlobalInitialized as (name: string) => Promise<void>)('Mvu');
   }
@@ -24,47 +27,54 @@ export async function waitForGlobalMvu(
 export function createGlobalDataBindings(
   globalObject: GlobalRecord = globalThis as GlobalRecord,
 ): TavernDataBindings {
-  const getVariables = requireFunction<
+  const getVariables = resolveRequiredFunction<
     (option: Record<string, unknown>) => Record<string, unknown>
-  >(globalObject.getVariables, 'getVariables');
-  const getCharWorldbookNames = requireFunction<
+  >(globalObject, 'getVariables');
+  const getCharWorldbookNames = resolveRequiredFunction<
     (_character: 'current') => { primary: string | null; additional: string[] }
-  >(globalObject.getCharWorldbookNames, 'getCharWorldbookNames');
-  const getChatWorldbookName = requireFunction<
+  >(globalObject, 'getCharWorldbookNames');
+  const getChatWorldbookName = resolveRequiredFunction<
     (_chat: 'current') => string | null
-  >(globalObject.getChatWorldbookName, 'getChatWorldbookName');
-  const getGlobalWorldbookNames = requireFunction<() => string[]>(
-    globalObject.getGlobalWorldbookNames,
+  >(globalObject, 'getChatWorldbookName');
+  const getGlobalWorldbookNames = resolveRequiredFunction<() => string[]>(
+    globalObject,
     'getGlobalWorldbookNames',
   );
-  const getWorldbook = requireFunction<
+  const getWorldbook = resolveRequiredFunction<
     (name: string) => Promise<HostWorldbookEntry[]>
-  >(globalObject.getWorldbook, 'getWorldbook');
-  const getWorldbookNames = requireFunction<() => string[]>(
-    globalObject.getWorldbookNames,
+  >(globalObject, 'getWorldbook');
+  const getWorldbookNames = resolveRequiredFunction<() => string[]>(
+    globalObject,
     'getWorldbookNames',
   );
-  const rebindGlobalWorldbooks = requireFunction<
+  const rebindGlobalWorldbooks = resolveRequiredFunction<
     (names: string[]) => Promise<void>
-  >(globalObject.rebindGlobalWorldbooks, 'rebindGlobalWorldbooks');
+  >(globalObject, 'rebindGlobalWorldbooks');
   // internal.88（§6 步 B）：createWorldbook / createWorldbookEntries / updateWorldbookWith
   // 随世界书镜像退役一并移除——它们此前只为镜像写入服务，却是**加载期硬依赖**
   // （requireFunction 缺失即抛错），删掉后脚本不再要求宿主提供世界书写接口。
-  const deleteWorldbookEntries = typeof globalObject.deleteWorldbookEntries === 'function'
-    ? globalObject.deleteWorldbookEntries as (
+  const deleteWorldbookEntries = resolveTavernHelperFunction<
+    (
+      name: string,
+      predicate: (entry: HostWorldbookEntry) => boolean,
+      options?: { render?: 'debounced' | 'immediate' },
+    ) => Promise<{ deleted_entries: HostWorldbookEntry[] }>
+  >(globalObject, 'deleteWorldbookEntries')
+    ?? (typeof globalObject.deleteWorldbookEntries === 'function'
+      ? globalObject.deleteWorldbookEntries as (
         name: string,
         predicate: (entry: HostWorldbookEntry) => boolean,
         options?: { render?: 'debounced' | 'immediate' },
       ) => Promise<{ deleted_entries: HostWorldbookEntry[] }>
-    : null;
-  const createChatMessages = requireFunction<
+      : null);
+  const createChatMessages = resolveRequiredFunction<
     (
       messages: Array<{ role: 'user'; message: string }>,
       options?: { refresh?: 'none' | 'affected' | 'all' },
     ) => Promise<void>
-  >(globalObject.createChatMessages, 'createChatMessages');
-  const triggerSlash = requireFunction<(command: string) => Promise<string>>(
-    globalObject.triggerSlash,
+  >(globalObject, 'createChatMessages');
+  const triggerSlash = resolveRequiredFunction<(command: string) => Promise<string>>(
+    globalObject,
     'triggerSlash',
   );
   const mvu = isRecord(globalObject.Mvu) ? globalObject.Mvu : null;
@@ -118,20 +128,63 @@ export function createGlobalDataBindings(
 export function createGlobalScriptVariableBindings(
   globalObject: GlobalRecord = globalThis as GlobalRecord,
 ): ScriptVariableBindings {
-  const getVariables = requireFunction<
+  // Tavern Helper scripts expose these helpers directly in their script
+  // window. Prefer that local binding so the script-scoped variable store is
+  // preserved; UI extensions instead resolve the parent TavernHelper object.
+  const getVariables = (typeof globalObject.getVariables === 'function'
+    ? globalObject.getVariables as (
+        option: Record<string, unknown>,
+      ) => Record<string, unknown>
+    : resolveTavernHelperFunction<
     (option: Record<string, unknown>) => Record<string, unknown>
-  >(globalObject.getVariables, 'getVariables');
-  const replaceVariables = requireFunction<
+  >(globalObject, 'getVariables'));
+  const replaceVariables = (typeof globalObject.replaceVariables === 'function'
+    ? globalObject.replaceVariables as (
+        variables: Record<string, unknown>,
+        option: Record<string, unknown>,
+      ) => void
+    : resolveTavernHelperFunction<
     (variables: Record<string, unknown>, option: Record<string, unknown>) => void
-  >(globalObject.replaceVariables, 'replaceVariables');
-  const getScriptId = requireFunction<() => string>(
-    globalObject.getScriptId,
-    'getScriptId',
-  );
-  const option = () => ({ type: 'script', script_id: getScriptId() });
+  >(globalObject, 'replaceVariables'));
+  const getScriptId = (typeof globalObject.getScriptId === 'function'
+    ? globalObject.getScriptId as () => string
+    : resolveTavernHelperFunction<() => string>(globalObject, 'getScriptId'));
+  if (getVariables && replaceVariables && getScriptId) {
+    const option = () => ({ type: 'script', script_id: getScriptId() });
+    return {
+      getScriptVariables: () => getVariables(option()),
+      replaceScriptVariables: variables => replaceVariables(variables, option()),
+    };
+  }
+
+  // UI extensions do not run inside a Tavern Helper script iframe and therefore
+  // have no script_id. Keep the same settings schema, but persist it in the
+  // extension namespace owned by SillyTavern instead of inventing a fake script.
+  const sillyTavern = requireRecord(globalObject.SillyTavern, 'SillyTavern');
+  const getContext = typeof sillyTavern.getContext === 'function'
+    ? sillyTavern.getContext as () => Record<string, unknown>
+    : null;
+  const context = getContext?.();
+  const extensionSettings = isRecord(context?.extensionSettings)
+    ? context.extensionSettings
+    : isRecord(sillyTavern.extensionSettings)
+      ? sillyTavern.extensionSettings
+      : null;
+  if (!extensionSettings) throw new Error('SillyTavern.extensionSettings is unavailable');
+  const saveSettingsDebounced = typeof context?.saveSettingsDebounced === 'function'
+    ? context.saveSettingsDebounced as () => Promise<void> | void
+    : typeof sillyTavern.saveSettingsDebounced === 'function'
+      ? sillyTavern.saveSettingsDebounced as () => Promise<void> | void
+      : null;
+  const extensionKey = 'eyon-history-workbench';
   return {
-    getScriptVariables: () => getVariables(option()),
-    replaceScriptVariables: variables => replaceVariables(variables, option()),
+    getScriptVariables: () => ({
+      eyonHistoryWorkbench: structuredClone(extensionSettings[extensionKey] ?? {}),
+    }),
+    replaceScriptVariables: variables => {
+      extensionSettings[extensionKey] = structuredClone(variables.eyonHistoryWorkbench ?? {});
+      void saveSettingsDebounced?.();
+    },
   };
 }
 
@@ -149,16 +202,54 @@ export function createGlobalEventBridge(
     messageDeleted?: string;
   };
 } {
-  const eventOn = requireFunction<
+  const sillyTavern = isRecord(globalObject.SillyTavern)
+    ? globalObject.SillyTavern
+    : null;
+  const eventSource = isRecord(sillyTavern?.eventSource)
+    ? sillyTavern.eventSource
+    : null;
+  const eventOn = resolveTavernHelperFunction<
     (event: string, listener: Listener) => { stop?: () => void } | void
-  >(globalObject.eventOn, 'eventOn');
-  const eventMakeFirst = typeof globalObject.eventMakeFirst === 'function'
-    ? globalObject.eventMakeFirst as (
+  >(globalObject, 'eventOn')
+    ?? (typeof globalObject.eventOn === 'function'
+      ? globalObject.eventOn as (
+          event: string,
+          listener: Listener,
+        ) => { stop?: () => void } | void
+      : typeof eventSource?.on === 'function'
+        ? eventSource.on.bind(eventSource) as (
+            event: string,
+            listener: Listener,
+          ) => { stop?: () => void } | void
+        : null);
+  if (!eventOn) throw new Error('eventOn is unavailable');
+  const eventMakeFirst = resolveTavernHelperFunction<(
+    event: string,
+    listener: Listener,
+  ) => { stop?: () => void } | void>(globalObject, 'eventMakeFirst')
+    ?? (typeof globalObject.eventMakeFirst === 'function'
+      ? globalObject.eventMakeFirst as (
         event: string,
         listener: Listener,
       ) => { stop?: () => void } | void
-    : null;
-  const eventNames = requireRecord(globalObject.tavern_events, 'tavern_events');
+      : typeof eventSource?.makeFirst === 'function'
+        ? eventSource.makeFirst.bind(eventSource) as (
+            event: string,
+            listener: Listener,
+          ) => { stop?: () => void } | void
+        : null);
+  const eventRemove = resolveTavernHelperFunction<
+    (event: string, listener: Listener) => void
+  >(globalObject, 'eventRemoveListener')
+    ?? (typeof globalObject.eventRemoveListener === 'function'
+      ? globalObject.eventRemoveListener as (event: string, listener: Listener) => void
+      : typeof eventSource?.removeListener === 'function'
+        ? eventSource.removeListener.bind(eventSource) as (
+            event: string,
+            listener: Listener,
+          ) => void
+        : null);
+  const eventNames = resolveEventNames(globalObject);
   const generationAfterCommands = requireString(
     eventNames.GENERATION_AFTER_COMMANDS,
     'tavern_events.GENERATION_AFTER_COMMANDS',
@@ -183,11 +274,13 @@ export function createGlobalEventBridge(
       on(event, listener) {
         const subscription = eventOn(event, listener);
         if (subscription?.stop) stops.set(listener, subscription.stop);
+        else if (eventRemove) stops.set(listener, () => eventRemove(event, listener));
       },
       first: eventMakeFirst
         ? (event, listener) => {
             const subscription = eventMakeFirst(event, listener);
             if (subscription?.stop) stops.set(listener, subscription.stop);
+            else if (eventRemove) stops.set(listener, () => eventRemove(event, listener));
           }
         : undefined,
       off(_event, listener) {
@@ -211,6 +304,28 @@ function requireFunction<T extends (...args: never[]) => unknown>(
 ): T {
   if (typeof value !== 'function') throw new Error(`${name} is unavailable`);
   return value as T;
+}
+
+function resolveRequiredFunction<T extends (...args: never[]) => unknown>(
+  globalObject: GlobalRecord,
+  name: string,
+): T {
+  return resolveTavernHelperFunction<T>(globalObject, name)
+    ?? requireFunction(globalObject[name], name);
+}
+
+function resolveEventNames(globalObject: GlobalRecord): GlobalRecord {
+  if (isRecord(globalObject.tavern_events)) return globalObject.tavern_events;
+  const sillyTavern = isRecord(globalObject.SillyTavern)
+    ? globalObject.SillyTavern
+    : null;
+  if (isRecord(sillyTavern?.eventTypes)) return sillyTavern.eventTypes;
+  const context = typeof sillyTavern?.getContext === 'function'
+    ? (sillyTavern.getContext as () => Record<string, unknown>)()
+    : null;
+  if (isRecord(context?.event_types)) return context.event_types;
+  if (isRecord(context?.eventTypes)) return context.eventTypes;
+  throw new Error('tavern_events is unavailable');
 }
 
 function requireRecord(value: unknown, name: string): GlobalRecord {

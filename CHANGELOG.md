@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0 — 2026-09-29（扩展候选）
+
+- 新增 SillyTavern 原生 Git 扩展入口：根 `manifest.json` 声明 `extension/index.js`、版本、更新钩子和最低宿主版本。
+- 扩展从仓库内相对路径加载正式 `dist/index.js` 与 `dist/workbench.js`，复用同一工作台，不引入远程脚本执行。
+- 增加宿主能力契约与 Tavern Helper / SillyTavern 原生 API 回退桥，扩展版没有脚本 `script_id` 时使用受控的扩展设置命名空间。
+- 保留 0.10.0 JSON 稳定发行物；扩展版与 JSON 版不能同时启用。
+
+已知边界：尚未在真实 SillyTavern 扩展管理器完成安装、更新与禁用/删除验收；自动化与本地构建通过不等于真机扩展验收完成。
+
 ## 0.10.0 — 2026-09-29
 
 首个公开稳定版。

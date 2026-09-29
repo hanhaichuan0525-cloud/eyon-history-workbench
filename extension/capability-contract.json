@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "minimum": {
+    "sillytavern": "1.17.0",
+    "tavernHelper": "4.8.18"
+  },
+  "requirements": [
+    {
+      "id": "host-context",
+      "owner": "sillytavern",
+      "symbol": "SillyTavern.getContext",
+      "required": true,
+      "fallback": null
+    },
+    {
+      "id": "tavern-helper",
+      "owner": "tavern-helper",
+      "symbol": "TavernHelper.getChatMessages",
+      "required": true,
+      "fallback": null
+    },
+    {
+      "id": "mvu",
+      "owner": "provider",
+      "symbol": "Mvu.getMvuData",
+      "required": true,
+      "fallback": null
+    }
+  ]
+}

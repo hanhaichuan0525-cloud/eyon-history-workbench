@@ -258,16 +258,41 @@ export function createGlobalTavernRuntime(
           options?: { once?: boolean },
         ) => { uninject?: () => void } | void
       : null);
-  return new TavernRuntimeAdapter({
-    getCurrentCharacterName: requireFunction(
+  const getCurrentCharacterName = resolveTavernHelperFunction<
+    TavernHostBindings['getCurrentCharacterName']
+  >(globalObject, 'getCurrentCharacterName')
+    ?? requireFunction<TavernHostBindings['getCurrentCharacterName']>(
       globalObject.getCurrentCharacterName,
       'getCurrentCharacterName',
-    ),
+    );
+  const getLastMessageId = resolveTavernHelperFunction<
+    TavernHostBindings['getLastMessageId']
+  >(globalObject, 'getLastMessageId')
+    ?? requireFunction<TavernHostBindings['getLastMessageId']>(
+      globalObject.getLastMessageId,
+      'getLastMessageId',
+    );
+  const getChatMessages = resolveTavernHelperFunction<
+    TavernHostBindings['getChatMessages']
+  >(globalObject, 'getChatMessages')
+    ?? requireFunction<TavernHostBindings['getChatMessages']>(
+      globalObject.getChatMessages,
+      'getChatMessages',
+    );
+  const setChatMessages = resolveTavernHelperFunction<
+    TavernHostBindings['setChatMessages']
+  >(globalObject, 'setChatMessages')
+    ?? requireFunction<TavernHostBindings['setChatMessages']>(
+      globalObject.setChatMessages,
+      'setChatMessages',
+    );
+  return new TavernRuntimeAdapter({
+    getCurrentCharacterName,
     getCurrentChatId: requireFunction(
       sillyTavern.getCurrentChatId,
       'SillyTavern.getCurrentChatId',
     ),
-    getLastMessageId: requireFunction(globalObject.getLastMessageId, 'getLastMessageId'),
+    getLastMessageId,
     isGenerating: () => {
       // 酒馆 context 提供 getGenerating()（{is_sending, is_streaming}）时优先使用；
       // 退化为 is_sending 属性；都不提供时返回 undefined（不阻塞提交，维持旧行为）。
@@ -289,8 +314,8 @@ export function createGlobalTavernRuntime(
         return undefined;
       }
     },
-    getChatMessages: requireFunction(globalObject.getChatMessages, 'getChatMessages'),
-    setChatMessages: requireFunction(globalObject.setChatMessages, 'setChatMessages'),
+    getChatMessages,
+    setChatMessages,
     setExtensionPrompt: requireFunction(
       sillyTavern.setExtensionPrompt,
       'SillyTavern.setExtensionPrompt',

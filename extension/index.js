@@ -1,4 +1,4 @@
-const VERSION = '0.11.1';
+const VERSION = '0.11.2';
 const RUNTIME_URL = new URL('../dist/index.js', import.meta.url).href;
 const WORKBENCH_URL = new URL('../dist/workbench.js', import.meta.url).href;
 const INSTANCE_KEY = '__eyonHistoryWorkbenchExtension';
@@ -144,16 +144,11 @@ function ensureEntryStyle() {
   style = doc.createElement('style');
   style.id = ENTRY_STYLE_ID;
   style.textContent = `
-    #${WAND_ENTRY_ID} { display: block; width: 100%; }
+    #${WAND_ENTRY_ID} { display: flex; align-items: center; gap: .45em; width: 100%; cursor: pointer; }
     #${WAND_ENTRY_ID}[hidden] { display: none !important; }
-    #${WAND_ENTRY_ID} button {
-      display: flex; align-items: center; gap: .55em; width: 100%;
-      box-sizing: border-box; border: 0; background: transparent;
-      color: inherit; cursor: pointer; text-align: left; font: inherit;
-      padding: .45em .65em; border-radius: .35em;
-    }
-    #${WAND_ENTRY_ID} button:hover,
-    #${WAND_ENTRY_ID} button:focus-visible { background: color-mix(in srgb, currentColor 12%, transparent); outline: none; }
+    #${WAND_ENTRY_ID}:hover,
+    #${WAND_ENTRY_ID}:focus-visible { background: color-mix(in srgb, currentColor 12%, transparent); outline: none; }
+    #${WAND_ENTRY_ID} { padding: .45em .65em; border-radius: .35em; box-sizing: border-box; }
     #${WAND_ENTRY_ID} .eyon-history-wand-icon { width: 1.25em; text-align: center; opacity: .9; }
     #${EXTENSION_SETTINGS_ID} { margin: .5rem 0; }
     #${EXTENSION_SETTINGS_ID} .eyon-history-settings-row { display: flex; align-items: center; gap: .55rem; }
@@ -166,7 +161,8 @@ function ensureEntryStyle() {
 }
 
 function menuHost(doc) {
-  return doc.querySelector('#extensionsMenu')
+  return doc.querySelector('#sp_wand_container')
+    || doc.querySelector('#extensionsMenu')
     || doc.querySelector('.extensionsMenu')
     || null;
 }
@@ -174,24 +170,25 @@ function menuHost(doc) {
 function createWandEntry(doc) {
   const wrap = doc.createElement('div');
   wrap.id = WAND_ENTRY_ID;
-  wrap.className = 'eyon-history-workbench-menu-entry';
-  wrap.setAttribute('role', 'none');
-  const button = doc.createElement('button');
-  button.type = 'button';
-  button.setAttribute('role', 'menuitem');
-  button.title = '打开伊雍历史工作台';
+  wrap.className = 'list-group-item flex-container flexGap5 eyon-history-workbench-menu-entry';
+  wrap.setAttribute('role', 'menuitem');
+  wrap.setAttribute('tabindex', '0');
+  wrap.title = '打开伊雍历史工作台';
   const icon = doc.createElement('i');
   icon.className = 'fa-solid fa-book-open eyon-history-wand-icon';
   icon.setAttribute('aria-hidden', 'true');
   const label = doc.createElement('span');
   label.textContent = '伊雍历史工作台';
-  button.append(icon, label);
-  button.addEventListener('click', event => {
+  wrap.append(icon, label);
+  const open = event => {
     event.preventDefault();
     event.stopPropagation();
     if (workbenchEnabled()) openWorkbench();
+  };
+  wrap.addEventListener('click', open);
+  wrap.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') open(event);
   });
-  wrap.append(button);
   return wrap;
 }
 
@@ -286,17 +283,23 @@ function removeEntryControls() {
 
 async function start() {
   if (state.stopped) return;
-  await waitForRuntimeSurface();
-
   const host = hostWindow();
+  // 先挂载壳体与入口，再等待 Tavern Helper/MVU。宿主扩展的加载顺序并不
+  // 保证这些全局对象先于本扩展出现；若把入口也放在等待之后，用户只能看到
+  // 角色卡自己的悬浮球，却没有任何可打开的工作台。
+  await mountWorkbench();
+  ensureEntryControls();
+  observeHostUi();
+
   const existingFacade = host.EyonHistoryWorkbench;
   if (existingFacade && typeof existingFacade.dispose === 'function') {
     // 角色卡内脚本已经提供运行时：只接入工作台入口，不重复启动后台监听器。
-    await mountWorkbench();
     ensureEntryControls();
     observeHostUi();
     return;
   }
+
+  await waitForRuntimeSurface();
 
   let readyResolve;
   let readyReject;
@@ -316,7 +319,6 @@ async function start() {
       ready,
       new Promise((_, reject) => setTimeout(() => reject(new Error('工作台运行时未在预期时间内就绪')), 30_000)),
     ]);
-    await mountWorkbench();
     ensureEntryControls();
     observeHostUi();
   } catch (error) {
@@ -376,7 +378,15 @@ export function onActivate() {
   hostWindow().addEventListener(SETTINGS_CHANGED_EVENT, state.onSettingsChanged);
   state.onPageHide = stop;
   hostWindow().addEventListener('pagehide', state.onPageHide, { once: true });
-  void start();
+  void start().catch(error => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[Eyon History Workbench] extension start failed', error);
+    emitStatus({
+      status: 'failed',
+      detail: `伊雍历史工作台扩展未启动：${message}`,
+      technicalDetail: message,
+    });
+  });
 }
 
 export function onEnable() {
@@ -393,4 +403,14 @@ export function onDelete() {
 
 export function onUpdate() {
   // 酒馆更新扩展后会刷新页面；保留钩子以便未来迁移时使用。
+}
+
+// v1.17+ 会通过 manifest.hooks.activate 调用；较旧的酒馆版本只会加载
+// ES module 而不会派发 hook。保留幂等自动启动，避免“扩展已加载但入口为空”。
+if (!hostWindow()[INSTANCE_KEY]) {
+  try {
+    onActivate();
+  } catch (error) {
+    console.error('[Eyon History Workbench] automatic activation failed', error);
+  }
 }

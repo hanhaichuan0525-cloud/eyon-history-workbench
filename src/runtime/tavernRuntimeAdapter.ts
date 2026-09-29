@@ -212,10 +212,33 @@ export class TavernRuntimeAdapter implements TavernRuntime {
   }
 }
 
+/**
+ * Resolve host-owned globals from the current window and the usual parent
+ * realms. Extensions may be evaluated in a different realm from the main
+ * SillyTavern document, so a local-only lookup can report a false absence.
+ */
+export function resolveHostGlobal<T = unknown>(
+  globalObject: Record<string, unknown>,
+  name: string,
+): T | null {
+  for (const candidate of hostGlobalCandidates(globalObject)) {
+    try {
+      const value = candidate[name];
+      if (value !== undefined && value !== null) return value as T;
+    } catch {
+      // Cross-origin parent/top access is intentionally ignored.
+    }
+  }
+  return null;
+}
+
 export function createGlobalTavernRuntime(
   globalObject: Record<string, unknown> = globalThis as Record<string, unknown>,
 ): TavernRuntimeAdapter {
-  const sillyTavern = requireRecord(globalObject.SillyTavern, 'SillyTavern');
+  const sillyTavern = requireRecord(
+    resolveHostGlobal(globalObject, 'SillyTavern'),
+    'SillyTavern',
+  );
   const generate = resolveTavernHelperFunction<TavernHostBindings['generate']>(
     globalObject,
     'generate',
@@ -288,10 +311,7 @@ export function createGlobalTavernRuntime(
     );
   return new TavernRuntimeAdapter({
     getCurrentCharacterName,
-    getCurrentChatId: requireFunction(
-      sillyTavern.getCurrentChatId,
-      'SillyTavern.getCurrentChatId',
-    ),
+    getCurrentChatId: () => readCurrentChatId(sillyTavern),
     getLastMessageId,
     isGenerating: () => {
       // 酒馆 context 提供 getGenerating()（{is_sending, is_streaming}）时优先使用；
@@ -361,7 +381,10 @@ export async function requestCustomChatCompletion(
     globalObject.fetch ?? globalThis.fetch,
     'fetch',
   );
-  const sillyTavern = requireRecord(globalObject.SillyTavern, 'SillyTavern');
+  const sillyTavern = requireRecord(
+    resolveHostGlobal(globalObject, 'SillyTavern'),
+    'SillyTavern',
+  );
   const getContext = typeof sillyTavern.getContext === 'function'
     ? sillyTavern.getContext as () => { getRequestHeaders?: () => Record<string, string> }
     : null;
@@ -535,6 +558,44 @@ function tavernHelperCandidates(
   }
   append(globalObject.TavernHelper);
   return candidates;
+}
+
+function hostGlobalCandidates(
+  globalObject: Record<string, unknown>,
+): Record<string, unknown>[] {
+  const candidates: Record<string, unknown>[] = [];
+  const append = (value: unknown): void => {
+    if (isRecord(value) && !candidates.includes(value)) candidates.push(value);
+  };
+
+  append(globalObject);
+  try {
+    append(globalObject.parent);
+  } catch {
+    // Cross-origin parents are intentionally ignored.
+  }
+  try {
+    append(globalObject.top);
+  } catch {
+    // Cross-origin top windows are intentionally ignored.
+  }
+  return candidates;
+}
+
+function readCurrentChatId(sillyTavern: Record<string, unknown>): string {
+  if (typeof sillyTavern.getCurrentChatId === 'function') {
+    return String((sillyTavern.getCurrentChatId as () => unknown)() ?? '');
+  }
+  if (typeof sillyTavern.getContext === 'function') {
+    const context = (sillyTavern.getContext as () => unknown)();
+    if (isRecord(context)) {
+      const chatId = context.chatId ?? context.chat_id;
+      if (typeof chatId === 'string' || typeof chatId === 'number') {
+        return String(chatId);
+      }
+    }
+  }
+  throw new Error('SillyTavern.getCurrentChatId is unavailable');
 }
 
 function requireRecord(value: unknown, name: string): Record<string, unknown> {

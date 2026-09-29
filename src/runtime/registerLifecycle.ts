@@ -1,3 +1,5 @@
+import { resolveHostGlobal } from './tavernRuntimeAdapter.ts';
+
 export interface WorkbenchGenerationLifecycle {
   beforeGeneration(type?: string): Promise<boolean>;
   onUserMessageSent?(messageId: number): Promise<boolean>;
@@ -133,7 +135,7 @@ export function registerBiographyLifecycle(
 export const registerWorkbenchLifecycle = registerBiographyLifecycle;
 
 function stopHostGeneration(globalObject: Record<string, unknown>): void {
-  const sillyTavern = asRecord(globalObject.SillyTavern);
+  const sillyTavern = asRecord(resolveHostGlobal(globalObject, 'SillyTavern'));
   const getContext = typeof sillyTavern?.getContext === 'function'
     ? sillyTavern.getContext as () => unknown
     : null;

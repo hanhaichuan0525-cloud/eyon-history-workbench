@@ -51,6 +51,7 @@ import { TavernRuinEntryShellAdapter } from './runtime/tavernRuinEntryShell.ts';
 import { TavernRuinTaskShellAdapter } from './runtime/tavernRuinTaskShell.ts';
 import {
   createGlobalTavernRuntime,
+  resolveHostGlobal,
   resolveTavernHelperFunction,
 } from './runtime/tavernRuntimeAdapter.ts';
 import {
@@ -151,30 +152,31 @@ let bootstrapInFlight = false;
 function hasActiveChatContext(globalObject: Record<string, unknown>): boolean {
   let chatId = '';
   try {
-    const sillyTavern = globalObject.SillyTavern as Record<string, unknown> | undefined;
+    const sillyTavern = resolveHostGlobal<Record<string, unknown>>(
+      globalObject,
+      'SillyTavern',
+    ) ?? undefined;
     const getCurrentChatId = sillyTavern?.getCurrentChatId;
     chatId = typeof getCurrentChatId === 'function'
       ? String((getCurrentChatId as () => unknown)() ?? '').trim()
       : '';
+    if (!chatId && typeof sillyTavern?.getContext === 'function') {
+      const context = (sillyTavern.getContext as () => unknown)();
+      if (context && typeof context === 'object' && !Array.isArray(context)) {
+        const value = (context as Record<string, unknown>).chatId
+          ?? (context as Record<string, unknown>).chat_id;
+        if (typeof value === 'string' || typeof value === 'number') {
+          chatId = String(value).trim();
+        }
+      }
+    }
   } catch {
     chatId = '';
   }
-
-  let characterName = '';
-  const getCurrentCharacterName = resolveTavernHelperFunction<() => unknown>(
-    globalObject,
-    'getCurrentCharacterName',
-  ) ?? (typeof globalObject.getCurrentCharacterName === 'function'
-    ? globalObject.getCurrentCharacterName as () => unknown
-    : null);
-  try {
-    characterName = typeof getCurrentCharacterName === 'function'
-      ? String(getCurrentCharacterName() ?? '').trim()
-      : '';
-  } catch {
-    characterName = '';
-  }
-  return Boolean(chatId && characterName);
+  // The chat id is the authoritative active-chat signal. Some hosts expose
+  // the character name only through a context object (or not at all), even
+  // though the same chat still has a valid MVU/data surface.
+  return Boolean(chatId);
 }
 
 function scheduleBootstrapRetry(): void {
@@ -757,7 +759,7 @@ async function bootstrap(): Promise<void> {
     }
   };
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.11.7',
+    version: '0.11.8',
     resolveDisplayText: text => resolveWorkbenchDisplayText(text, globalObject),
     getSettings: () => settings.read(),
     updateSettings,
@@ -1236,9 +1238,9 @@ async function fetchCustomApiModels(
     if (!values.length) throw new Error('接口没有返回可用模型');
     return [...new Set(values)].sort((left, right) => left.localeCompare(right));
   }
-  const sillyTavern = globalObject.SillyTavern as {
+  const sillyTavern = resolveHostGlobal<{
     getContext?: () => { getRequestHeaders?: () => Record<string, string> };
-  } | undefined;
+  }>(globalObject, 'SillyTavern');
   const headers = sillyTavern?.getContext?.().getRequestHeaders?.() ?? {};
   const response = await fetch('/api/backends/chat-completions/status', {
     method: 'POST',

@@ -3,8 +3,19 @@ import test from 'node:test';
 import {
   CustomApiRequestError,
   requestCustomChatCompletion,
+  resolveHostGlobal,
   resolveTavernHelperFunction,
 } from '../src/runtime/tavernRuntimeAdapter.ts';
+
+test('宿主全局可从当前窗口的父/顶层上下文解析', () => {
+  const parentMvu = { getMvuData: () => ({}) };
+  const local = {
+    parent: { Mvu: parentMvu },
+    top: { Mvu: { getMvuData: () => ({ stale: true }) } },
+  } as unknown as Record<string, unknown>;
+
+  assert.equal(resolveHostGlobal(local, 'Mvu'), parentMvu);
+});
 
 test('酒馆助手调用优先绑定活动父窗口，避免读取脚本窗口的旧鉴权', async () => {
   const calls: string[] = [];

@@ -1,4 +1,4 @@
-const VERSION = '0.11.7';
+const VERSION = '0.11.8';
 const RUNTIME_URL = new URL('../dist/index.js', import.meta.url).href;
 const WORKBENCH_URL = new URL('../dist/workbench.js', import.meta.url).href;
 const INSTANCE_KEY = '__eyonHistoryWorkbenchExtension';
@@ -29,6 +29,47 @@ function hostWindow() {
   return window;
 }
 
+function hostGlobalCandidates() {
+  const host = hostWindow();
+  const candidates = [];
+  const append = value => {
+    if (value && typeof value === 'object' && !candidates.includes(value)) {
+      candidates.push(value);
+    }
+  };
+  append(host);
+  try { append(host.parent); } catch { /* cross-origin parent */ }
+  try { append(host.top); } catch { /* cross-origin top */ }
+  return candidates;
+}
+
+function runtimeGlobal(name) {
+  for (const candidate of hostGlobalCandidates()) {
+    try {
+      const value = candidate[name];
+      if (value !== undefined && value !== null) return value;
+    } catch { /* cross-origin parent/top */ }
+  }
+  return null;
+}
+
+function runtimeChatId(sillyTavern) {
+  try {
+    if (typeof sillyTavern?.getCurrentChatId === 'function') {
+      return String(sillyTavern.getCurrentChatId() ?? '').trim();
+    }
+    const context = typeof sillyTavern?.getContext === 'function'
+      ? sillyTavern.getContext()
+      : null;
+    const chatId = context?.chatId ?? context?.chat_id;
+    return (typeof chatId === 'string' || typeof chatId === 'number')
+      ? String(chatId).trim()
+      : '';
+  } catch {
+    return '';
+  }
+}
+
 function hostDocument() {
   return hostWindow().document || document;
 }
@@ -39,7 +80,7 @@ function workbenchFacade() {
 
 function hostSettingsContext() {
   const host = hostWindow();
-  const sillyTavern = host.SillyTavern;
+  const sillyTavern = runtimeGlobal('SillyTavern');
   const context = typeof sillyTavern?.getContext === 'function'
     ? sillyTavern.getContext()
     : null;
@@ -109,14 +150,8 @@ function hasRuntimeSurface() {
 
 function currentChatContextReady() {
   const host = hostWindow();
-  let chatId = '';
-  try {
-    chatId = typeof host.SillyTavern?.getCurrentChatId === 'function'
-      ? String(host.SillyTavern.getCurrentChatId() ?? '')
-      : '';
-  } catch {
-    chatId = '';
-  }
+  const sillyTavern = runtimeGlobal('SillyTavern');
+  const chatId = runtimeChatId(sillyTavern);
 
   let characterName = '';
   const candidates = [];
@@ -144,15 +179,20 @@ function currentChatContextReady() {
   }
   // Tavern 首页也可能已经暴露全部宿主依赖，但没有角色聊天。此时只保留
   // 悬浮球/魔术棒入口，等进入角色卡后再装载运行时，避免误报“载入未完成”。
-  return Boolean(chatId.trim() && characterName);
+  // chatId is the authoritative signal that a character chat is active. Some
+  // hosts expose the character name only through context (or not at all),
+  // while still providing a fully usable MVU/data surface.
+  return Boolean(chatId);
 }
 
 function missingRuntimeSurface() {
-  const host = hostWindow();
   const missing = [];
-  if (!host.SillyTavern) missing.push('SillyTavern');
-  if (!host.TavernHelper) missing.push('TavernHelper');
-  if (!host.Mvu || typeof host.Mvu.getMvuData !== 'function') missing.push('MVU');
+  const sillyTavern = runtimeGlobal('SillyTavern');
+  const tavernHelper = runtimeGlobal('TavernHelper');
+  const mvu = runtimeGlobal('Mvu');
+  if (!sillyTavern) missing.push('SillyTavern');
+  if (!tavernHelper) missing.push('TavernHelper');
+  if (!mvu || typeof mvu.getMvuData !== 'function') missing.push('MVU');
   return missing;
 }
 

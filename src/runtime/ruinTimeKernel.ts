@@ -1,6 +1,10 @@
 import type { RuntimeChatMessage, TavernRuntime } from './contracts.ts';
 import type { TavernDataBindings } from './tavernHost.ts';
 import { parseTextCommand } from '../core/commands.ts';
+import {
+  resolveHostGlobal,
+  resolveTavernHelperFunction,
+} from './tavernRuntimeAdapter.ts';
 
 type Variables = Record<string, unknown>;
 type RuntimeState = Record<string, unknown>;
@@ -102,14 +106,18 @@ export function registerRuinTimeKernel(
   bindings: TavernDataBindings,
   globalObject: Record<string, unknown> = globalThis as Record<string, unknown>,
 ): RuinTimeKernelRegistration {
-  const mvu = asRecord(globalObject.Mvu);
+  const mvu = asRecord(resolveHostGlobal(globalObject, 'Mvu'));
   const events = asRecord(mvu.events);
-  const eventOn = typeof globalObject.eventOn === 'function'
-    ? globalObject.eventOn as (
+  const eventOn = resolveTavernHelperFunction<(
+    event: string,
+    listener: (...args: unknown[]) => void,
+  ) => KernelEventSubscription | void>(globalObject, 'eventOn')
+    ?? (typeof globalObject.eventOn === 'function'
+      ? globalObject.eventOn as (
         event: string,
         listener: (...args: unknown[]) => void,
       ) => KernelEventSubscription | void
-    : null;
+      : null);
   const subscriptions: KernelEventSubscription[] = [];
   let disposed = false;
   let saving = false;

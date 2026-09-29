@@ -4,7 +4,10 @@ import type {
   HostWorldbookEntry,
   TavernDataBindings,
 } from './tavernHost.ts';
-import { resolveTavernHelperFunction } from './tavernRuntimeAdapter.ts';
+import {
+  resolveHostGlobal,
+  resolveTavernHelperFunction,
+} from './tavernRuntimeAdapter.ts';
 
 type GlobalRecord = Record<string, unknown>;
 type Listener = (...args: unknown[]) => unknown;
@@ -18,7 +21,8 @@ export async function waitForGlobalMvu(
   if (typeof waitGlobalInitialized === 'function') {
     await (waitGlobalInitialized as (name: string) => Promise<void>)('Mvu');
   }
-  const mvu = isRecord(globalObject.Mvu) ? globalObject.Mvu : null;
+  const resolvedMvu = resolveHostGlobal(globalObject, 'Mvu');
+  const mvu = isRecord(resolvedMvu) ? resolvedMvu : null;
   if (typeof mvu?.getMvuData !== 'function') {
     throw new Error('Mvu.getMvuData is unavailable');
   }
@@ -77,7 +81,8 @@ export function createGlobalDataBindings(
     globalObject,
     'triggerSlash',
   );
-  const mvu = isRecord(globalObject.Mvu) ? globalObject.Mvu : null;
+  const resolvedMvu = resolveHostGlobal(globalObject, 'Mvu');
+  const mvu = isRecord(resolvedMvu) ? resolvedMvu : null;
   const getMvuData = typeof mvu?.getMvuData === 'function'
     ? mvu.getMvuData as (option: Record<string, unknown>) => Record<string, unknown>
     : null;
@@ -160,7 +165,10 @@ export function createGlobalScriptVariableBindings(
   // UI extensions do not run inside a Tavern Helper script iframe and therefore
   // have no script_id. Keep the same settings schema, but persist it in the
   // extension namespace owned by SillyTavern instead of inventing a fake script.
-  const sillyTavern = requireRecord(globalObject.SillyTavern, 'SillyTavern');
+  const sillyTavern = requireRecord(
+    resolveHostGlobal(globalObject, 'SillyTavern'),
+    'SillyTavern',
+  );
   const getContext = typeof sillyTavern.getContext === 'function'
     ? sillyTavern.getContext as () => Record<string, unknown>
     : null;
@@ -202,8 +210,9 @@ export function createGlobalEventBridge(
     messageDeleted?: string;
   };
 } {
-  const sillyTavern = isRecord(globalObject.SillyTavern)
-    ? globalObject.SillyTavern
+  const resolvedSillyTavern = resolveHostGlobal(globalObject, 'SillyTavern');
+  const sillyTavern = isRecord(resolvedSillyTavern)
+    ? resolvedSillyTavern
     : null;
   const eventSource = isRecord(sillyTavern?.eventSource)
     ? sillyTavern.eventSource
@@ -316,8 +325,9 @@ function resolveRequiredFunction<T extends (...args: never[]) => unknown>(
 
 function resolveEventNames(globalObject: GlobalRecord): GlobalRecord {
   if (isRecord(globalObject.tavern_events)) return globalObject.tavern_events;
-  const sillyTavern = isRecord(globalObject.SillyTavern)
-    ? globalObject.SillyTavern
+  const resolvedSillyTavern = resolveHostGlobal(globalObject, 'SillyTavern');
+  const sillyTavern = isRecord(resolvedSillyTavern)
+    ? resolvedSillyTavern
     : null;
   if (isRecord(sillyTavern?.eventTypes)) return sillyTavern.eventTypes;
   const context = typeof sillyTavern?.getContext === 'function'

@@ -1,4 +1,4 @@
-45de5a18009e1eddfcfa747b2eed3664fd34cba032543a166bcd0208bb573730  酒馆助手脚本-伊雍历史工作台-v0.11.4.json
+7ad4765448dc57a0695c1d922eae0827386ef1425b06445626f7f78930e0ae8e  酒馆助手脚本-伊雍历史工作台-v0.11.5.json
 4f55622c8ab402cd4301c7b538f14b288474f71afed566a9e6b2648d0c9fc5d2  regex/regex-伊雍-传记美化（as）.json
 2fa224b078e8fd9b96f399ee91d92404561f2e45a84d51c8da48680d468b1c5f  regex/regex-伊雍-对话框美化（as）.json
 0f6f0e0013f6e0b84397aae570eb5dd42a5e5b8430554e4374f7b0c5e38ec432  regex/regex-伊雍-蝴蝶效应面板美化（as）.json

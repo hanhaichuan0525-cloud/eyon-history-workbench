@@ -1,4 +1,4 @@
-const VERSION = '0.11.4';
+const VERSION = '0.11.5';
 const RUNTIME_URL = new URL('../dist/index.js', import.meta.url).href;
 const WORKBENCH_URL = new URL('../dist/workbench.js', import.meta.url).href;
 const INSTANCE_KEY = '__eyonHistoryWorkbenchExtension';
@@ -56,10 +56,10 @@ function storedWorkbenchEnabled() {
   try {
     const { extensionSettings } = hostSettingsContext();
     const value = extensionSettings?.[EXTENSION_SETTINGS_KEY];
-    // 新安装默认不启动；用户从魔术棒入口明确启用后才持久化为 true。
-    return value?.workbenchEnabled === true;
+    // 扩展加载后默认启用；只有设置页明确保存 false 才关闭工作台功能。
+    return value?.workbenchEnabled !== false;
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -232,19 +232,17 @@ function createWandEntry(doc) {
   wrap.className = 'list-group-item flex-container flexGap5 eyon-history-workbench-menu-entry';
   wrap.setAttribute('role', 'menuitem');
   wrap.setAttribute('tabindex', '0');
-  wrap.title = '启用或打开伊雍历史工作台';
+  wrap.title = '打开伊雍历史工作台';
   const icon = doc.createElement('i');
   icon.className = 'fa-solid fa-book-open eyon-history-wand-icon';
   icon.setAttribute('aria-hidden', 'true');
   const label = doc.createElement('span');
-  label.textContent = storedWorkbenchEnabled()
-    ? '伊雍历史工作台'
-    : '启用伊雍历史工作台';
+  label.textContent = '伊雍历史工作台';
   wrap.append(icon, label);
   const open = event => {
     event.preventDefault();
     event.stopPropagation();
-    activateFromWand();
+    openWorkbench();
   };
   wrap.addEventListener('click', open);
   wrap.addEventListener('keydown', event => {
@@ -266,12 +264,8 @@ function refreshWandEntry() {
   if (!entry) entry = createWandEntry(doc);
   if (entry.parentNode !== host) host.append(entry);
   const label = entry.querySelector('span');
-  if (label) {
-    label.textContent = storedWorkbenchEnabled()
-      ? '伊雍历史工作台'
-      : '启用伊雍历史工作台';
-  }
-  // 入口始终保留，关闭时显示为“启用”，否则用户没有恢复入口。
+  if (label) label.textContent = '伊雍历史工作台';
+  // 入口始终保留，设置页中的开关停用功能后仍可返回设置恢复。
   entry.hidden = false;
   return true;
 }
@@ -380,26 +374,7 @@ async function prepareUi() {
   observeHostUi();
 }
 
-function activateFromWand() {
-  try {
-    if (!storedWorkbenchEnabled()) persistStoredWorkbenchEnabled(true);
-  } catch (error) {
-    console.error('[Eyon History Workbench] failed to enable launcher', error);
-    emitStatus({
-      status: 'failed',
-      detail: '无法保存工作台启用状态，请检查酒馆扩展设置权限。',
-      technicalDetail: error instanceof Error ? error.message : String(error),
-    });
-    return;
-  }
-  ensureEntryControls();
-  void start().then(() => openWorkbench()).catch(error => {
-    console.error('[Eyon History Workbench] launcher start failed', error);
-  });
-}
-
 function openWorkbench() {
-  if (!workbenchEnabled()) return;
   if (state.overlay) state.overlay.hidden = false;
   hostWindow().EyonHistoryWorkbenchShell?.open?.();
 }
@@ -448,22 +423,19 @@ export function onActivate() {
   hostWindow().addEventListener(SETTINGS_CHANGED_EVENT, state.onSettingsChanged);
   state.onPageHide = stop;
   hostWindow().addEventListener('pagehide', state.onPageHide, { once: true });
-  // 首次安装只挂载轻量入口，不启动后台监听器；用户点击魔术棒中的
-  // “启用伊雍历史工作台”后，才启动运行时与任务链路。
+  // 扩展加载后自动启动运行时；魔术棒只负责打开已经挂载的工作台。
   void prepareUi().catch(error => {
     console.error('[Eyon History Workbench] UI preparation failed', error);
   });
-  if (storedWorkbenchEnabled()) {
-    void start().catch(error => {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error('[Eyon History Workbench] extension start failed', error);
-      emitStatus({
-        status: 'failed',
-        detail: `伊雍历史工作台扩展未启动：${message}`,
-        technicalDetail: message,
-      });
+  void start().catch(error => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[Eyon History Workbench] extension start failed', error);
+    emitStatus({
+      status: 'failed',
+      detail: `伊雍历史工作台扩展未启动：${message}`,
+      technicalDetail: message,
     });
-  }
+  });
 }
 
 export function onEnable() {

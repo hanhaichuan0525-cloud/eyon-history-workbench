@@ -338,6 +338,10 @@ test('运行时未就绪时启动开关仍写入酒馆扩展设置', () => {
   };
   const client = new WorkbenchUiClient(globals, new EventTarget());
   assert.equal(client.isReady(), false);
+  assert.equal(client.isWorkbenchEnabled(), true);
+  assert.deepEqual(client.updateSettings({ workbenchEnabled: false }), {
+    workbenchEnabled: false,
+  });
   assert.equal(client.isWorkbenchEnabled(), false);
   assert.deepEqual(client.updateSettings({ workbenchEnabled: true }), {
     workbenchEnabled: true,

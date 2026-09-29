@@ -70,7 +70,7 @@ const EMPTY_CUSTOM: GenerationSettings = {
   temperature: 0.8,
 };
 
-const CURRENT_EXTENSION_VERSION = '0.11.4';
+const CURRENT_EXTENSION_VERSION = '0.11.5';
 const REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/manifest.json';
 const EXTENSION_ID = 'eyon-history-workbench';
 
@@ -123,7 +123,7 @@ export function mountSettingsWorkbench(
   let updateState: UpdateState = {
     latest: null,
     available: false,
-    message: '当前版本 0.11.4；点击检查更新以读取 GitHub 稳定版。',
+    message: '当前版本 0.11.5；点击检查更新以读取 GitHub 稳定版。',
   };
   let busy = false;
   let status = '';
@@ -144,7 +144,7 @@ export function mountSettingsWorkbench(
         client.listCharacterWorldbookEntries(),
       ]);
       appearance = snapshot.settings.appearance;
-      launcherEnabled = snapshot.settings.workbenchEnabled === true;
+      launcherEnabled = snapshot.settings.workbenchEnabled !== false;
       syncCustomDrafts(snapshot.settings);
       error = '';
     } catch (cause) {
@@ -161,7 +161,7 @@ export function mountSettingsWorkbench(
     const current = settings();
     appearance = current?.appearance ?? appearance;
     if (current?.workbenchEnabled !== undefined) {
-      launcherEnabled = current.workbenchEnabled === true;
+      launcherEnabled = current.workbenchEnabled !== false;
     }
     host.dataset.theme = appearance.mode;
     // internal.86：每次渲染同步读取最近一次蝴蝶记忆注入快照（只读、无副作用）。
@@ -209,7 +209,7 @@ export function mountSettingsWorkbench(
         <div class="launcher-copy">
           <div class="launcher-kicker">EYON HISTORY WORKBENCH · CONTROL</div>
           <h1>工作台启动与版本</h1>
-          <p>首次载入只保留魔术棒入口；打开这里的开关后，才启动后台监听与历史模块。更新只在你点击按钮后执行。</p>
+          <p>扩展加载后会自动启动；魔术棒只负责打开工作台。这里的开关用于停用或恢复工作台功能，更新只在你点击按钮后执行。</p>
           <small class="launcher-update-status">${escapeHtml(updateState.message)}</small>
         </div>
         <div class="launcher-actions">
@@ -599,7 +599,7 @@ export function mountSettingsWorkbench(
       launcherEnabled = enabled;
       await persist(
         async () => client.updateSettings({ workbenchEnabled: enabled }),
-        enabled ? '伊雍历史工作台入口已启用' : '伊雍历史工作台入口已关闭；可从魔术棒重新开启',
+        enabled ? '伊雍历史工作台已启用' : '伊雍历史工作台已停用；仍可从魔术棒进入设置恢复',
       );
     });
     root.querySelector<HTMLButtonElement>('[data-action="check-update"]')?.addEventListener('click', async () => {
@@ -918,7 +918,7 @@ export function mountSettingsWorkbench(
       status = message;
       if (isWorkbenchSettings(result) && snapshot) {
         snapshot = { ...snapshot, settings: result };
-        launcherEnabled = result.workbenchEnabled === true;
+        launcherEnabled = result.workbenchEnabled !== false;
       } else if (isLauncherPatch(result)) {
         launcherEnabled = result.workbenchEnabled === true;
       } else if (client.isReady()) {

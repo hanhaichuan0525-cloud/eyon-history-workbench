@@ -53,7 +53,7 @@ export class WorkbenchUiClient {
     const facade = this.globals[WORKBENCH_GLOBAL];
     if (isFacade(facade)) return facade.getSettings().workbenchEnabled !== false;
     const value = readExtensionSettings(this.globals)?.[EXTENSION_SETTINGS_KEY];
-    return isRecord(value) && value.workbenchEnabled === true;
+    return !isRecord(value) || value.workbenchEnabled !== false;
   }
 
   facade(): EyonHistoryWorkbenchFacade {

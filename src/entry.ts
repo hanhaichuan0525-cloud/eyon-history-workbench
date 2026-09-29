@@ -705,8 +705,15 @@ async function bootstrap(): Promise<void> {
     }));
     return next;
   };
+  // 与柏宝书的总开关模式保持一致：运行时可以一直挂载，设置页停用后
+  // 仍允许打开设置恢复，但所有会改写历史/聊天的主动工作流都 fail-closed。
+  const assertWorkbenchEnabled = (): void => {
+    if (settings.read().workbenchEnabled === false) {
+      throw new Error('伊雍历史工作台已停用，请在工作台设置页重新启用');
+    }
+  };
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.11.4',
+    version: '0.11.5',
     resolveDisplayText: text => resolveWorkbenchDisplayText(text, globalObject),
     getSettings: () => settings.read(),
     updateSettings,
@@ -814,11 +821,13 @@ async function bootstrap(): Promise<void> {
       return sources.listCharacterWorldbookEntries();
     },
     generateRuin: async input => {
+      assertWorkbenchEnabled();
       const record = await ruinController.generateFromPanel(input);
       publishDataChanged({ views: ['ruin'], reason: 'ruin-generated' });
       return record;
     },
     generateGenealogy: async input => {
+      assertWorkbenchEnabled();
       const record = await genealogyController.generateFromPanel(input);
       // Selection storage is not a Canon cache. Keep choices so a rollback can restore them.
       publishRuinReferences(await sources.projectRuinCharacters(await ruinReferences.read(scopeReader.getNamespace())));
@@ -877,6 +886,7 @@ async function bootstrap(): Promise<void> {
       fetchCustomApiModels(globalObject, apiurl, key),
     listRuins: async () => ruins.list(scopeReader.getNamespace()),
     retryRuinCandidate: async (recordKey, candidateId) => {
+      assertWorkbenchEnabled();
       const record = await ruinController.retryCandidate(recordKey, candidateId);
       publishDataChanged({
         views: ['ruin'], reason: 'ruin-candidate-retried',
@@ -1034,6 +1044,7 @@ async function bootstrap(): Promise<void> {
     clearErrorLog: () => settings.clearErrorLog(),
     getRuinPresenceDiagnostics: () => listRuinPresenceDiagnostics(),
     enterRuin: async (recordKey, candidateId, nodeId) => {
+      assertWorkbenchEnabled();
       const composerText = readTavernComposerText(globalObject);
       if (composerText === null) {
         throw new Error('读取酒馆输入框失败，已中止进入特异点（输入框可能尚未加载）');
@@ -1054,9 +1065,16 @@ async function bootstrap(): Promise<void> {
       return submission;
     },
     getRuinTaskReview: () => ruinTask.readReview(),
-    generateRuinTaskDraft: request => ruinTask.generateDraft(request),
-    updateRuinTaskDraft: patch => ruinTask.updateDraft(patch),
+    generateRuinTaskDraft: request => {
+      assertWorkbenchEnabled();
+      return ruinTask.generateDraft(request);
+    },
+    updateRuinTaskDraft: patch => {
+      assertWorkbenchEnabled();
+      return ruinTask.updateDraft(patch);
+    },
     confirmRuinTaskDraft: async () => {
+      assertWorkbenchEnabled();
       const review = ruinTask.stageDraftForComposer();
       try {
         await writeTavernComposer(
@@ -1070,6 +1088,7 @@ async function bootstrap(): Promise<void> {
       }
     },
     returnRuin: () => {
+      assertWorkbenchEnabled();
       const controller = new AbortController();
       activeReturnTurnController = controller;
       return userTurns.sendUserTurn('遣返', {
@@ -1086,6 +1105,7 @@ async function bootstrap(): Promise<void> {
       });
     },
     retryButterfly: async runId => {
+      assertWorkbenchEnabled();
       const record = await butterflyController.retry(runId);
       publishDataChanged({ views: ['timeline', 'genealogy', 'ruin'], reason: 'butterfly-retried' });
       return record;

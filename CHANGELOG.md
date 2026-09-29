@@ -15,6 +15,7 @@
 - **版本号常驻工作台左上角**：左栏品牌与顶栏各一枚 β1 徽标。
 - **加载器重做**：整段内联（无静态 import，规避 GitHub raw 的 `text/plain` MIME 拒绝）+ 清单与 bundle 全走 jsDelivr + SHA-256 逐字节校验；产物更名为 `release/酒馆助手脚本-伊雍历史工作台-β1.json`；退役会 MIME 失败的 `…-自动更新.json` 一行脚本。
 - 历史遗留的 `workbenchEnabled:false` 不再 fail-closed 锁死工作台（开关已退役，无恢复入口）；要停用请用酒馆自身的扩展/脚本开关。
+- **加载器 0.3.1（同一 β1 内的小修）**：bundle 地址改为带 manifest 版本参数（jsDelivr 边缘与浏览器缓存都以完整 URL 为键，新版本即新缓存键，第一次请求必然回源，不再依赖推送后手动 purge）；`manifest` 缓存改到两个 bundle 都通过 SHA-256 之后才写，成为这一组的提交点（旧实现先写 manifest 再验 bundle，「新 manifest + 旧 bundle」的窗口会把回退基线污染成不匹配的一对，导致那一次加载直接失败）；提交后清理上一版遗留的 bundle 缓存条目。此修改属于加载器自身，需要重新导入一次才能生效。
 
 # 0.11.8 — 2026-09-29（跨窗口宿主与 MVU 启动修复）
 

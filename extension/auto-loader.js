@@ -4,7 +4,7 @@
   // This script is intentionally small: runtime and UI bytes are fetched from the
   // public release manifest and are executed only after SHA-256 verification.
   const MANIFEST_URL = "https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@main/manifest.json";
-  const LOADER_VERSION = "0.3.0";
+  const LOADER_VERSION = "0.3.1";
   const CACHE_NAME = 'eyon-history-workbench-verified-v1';
   const INSTANCE_KEY = '__eyonHistoryWorkbenchAutoLoader';
   const LEGACY_INSTANCE_KEY = '__eyonHistoryWorkbenchInternalLoader';
@@ -134,8 +134,11 @@
     const separator = MANIFEST_URL.includes('?') ? '&' : '?';
     const bytes = await fetchBytes(MANIFEST_URL + separator + 'eyon_loader=' + encodeURIComponent(LOADER_VERSION) + '&t=' + Date.now());
     const manifest = validateManifest(JSON.parse(new TextDecoder().decode(bytes)));
-    await cacheWrite(manifestCacheKey, bytes, manifest.version);
-    return { manifest, source: 'network' };
+    // β1.1：这里不再立刻写 manifest 缓存。它是 (manifest, runtime, workbench) 这一组的
+    // 提交点，必须等两个 bundle 都通过 SHA-256 校验后再落盘（见 loadVerifiedArtifacts）。
+    // 旧实现先写 manifest 再验 bundle，于是"新 manifest + 旧 bundle"的窗口会把回退基线
+    // 也污染成不匹配的一对，导致那一次加载直接失败。
+    return { manifest, bytes, source: 'network' };
   };
   const readCachedManifest = async () => {
     const bytes = await cacheRead(manifestCacheKey);
@@ -143,7 +146,14 @@
     return { manifest: validateManifest(JSON.parse(new TextDecoder().decode(bytes))), source: 'cache' };
   };
 
-  const resolveRemoteUrl = (relativePath) => new URL(relativePath, MANIFEST_URL).href;
+  // β1.1：bundle 地址带 manifest 版本参数。jsDelivr 的边缘缓存与浏览器缓存都以完整 URL
+  // 为键，于是"新版本"天然就是"新缓存键"，第一次请求必然回源取新字节——不再依赖推送后
+  // 手动 purge，也不会再出现 manifest 已刷新、bundle 还是旧缓存的一对。
+  const resolveRemoteUrl = (relativePath, version) => {
+    const url = new URL(relativePath, MANIFEST_URL).href;
+    if (!version) return url;
+    return url + (url.includes('?') ? '&' : '?') + 'eyon_v=' + encodeURIComponent(String(version));
+  };
   const readBundle = async (url, expectedHash, version, preferNetwork) => {
     let networkError = null;
     if (preferNetwork) {
@@ -151,7 +161,6 @@
         const bytes = await fetchBytes(url);
         const actual = await sha256Bytes(bytes);
         if (actual.toLowerCase() !== String(expectedHash).toLowerCase()) throw new Error('远端文件校验失败：' + url);
-        await cacheWrite(url, bytes, version);
         return bytes;
       } catch (error) { networkError = error; }
     }
@@ -163,22 +172,44 @@
     throw networkError || new Error('没有可用的已验证缓存：' + url);
   };
 
+  // 清掉上一版留下的 bundle 缓存条目（键里带 eyon_v= 的都不是当前版本）。
+  const pruneStaleBundles = async (currentVersion) => {
+    const cache = await cacheOpen();
+    if (!cache || typeof cache.keys !== 'function') return;
+    try {
+      const keys = await cache.keys();
+      await Promise.all(keys.map(async (request) => {
+        const key = typeof request === 'string' ? request : request.url;
+        if (!key.includes('eyon_v=')) return;
+        if (key.includes('eyon_v=' + encodeURIComponent(String(currentVersion)))) return;
+        try {
+          await cache.delete(request);
+        } catch {}
+      }));
+    } catch {}
+  };
+
   const loadVerifiedArtifacts = async () => {
     let networkManifest;
     try {
       networkManifest = await readNetworkManifest();
       const manifest = networkManifest.manifest;
-      const runtimeUrl = resolveRemoteUrl(manifest.entry);
-      const workbenchUrl = resolveRemoteUrl(manifest.workbenchEntry);
+      const runtimeUrl = resolveRemoteUrl(manifest.entry, manifest.version);
+      const workbenchUrl = resolveRemoteUrl(manifest.workbenchEntry, manifest.version);
       const runtimeBytes = await readBundle(runtimeUrl, manifest.sha256, manifest.version, true);
       const workbenchBytes = await readBundle(workbenchUrl, manifest.workbenchSha256, manifest.version, true);
+      // 两个 bundle 全部校验通过，才把这一组提升为新的回退基线；manifest 最后写。
+      await cacheWrite(runtimeUrl, runtimeBytes, manifest.version);
+      await cacheWrite(workbenchUrl, workbenchBytes, manifest.version);
+      await cacheWrite(manifestCacheKey, networkManifest.bytes, manifest.version);
+      void pruneStaleBundles(manifest.version);
       return { manifest, runtimeBytes, workbenchBytes, runtimeUrl, workbenchUrl, source: networkManifest.source };
     } catch (networkError) {
-      console.warn('[伊雍工作台] GitHub 读取失败，尝试最后一次已验证缓存', networkError);
+      console.warn('[伊雍工作台] 远端读取失败，尝试最后一次已验证缓存', networkError);
       const cachedManifest = await readCachedManifest();
       const manifest = cachedManifest.manifest;
-      const runtimeUrl = resolveRemoteUrl(manifest.entry);
-      const workbenchUrl = resolveRemoteUrl(manifest.workbenchEntry);
+      const runtimeUrl = resolveRemoteUrl(manifest.entry, manifest.version);
+      const workbenchUrl = resolveRemoteUrl(manifest.workbenchEntry, manifest.version);
       const runtimeBytes = await readBundle(runtimeUrl, manifest.sha256, manifest.version, false);
       const workbenchBytes = await readBundle(workbenchUrl, manifest.workbenchSha256, manifest.version, false);
       return { manifest, runtimeBytes, workbenchBytes, runtimeUrl, workbenchUrl, source: cachedManifest.source };

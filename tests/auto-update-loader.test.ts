@@ -59,3 +59,21 @@ test('远端加载器模块保留 SHA-256 校验、缓存回退与超时控制',
   assert.doesNotMatch(loader, /\beval\s*\(/u);
   assert.doesNotMatch(loader, /Function\s*\(/u);
 });
+
+/**
+ * β1.1（半新半旧窗口）：bundle 地址带版本参数 → 新版本即新缓存键（jsDelivr 边缘与浏览器
+ * 都以完整 URL 为键），第一次请求必然回源；manifest 缓存改到两个 bundle 都通过 SHA-256
+ * 校验之后才写，成为这一组的提交点；旧版本 bundle 条目随后清理。
+ */
+test('加载器缓存语义：版本化 bundle 地址 + manifest 最后提交 + 旧条目清理', async () => {
+  const loader = await readFile(remoteLoaderPath, 'utf8');
+  assert.match(loader, /'eyon_v=' \+ encodeURIComponent\(String\(version\)\)/u, 'bundle 地址带版本参数');
+  assert.match(loader, /resolveRemoteUrl\(manifest\.entry, manifest\.version\)/u, '取地址时带上 manifest 版本');
+  assert.match(
+    loader,
+    /cacheWrite\(runtimeUrl[\s\S]*cacheWrite\(workbenchUrl[\s\S]*cacheWrite\(manifestCacheKey/u,
+    'manifest 缓存必须在两个 bundle 之后写',
+  );
+  assert.doesNotMatch(loader, /cacheWrite\(manifestCacheKey, bytes,/u, 'manifest 读取阶段不得提前落盘');
+  assert.match(loader, /pruneStaleBundles/u, '旧版本 bundle 条目应被清理');
+});

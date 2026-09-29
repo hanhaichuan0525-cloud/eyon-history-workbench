@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "webpack --config webpack.config.cjs && node scripts/enforce-jitless-build.mjs",
-    "package:release": "pnpm build && node scripts/sync-manifest-hashes.mjs && node scripts/build-tavern-test-loader.mjs",
+    "package:release": "pnpm build && node scripts/sync-manifest-hashes.mjs && node scripts/build-tavern-test-loader.mjs && node scripts/build-auto-update-loader.mjs",
     "test": "node --test tests/*.test.ts",
     "test:regex": "node scripts/verify-local-regex.mjs",
     "typecheck": "tsc --project tsconfig.json"

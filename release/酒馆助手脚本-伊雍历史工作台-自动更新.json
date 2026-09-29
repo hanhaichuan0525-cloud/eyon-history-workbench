@@ -1,0 +1,17 @@
+{
+  "type": "script",
+  "enabled": true,
+  "name": "伊雍历史工作台自动更新加载器 0.11.9",
+  "id": "eyon-history-workbench-auto-loader",
+  "info": "伊雍历史工作台 0.11.9 远端自动更新加载器（loader 0.2.0）。通过 Tavern Helper 直接导入 GitHub 远端模块，每次酒馆载入时读取最新 manifest，先校验 SHA-256 再加载；网络不可用时使用最后一次已验证缓存。请停用旧版原生扩展和旧内嵌整合脚本，避免重复监听。",
+  "button": {
+    "enabled": true,
+    "buttons": []
+  },
+  "data": {},
+  "export_with": {
+    "data": true,
+    "button": true
+  },
+  "content": "import \"https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/extension/auto-loader.js?eyon_loader=0.2.0\";"
+}

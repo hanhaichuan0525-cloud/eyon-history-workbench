@@ -1,0 +1,1806 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>虚嗣王庭 · 档案院视觉地基</title>
+  <script>
+    // Production components are the visual authority. The former static study
+    // remains available only as an explicit reference snapshot so day-to-day
+    // preview and the packaged Tavern UI can no longer drift apart.
+    if (!new URLSearchParams(location.search).has('static-reference')) {
+      location.replace('./workbench-runtime.html?view=biography');
+    }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --court-950: #1a1720;
+      --court-925: #201c27;
+      --court-900: #28222e;
+      --court-850: #322b39;
+      --court-800: #3b3343;
+      --paper-100: #f1ece8;
+      --paper-150: #ebe5e4;
+      --paper-200: #dfd8dd;
+      --ink-900: #2c2630;
+      --ink-700: #524957;
+      --silver-300: #d1cad4;
+      --silver-500: #aaa1ae;
+      --silver-650: #807884;
+      --violet-300: #b6a5c1;
+      --violet-400: #9c87ab;
+      --violet-500: #7b678a;
+      --violet-650: #57465f;
+      --gold-400: #b49c78;
+      --gold-500: #9b825f;
+      --wax-500: #845566;
+      --wax-650: #693e4d;
+      --success-500: #718979;
+
+      --surface-shell: var(--court-950);
+      --surface-rail: var(--court-925);
+      --surface-panel: var(--court-900);
+      --surface-raised: var(--court-850);
+      --surface-paper: var(--paper-100);
+      --surface-paper-soft: var(--paper-150);
+      --text-primary: #ece7ee;
+      --text-secondary: #bcb4c1;
+      --text-muted: #8f8794;
+      --text-paper: var(--ink-900);
+      --text-paper-muted: var(--ink-700);
+      --line: rgba(205, 194, 211, .15);
+      --line-strong: rgba(205, 194, 211, .28);
+      --action: var(--violet-400);
+      --action-strong: #c0acd0;
+      --focus: #d8c7e2;
+      --shadow: 0 18px 45px rgba(0, 0, 0, .22);
+
+      --font-ui: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      --font-reading: "Noto Serif SC", "Songti SC", STSong, serif;
+      --font-eyon: "Kaiti SC", "STKaiti", "KaiTi", "FZKai-Z03", "Noto Serif SC", serif;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 24px;
+      --space-6: 32px;
+      --space-7: 48px;
+      --radius-control: 9px;
+      --radius-panel: 15px;
+      --radius-major: 21px;
+      --ease: cubic-bezier(.2, .75, .2, 1);
+    }
+
+    [data-theme="day"] {
+      color-scheme: light;
+      --surface-shell: #ded8dd;
+      --surface-rail: #e9e4e7;
+      --surface-panel: #eee9eb;
+      --surface-raised: #f5f1f2;
+      --text-primary: #2f2932;
+      --text-secondary: #5c5360;
+      --text-muted: #756d78;
+      --line: rgba(58, 48, 62, .14);
+      --line-strong: rgba(58, 48, 62, .25);
+      --action: #6f5b7b;
+      --action-strong: #554260;
+      --focus: #5e496a;
+      --shadow: 0 18px 45px rgba(58, 48, 62, .12);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    html { background: var(--surface-shell); }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        linear-gradient(90deg, transparent 0 calc(100% - 72px), rgba(180, 156, 120, .035) calc(100% - 72px), rgba(180, 156, 120, .035) calc(100% - 71px), transparent calc(100% - 71px)),
+        radial-gradient(circle at 76% 12%, rgba(156, 135, 171, .16), transparent 30rem),
+        radial-gradient(circle at 28% 82%, rgba(132, 85, 102, .07), transparent 26rem),
+        var(--surface-shell);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 15px;
+      line-height: 1.55;
+      overflow-x: hidden;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button, a, input, summary { outline: none; }
+    button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visible {
+      box-shadow: 0 0 0 2px var(--surface-shell), 0 0 0 4px var(--focus);
+    }
+    .skip-link {
+      position: fixed;
+      z-index: 20;
+      left: 12px;
+      top: 12px;
+      padding: 8px 12px;
+      background: var(--surface-paper);
+      color: var(--text-paper);
+      transition: opacity 120ms var(--ease);
+    }
+    .skip-link:not(:focus) {
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+      opacity: 0;
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .app {
+      min-height: 100%;
+      display: grid;
+      grid-template-columns: 224px minmax(0, 1fr);
+    }
+    .rail {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100%;
+      min-height: 780px;
+      padding: 24px 16px 20px;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(180deg, var(--surface-rail), color-mix(in srgb, var(--surface-rail) 86%, #000));
+      border-right: 1px solid var(--line);
+    }
+    .brand {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      align-items: center;
+      gap: 12px;
+      min-height: 52px;
+      padding: 0 8px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand-mark {
+      width: 42px;
+      height: 48px;
+      display: grid;
+      place-items: center;
+      color: var(--gold-400);
+    }
+    .brand-mark svg { width: 100%; height: 100%; }
+    .brand-title {
+      margin: 0;
+      font-family: var(--font-reading);
+      font-size: 16px;
+      letter-spacing: .1em;
+      font-weight: 700;
+    }
+    .brand-subtitle {
+      margin: 3px 0 0;
+      color: var(--text-muted);
+      font-size: 10px;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+    .rail-label {
+      margin: 24px 10px 10px;
+      color: var(--text-muted);
+      font-size: 10px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    .nav-list { display: grid; gap: 4px; }
+    .nav-item {
+      position: relative;
+      width: 100%;
+      min-height: 48px;
+      display: grid;
+      grid-template-columns: 24px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 11px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-control);
+      background: transparent;
+      color: var(--text-secondary);
+      text-align: left;
+      cursor: pointer;
+      transition: background 160ms var(--ease), border-color 160ms var(--ease), color 160ms var(--ease);
+    }
+    .nav-item::before {
+      content: "";
+      position: absolute;
+      left: -1px;
+      top: 10px;
+      bottom: 10px;
+      width: 2px;
+      background: transparent;
+    }
+    .nav-item:hover { background: color-mix(in srgb, var(--action) 8%, transparent); color: var(--text-primary); }
+    .nav-item[aria-current="page"] {
+      border-color: var(--line);
+      background: color-mix(in srgb, var(--action) 13%, transparent);
+      color: var(--text-primary);
+    }
+    .nav-item[aria-current="page"]::before { background: var(--action-strong); }
+    .nav-item svg { width: 20px; height: 20px; stroke: currentColor; }
+    .nav-text { font-size: 14px; font-weight: 600; }
+    .nav-count {
+      min-width: 22px;
+      padding: 2px 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--text-muted);
+      font-size: 10px;
+      text-align: center;
+    }
+    .rail-foot {
+      margin-top: auto;
+      padding: 18px 10px 0;
+      border-top: 1px solid var(--line);
+    }
+    .system-line { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; }
+    .system-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success-500); box-shadow: 0 0 0 4px color-mix(in srgb, var(--success-500) 15%, transparent); }
+    .system-caption { margin: 7px 0 0 15px; color: var(--text-muted); font-size: 11px; }
+    .rail-ornament {
+      width: 72px;
+      height: 122px;
+      margin: auto auto 22px;
+      color: var(--violet-400);
+      opacity: .28;
+    }
+    .rail-ornament svg { width: 100%; height: 100%; stroke: currentColor; }
+
+    .workspace { min-width: 0; }
+    .topbar {
+      position: relative;
+      min-height: 72px;
+      padding: 14px clamp(18px, 3vw, 44px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--surface-shell) 92%, transparent);
+    }
+    .topbar::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -3px;
+      width: 6px;
+      height: 6px;
+      border: 1px solid var(--gold-500);
+      background: var(--surface-shell);
+      transform: translateX(-50%) rotate(45deg);
+    }
+    .crumb { margin: 0; color: var(--text-muted); font-size: 12px; }
+    .top-title { margin: 3px 0 0; font-family: var(--font-reading); font-size: 16px; font-weight: 650; letter-spacing: .04em; }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
+    .icon-button {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-control);
+      background: var(--surface-panel);
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+    .icon-button:hover { color: var(--text-primary); border-color: var(--action); }
+    .icon-button svg { width: 19px; height: 19px; stroke: currentColor; }
+    .icon-button[hidden], .primary-button[hidden] { display: none; }
+
+    main { padding: clamp(22px, 3.2vw, 48px); }
+    .module-head {
+      max-width: 1460px;
+      margin: 0 auto 28px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 28px;
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold-400);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .24em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before { content: ""; width: 28px; height: 1px; background: currentColor; }
+    .module-title {
+      margin: 0;
+      font-family: var(--font-reading);
+      font-size: clamp(28px, 3.2vw, 42px);
+      font-weight: 650;
+      letter-spacing: .025em;
+    }
+    .eyon-voice {
+      font-family: var(--font-eyon);
+      font-weight: 700;
+      letter-spacing: .075em;
+      text-wrap: balance;
+    }
+    .module-summary { max-width: 760px; margin: 10px 0 0; color: var(--text-secondary); line-height: 1.75; }
+    .module-ledger {
+      width: min(680px, 100%);
+      margin: 20px 0 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 1px solid var(--line-strong);
+      border-bottom: 1px solid var(--line);
+    }
+    .module-ledger[hidden] { display: none; }
+    .ledger-cell {
+      min-width: 0;
+      padding: 11px 18px 11px 0;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: baseline;
+      gap: 9px;
+      position: relative;
+    }
+    .ledger-cell + .ledger-cell { padding-left: 18px; }
+    .ledger-cell + .ledger-cell::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 1px; background: var(--line); }
+    .ledger-cell dt { color: var(--text-muted); font-size: 10px; letter-spacing: .1em; }
+    .ledger-cell dd { margin: 0; color: var(--text-primary); font-family: var(--font-reading); font-size: 13px; font-weight: 650; text-align: right; }
+    .primary-button {
+      min-height: 44px;
+      padding: 10px 18px;
+      border: 1px solid color-mix(in srgb, var(--action-strong) 55%, transparent);
+      border-radius: var(--radius-control);
+      background: var(--action);
+      color: #f7f2f8;
+      font-weight: 700;
+      letter-spacing: .03em;
+      cursor: pointer;
+      box-shadow: 0 8px 22px color-mix(in srgb, var(--action) 18%, transparent);
+    }
+    .primary-button:hover { background: color-mix(in srgb, var(--action) 86%, #fff); }
+
+    .archive-layout {
+      max-width: 1460px;
+      width: 100%;
+      min-width: 0;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(238px, 274px) minmax(0, 1fr);
+      align-items: stretch;
+      gap: 16px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-major);
+      background: color-mix(in srgb, var(--surface-panel) 88%, transparent);
+      overflow: hidden;
+    }
+    .archive-layout[hidden] { display: none; }
+    .library-bar {
+      min-height: 52px;
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin: -14px -14px 0;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .library-identity { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .library-sigil { color: var(--gold-400); font-size: 18px; }
+    .library-identity strong { color: var(--gold-400); font-family: var(--font-reading); font-size: 16px; }
+    .library-identity span:last-child { color: var(--text-muted); font-size: 11px; }
+    .library-hint { color: var(--text-muted); font-size: 10px; letter-spacing: .06em; white-space: nowrap; }
+    .shelf {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-panel);
+      background: color-mix(in srgb, var(--surface-panel) 92%, transparent);
+      overflow: hidden;
+    }
+    .panel-head { padding: 18px 18px 14px; border-bottom: 1px solid var(--line); }
+    .panel-kicker { margin: 0; color: var(--text-muted); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
+    .panel-title { margin: 4px 0 0; font-family: var(--font-reading); font-size: 17px; font-weight: 650; }
+    .search-wrap { position: relative; display: block; margin: 14px 14px 10px; }
+    .search-wrap svg { position: absolute; left: 12px; top: 12px; width: 17px; height: 17px; stroke: var(--text-muted); }
+    .search {
+      width: 100%;
+      height: 42px;
+      padding: 8px 12px 8px 38px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-control);
+      background: var(--surface-shell);
+      color: var(--text-primary);
+    }
+    .search::placeholder { color: var(--text-muted); }
+    .book-list { display: grid; padding: 4px 8px 10px; }
+    .book-tab {
+      position: relative;
+      width: 100%;
+      min-height: 70px;
+      display: grid;
+      grid-template-columns: 4px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 10px 9px 8px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .book-tab:last-child { border-bottom: 0; }
+    .book-tab:hover { background: color-mix(in srgb, var(--action) 7%, transparent); }
+    .book-tab[aria-selected="true"] { background: color-mix(in srgb, var(--action) 13%, transparent); }
+    .book-accent { width: 4px; height: 46px; background: var(--book-accent, var(--violet-400)); opacity: .66; }
+    .book-tab[aria-selected="true"] .book-accent { opacity: 1; box-shadow: 0 0 12px color-mix(in srgb, var(--book-accent) 38%, transparent); }
+    .book-copy { min-width: 0; }
+    .book-name { display: block; overflow: hidden; color: var(--text-primary); font-family: var(--font-reading); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .book-meta { display: block; margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+    .reference-badge {
+      align-self: start;
+      margin-top: 3px;
+      padding: 3px 5px;
+      border: 1px solid color-mix(in srgb, var(--gold-400) 45%, transparent);
+      color: var(--gold-400);
+      font-size: 9px;
+      white-space: nowrap;
+    }
+    .shelf-foot { padding: 12px 16px 16px; border-top: 1px solid var(--line); color: var(--text-muted); font-size: 11px; }
+
+    .codex-stage {
+      position: relative;
+      min-width: 0;
+      min-height: 650px;
+      perspective: 1800px;
+    }
+    .codex-stage::before {
+      content: "";
+      position: absolute;
+      inset: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-major);
+      pointer-events: none;
+    }
+    .codex-book { position: relative; min-height: 650px; transform-style: preserve-3d; }
+    .codex-cover {
+      position: absolute;
+      z-index: 3;
+      inset: 0;
+      min-height: 650px;
+      display: grid;
+      place-items: center;
+      padding: clamp(28px, 5vw, 58px);
+      border: 16px solid #201b24;
+      outline: 1px solid color-mix(in srgb, var(--gold-500) 74%, transparent);
+      outline-offset: -31px;
+      color: #e4dce8;
+      background:
+        linear-gradient(rgba(255,255,255,.018) 50%, transparent 50%),
+        radial-gradient(circle at 50% 43%, rgba(156, 135, 171, .18), transparent 34%),
+        linear-gradient(135deg, #241f2a, #1c1921 58%, #29222e);
+      background-size: 100% 4px, auto, auto;
+      box-shadow: var(--shadow);
+      border-radius: var(--radius-major);
+      transform-origin: left center;
+      transform: rotateY(0);
+      transform-style: preserve-3d;
+      backface-visibility: hidden;
+      transition: transform .62s cubic-bezier(.65,.05,.32,1), opacity .16s linear .42s, box-shadow .62s ease;
+      cursor: pointer;
+    }
+    [data-theme="day"] .codex-cover {
+      border-color: #e3dde1;
+      color: #504752;
+      background: linear-gradient(rgba(82,64,85,.018) 50%, transparent 50%), radial-gradient(circle at 50% 43%, rgba(123,103,138,.08), transparent 34%), #f7f3f5;
+    }
+    .cover-content { width: min(650px, 88%); display: grid; justify-items: center; text-align: center; }
+    .cover-crest {
+      width: 64px;
+      height: 78px;
+      margin-bottom: 22px;
+      color: var(--gold-400);
+      opacity: .82;
+    }
+    .cover-crest svg { width: 100%; height: 100%; stroke: currentColor; }
+    .cover-content > small { color: var(--violet-300); font-size: 10px; font-weight: 700; letter-spacing: .2em; }
+    .cover-content h2 { margin: 18px 0 10px; color: var(--gold-400); font: 650 clamp(28px, 4vw, 42px)/1.35 var(--font-reading); }
+    .cover-content p { max-width: 590px; margin: 0 0 20px; color: inherit; font-family: var(--font-reading); font-size: 14px; line-height: 1.8; }
+    .cover-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; margin-bottom: 24px; }
+    .cover-tags span { padding: 5px 8px; border: 1px solid color-mix(in srgb, var(--gold-400) 35%, transparent); color: var(--gold-400); font-size: 10px; }
+    .cover-open {
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 16px;
+      border: 1px solid color-mix(in srgb, var(--action-strong) 50%, transparent);
+      border-radius: var(--radius-control);
+      background: color-mix(in srgb, var(--action) 12%, transparent);
+      color: var(--text-primary);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .codex-book.open .codex-cover { opacity: 0; transform: rotateY(-108deg); box-shadow: 22px 4px 30px rgba(0,0,0,.28); pointer-events: none; }
+    .codex-spread {
+      position: relative;
+      min-height: 650px;
+      color: var(--text-paper);
+      background: linear-gradient(rgba(84,62,74,.025) 50%, transparent 50%), var(--surface-paper);
+      background-size: 100% 5px;
+      box-shadow: var(--shadow);
+      border-radius: var(--radius-major);
+      overflow: hidden;
+      opacity: .62;
+      transform: translateX(-10px) scale(.995);
+      transform-origin: left center;
+      transition: opacity .42s ease .12s, transform .52s cubic-bezier(.2,.7,.25,1) .08s;
+      cursor: pointer;
+    }
+    .codex-book.open .codex-spread { opacity: 1; transform: translateX(0) scale(1); }
+    .codex-page { min-height: 650px; padding: clamp(30px, 4vw, 54px) clamp(26px, 5vw, 70px) 46px; font: 400 16px/2 var(--font-reading); }
+    .opening > span, .present > span { color: var(--violet-650); font-size: 12px; font-weight: 700; letter-spacing: .14em; }
+    .opening h2, .present h2 { margin: 5px 0 12px; font: 700 20px/1.4 var(--font-reading); }
+    .opening p, .present p, .biography-summary p, .chapter-body p { margin: 0; text-align: justify; }
+    .chapters { margin-top: 28px; }
+    .chapter { border-top: 1px solid rgba(61,48,58,.18); }
+    .chapter:last-child { border-bottom: 1px solid rgba(61,48,58,.18); }
+    .chapter summary {
+      position: relative;
+      min-height: 50px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto 18px;
+      gap: 12px;
+      align-items: center;
+      padding: 9px 3px;
+      cursor: pointer;
+      list-style: none;
+    }
+    .chapter summary::-webkit-details-marker { display: none; }
+    .chapter-label { font-size: 15px; font-weight: 700; }
+    .chapter-era { color: #746b75; font-family: var(--font-ui); font-size: 11px; }
+    .chapter-chevron { width: 9px; height: 9px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-3px); transition: transform .18s ease; }
+    .chapter[open] .chapter-chevron { transform: rotate(225deg) translate(-2px,-1px); }
+    .chapter-body { padding: 4px 3px 19px; color: var(--text-paper-muted); }
+    .present-divider { display: flex; align-items: center; gap: 16px; margin: 30px 0 24px; color: var(--violet-650); font-weight: 700; }
+    .present-divider::before, .present-divider::after { content: ""; flex: 1; height: 1px; background: rgba(61,48,58,.22); }
+    .biography-summary { margin-top: 24px; padding: 18px 20px; border: 1px solid rgba(61,48,58,.2); background: rgba(255,255,255,.18); }
+    .biography-summary h3 { margin: 0 0 8px; color: var(--violet-650); font-size: 15px; }
+    .return-hint { margin: 18px 0 0; color: rgba(44,38,48,.56); text-align: center; font-family: var(--font-ui); font-size: 9px; letter-spacing: .08em; }
+
+    .generation-overlay {
+      position: absolute;
+      z-index: 8;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 13px;
+      padding: 24px;
+      background: color-mix(in srgb, var(--surface-panel) 78%, transparent);
+      backdrop-filter: blur(3px);
+    }
+    .generation-card { max-width: 380px; padding: 15px 17px; display: grid; gap: 3px; border: 1px solid color-mix(in srgb, var(--action) 44%, var(--line)); border-radius: var(--radius-panel); background: var(--surface-raised); box-shadow: var(--shadow); }
+    .generation-card strong { color: var(--action-strong); font-family: var(--font-reading); }
+    .generation-card strong.eyon-voice { font-family: var(--font-eyon); }
+    .generation-card small { color: var(--text-muted); }
+    .spinner { width: 30px; height: 30px; border: 1px solid color-mix(in srgb, var(--action) 35%, transparent); border-top-color: var(--action-strong); border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty-state { min-height: 650px; display: grid; place-content: center; gap: 8px; padding: 28px; border: 1px solid var(--line); border-radius: var(--radius-major); color: var(--text-muted); text-align: center; background: color-mix(in srgb, var(--surface-raised) 78%, transparent); }
+    .empty-state strong { color: var(--gold-400); font: 700 18px/1.4 var(--font-reading); }
+    .empty-state.error { color: #d89a9b; }
+    .biography-context-menu { position: fixed; z-index: 1000; width: 210px; display: grid; gap: 4px; padding: 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-panel); background: var(--surface-raised); box-shadow: 0 18px 44px rgba(0,0,0,.32); }
+    .biography-context-menu button { min-height: 38px; padding: 0 10px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; }
+    .biography-context-menu button:hover { color: var(--text-primary); background: color-mix(in srgb, var(--action) 12%, transparent); }
+    .biography-context-menu button.danger { color: #d89a9b; }
+
+    .placeholder {
+      max-width: 1080px;
+      min-height: 430px;
+      margin: 0 auto;
+      padding: clamp(28px, 6vw, 74px);
+      display: none;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-major);
+      background: color-mix(in srgb, var(--surface-panel) 92%, transparent);
+      text-align: center;
+    }
+    .placeholder[aria-hidden="false"] { display: grid; }
+    .placeholder-mark { width: 72px; height: 90px; margin: 0 auto 22px; color: var(--violet-400); opacity: .8; }
+    .placeholder-mark svg { width: 100%; height: 100%; stroke: currentColor; }
+    .placeholder h2 { margin: 0; font-family: var(--font-reading); font-size: 24px; }
+    .placeholder p { max-width: 560px; margin: 12px auto 0; color: var(--text-secondary); line-height: 1.8; }
+    .placeholder small { display: block; margin-top: 20px; color: var(--text-muted); }
+
+    .module-stage { max-width: 1460px; margin: 0 auto; min-width: 0; }
+    .module-stage[hidden] { display: none; }
+    .module-surface { display: grid; gap: 16px; }
+    .surface-panel { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-panel); background: color-mix(in srgb, var(--surface-panel) 90%, transparent); box-shadow: 0 14px 34px rgba(0,0,0,.08); overflow: hidden; }
+    .surface-head { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 13px 18px; border-bottom: 1px solid var(--line); }
+    .surface-title { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .surface-title > span { color: var(--gold-400); font-family: var(--font-reading); font-size: 19px; }
+    .surface-title h2, .surface-title h3 { margin: 0; font-family: var(--font-reading); font-size: 17px; }
+    .surface-title p { margin: 2px 0 0; color: var(--text-muted); font-size: 10px; }
+    .surface-body { padding: 18px; }
+    .quiet-button, .danger-button { min-height: 38px; padding: 8px 13px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); background: var(--surface-raised); color: var(--text-secondary); cursor: pointer; }
+    .quiet-button:hover { border-color: var(--action); color: var(--text-primary); }
+    .danger-button { color: #d4a6ae; border-color: color-mix(in srgb, var(--wax-500) 62%, transparent); }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    .prototype-notice { padding: 11px 14px; border-left: 2px solid var(--gold-400); border-radius: 0 var(--radius-control) var(--radius-control) 0; background: color-mix(in srgb, var(--gold-400) 8%, transparent); color: var(--text-secondary); font-size: 12px; }
+    .prototype-notice.error { border-left-color: var(--wax-500); }
+    .empty-module { min-height: 240px; display: grid; place-items: center; padding: 36px; color: var(--text-muted); text-align: center; }
+    .empty-module strong { display: block; color: var(--text-primary); font-family: var(--font-reading); font-size: 18px; }
+    .empty-module p { max-width: 480px; margin: 8px auto 0; }
+
+    .time-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .time-plane { position: relative; min-height: 188px; padding: 22px 24px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-panel); background: linear-gradient(135deg, color-mix(in srgb, var(--surface-raised) 92%, transparent), var(--surface-panel)); }
+    .time-plane::after { content: ""; position: absolute; width: 160px; height: 160px; right: -52px; bottom: -74px; border: 1px solid color-mix(in srgb, var(--gold-400) 24%, transparent); border-radius: 50%; box-shadow: 0 0 0 18px color-mix(in srgb, var(--gold-400) 4%, transparent), 0 0 0 38px color-mix(in srgb, var(--gold-400) 3%, transparent); }
+    .time-plane.ruin { background: linear-gradient(135deg, color-mix(in srgb, var(--violet-650) 32%, var(--surface-panel)), var(--surface-panel)); }
+    .plane-label { color: var(--gold-400); font-size: 9px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; }
+    .time-plane h2 { margin: 5px 0 18px; font-family: var(--font-reading); font-size: 22px; }
+    .datum { position: relative; z-index: 1; display: grid; grid-template-columns: 52px minmax(0,1fr); gap: 10px; margin-top: 8px; }
+    .datum span { color: var(--text-muted); font-size: 11px; }
+    .datum strong { font-size: 13px; font-weight: 600; }
+    .runtime-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); border: 1px solid var(--line); border-radius: var(--radius-panel); overflow: hidden; }
+    .runtime-cell { padding: 14px 16px; min-width: 0; }
+    .runtime-cell + .runtime-cell { border-left: 1px solid var(--line); }
+    .runtime-cell span { display: block; color: var(--text-muted); font-size: 10px; }
+    .runtime-cell strong { display: block; margin-top: 5px; overflow: hidden; font-family: var(--font-reading); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+    .runtime-cell strong.teal { color: #83aaa4; }
+    .command-bar { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    .archive-dual { display: grid; grid-template-columns: minmax(250px, 34%) minmax(0,1fr); min-height: 380px; }
+    .effect-list { border-right: 1px solid var(--line); padding: 10px; }
+    .effect-group-label { margin: 10px 8px 6px; color: var(--text-muted); font-size: 9px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+    .effect-group-label:first-child { margin-top: 2px; }
+    .effect-row { width: 100%; display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 10px; padding: 13px 10px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; }
+    .effect-row + .effect-row { margin-top: 3px; }
+    .effect-row[aria-selected="true"] { background: color-mix(in srgb, var(--action) 12%, transparent); color: var(--text-primary); }
+    .effect-row > span:first-child { color: var(--gold-400); }
+    .effect-row strong, .effect-row small { display: block; }
+    .effect-row small { margin-top: 3px; color: var(--text-muted); font-size: 10px; }
+    .effect-row i { color: var(--gold-400); font-size: 9px; font-style: normal; white-space: nowrap; }
+    .effect-detail { padding: 22px 24px; }
+    .effect-detail header span { color: var(--gold-400); font-size: 10px; letter-spacing: .14em; }
+    .effect-detail h3 { margin: 5px 0 18px; font-family: var(--font-reading); font-size: 24px; }
+    .effect-dossier-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+    .effect-dossier-head h3 { margin-bottom: 0; }
+    .dossier-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+    .dossier-badge { padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--text-muted); font-size: 9px; white-space: nowrap; }
+    .dossier-badge.status { border-color: color-mix(in srgb, var(--gold-400) 52%, var(--line)); color: var(--gold-400); }
+    .route-kicker { margin: 0 0 10px; color: var(--text-muted); font-size: 9px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+    .causal-route { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 0 0 20px; padding: 15px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: color-mix(in srgb, var(--surface-raised) 46%, transparent); }
+    .causal-stop { position: relative; min-width: 0; padding-top: 25px; }
+    .causal-stop::before { content: ""; position: absolute; z-index: 2; left: 0; top: 5px; width: 9px; height: 9px; border: 2px solid var(--surface-panel); border-radius: 50%; background: var(--gold-400); box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold-400) 52%, transparent); }
+    .causal-stop:not(:last-child)::after { content: ""; position: absolute; left: 10px; right: -16px; top: 10px; height: 1px; background: color-mix(in srgb, var(--gold-400) 46%, var(--line)); }
+    .causal-stop.broken-next::after { height: 0; border-top: 1px dashed color-mix(in srgb, var(--wax-500) 70%, var(--line)); background: none; }
+    .causal-stop.pending::before { background: var(--surface-panel); border-color: var(--wax-500); box-shadow: 0 0 0 1px color-mix(in srgb, var(--wax-500) 58%, transparent); }
+    .causal-stop small, .causal-stop strong, .causal-stop span { display: block; }
+    .causal-stop small { color: var(--text-muted); font-size: 9px; letter-spacing: .08em; }
+    .causal-stop strong { margin-top: 4px; color: var(--text-primary); font-family: var(--font-reading); font-size: 13px; }
+    .causal-stop span { margin-top: 5px; color: var(--text-muted); font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; }
+    .causal-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+    .causal-card { min-width: 0; padding: 15px 16px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: color-mix(in srgb, var(--surface-raised) 54%, transparent); }
+    .causal-card > span { display: block; margin-bottom: 7px; color: var(--gold-400); font-size: 9px; font-weight: 700; letter-spacing: .14em; }
+    .causal-card p { margin: 0; color: var(--text-secondary); line-height: 1.72; }
+    .causal-card.missing { border-style: dashed; }
+    .causal-card.missing p { color: var(--text-muted); }
+    .causal-conclusion { margin-top: 10px; padding: 16px 18px; border-left: 2px solid var(--action); border-radius: 0 var(--radius-panel) var(--radius-panel) 0; background: color-mix(in srgb, var(--action) 8%, transparent); }
+    .causal-conclusion span { display: block; margin-bottom: 6px; color: var(--action-strong); font-size: 9px; font-weight: 700; letter-spacing: .14em; }
+    .causal-conclusion p { margin: 0; color: var(--text-secondary); line-height: 1.72; }
+    .detail-list { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 10px 16px; margin: 0; }
+    .detail-list dt { color: var(--text-muted); font-size: 11px; }
+    .detail-list dd { margin: 0; color: var(--text-secondary); line-height: 1.72; }
+    .detail-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+
+    .genealogy-layout { display: grid; grid-template-columns: 286px minmax(0,1fr); gap: 16px; }
+    .focus-panel { padding: 20px; }
+    .focus-heading { display: grid; grid-template-columns: 58px minmax(0,1fr); gap: 13px; align-items: center; margin-bottom: 20px; }
+    .large-avatar { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid var(--gold-500); border-radius: 50%; color: var(--gold-400); font-family: var(--font-reading); font-size: 24px; }
+    .focus-heading span, .focus-detail > span { color: var(--text-muted); font-size: 10px; }
+    .focus-heading h2 { margin: 2px 0 0; font-family: var(--font-reading); font-size: 17px; }
+    .field { display: grid; gap: 7px; margin-top: 14px; }
+    .field > strong { color: var(--text-secondary); font-size: 11px; }
+    .field select, .field input, .field textarea, .history-selector select, .settings-control input, .settings-control select { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); background: var(--surface-shell); color: var(--text-primary); }
+    .field textarea { min-height: 86px; resize: vertical; }
+    .field-note { color: var(--text-muted); font-size: 10px; line-height: 1.55; }
+    .character-brief { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: color-mix(in srgb, var(--surface-raised) 70%, transparent); }
+    .character-brief dl, .focus-detail dl { display: grid; grid-template-columns: 42px minmax(0,1fr); gap: 6px 10px; margin: 0; }
+    .character-brief dt, .focus-detail dt { color: var(--text-muted); font-size: 10px; }
+    .character-brief dd, .focus-detail dd { margin: 0; color: var(--text-secondary); font-size: 11px; }
+    .stepper { display: grid; grid-template-columns: 38px 1fr 38px; align-items: center; border: 1px solid var(--line-strong); border-radius: var(--radius-control); overflow: hidden; }
+    .stepper button { height: 38px; border: 0; background: transparent; color: var(--gold-400); cursor: pointer; }
+    .stepper strong { text-align: center; font-size: 12px; }
+    .focus-panel > .primary-button { width: 100%; margin-top: 18px; }
+    .focus-detail { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .focus-detail > strong { display: block; margin: 3px 0 10px; color: var(--gold-400); font-family: var(--font-reading); }
+    .kinship-shell { min-width: 0; overflow: hidden; }
+    .kinship-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 58px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+    .kinship-toolbar strong, .kinship-toolbar span { margin-right: 8px; }
+    .kinship-toolbar span { color: var(--text-muted); font-size: 11px; }
+    .toolbar { display: flex; gap: 6px; }
+    .tree-viewport { position: relative; min-height: 620px; overflow: auto; background: radial-gradient(ellipse at 50% -8%, color-mix(in srgb, var(--gold-400) 12%, transparent), transparent 48%), radial-gradient(circle at 12% 34%, color-mix(in srgb, var(--violet-400) 10%, transparent), transparent 22rem), radial-gradient(circle at 88% 72%, color-mix(in srgb, var(--wax-500) 8%, transparent), transparent 24rem), linear-gradient(180deg, color-mix(in srgb, var(--surface-raised) 58%, transparent), color-mix(in srgb, var(--surface-panel) 96%, transparent)); }
+    .tree-viewport::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .58; background: radial-gradient(circle at 9% 17%, color-mix(in srgb, var(--gold-400) 48%, transparent) 0 1px, transparent 1.7px), radial-gradient(circle at 24% 68%, color-mix(in srgb, var(--silver-500) 34%, transparent) 0 1px, transparent 1.7px), radial-gradient(circle at 47% 27%, color-mix(in srgb, var(--gold-400) 34%, transparent) 0 1px, transparent 1.7px), radial-gradient(circle at 71% 53%, color-mix(in srgb, var(--silver-500) 30%, transparent) 0 1px, transparent 1.7px), radial-gradient(circle at 92% 21%, color-mix(in srgb, var(--gold-400) 42%, transparent) 0 1px, transparent 1.7px), radial-gradient(circle at 84% 86%, color-mix(in srgb, var(--violet-300) 30%, transparent) 0 1px, transparent 1.7px); }
+    .family-tree { position: relative; z-index: 1; width: 1120px; min-height: 610px; padding: 50px 46px 70px; transform: scale(var(--tree-zoom,1)); transform-origin: top left; transition: transform 180ms var(--ease); }
+    .generation { position: relative; display: grid; grid-template-columns: repeat(4, 190px); justify-content: center; gap: 46px; margin-bottom: 110px; }
+    .generation:last-child { margin-bottom: 0; }
+    .generation::after { content: ""; position: absolute; left: 50%; bottom: -72px; width: 1px; height: 72px; background: color-mix(in srgb, var(--gold-400) 55%, transparent); }
+    .generation:last-child::after { display: none; }
+    .generation-label { position: absolute; left: -34px; top: 4px; color: var(--text-muted); font-size: 10px; writing-mode: vertical-rl; letter-spacing: .18em; }
+    .family-node { position: relative; min-height: 102px; padding: 13px 14px; border: 1px solid var(--line-strong); border-radius: var(--radius-panel); background: color-mix(in srgb, var(--surface-raised) 94%, transparent); color: var(--text-secondary); text-align: left; cursor: pointer; box-shadow: 0 10px 24px rgba(0,0,0,.12); }
+    .family-node:hover, .family-node[aria-selected="true"] { border-color: var(--action); color: var(--text-primary); }
+    .family-node[aria-selected="true"] { box-shadow: 0 0 0 1px color-mix(in srgb, var(--action) 35%, transparent), 0 10px 24px rgba(0,0,0,.13); }
+    .family-node small, .family-node strong, .family-node span { display: block; }
+    .family-node small { color: var(--text-muted); font-size: 10px; }
+    .family-node strong { margin-top: 5px; font-family: var(--font-reading); font-size: 14px; }
+    .family-node span { margin-top: 6px; color: #82a5b8; font-size: 10px; }
+    .family-node em { position: absolute; right: 8px; top: 7px; color: var(--gold-400); font-size: 8px; font-style: normal; }
+
+    .ruin-layout { display: grid; grid-template-columns: minmax(300px, 340px) minmax(0,1fr); gap: 16px; }
+    .form-stack { display: grid; gap: 12px; }
+    .date-range-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .date-parts { display: grid; grid-template-columns: 1.2fr .8fr .8fr; gap: 5px; }
+    .date-part { display: grid; gap: 3px; color: var(--text-muted); font-size: 9px; }
+    .date-part input { min-width: 0; }
+    .token-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .token { padding: 5px 9px; border: 1px solid var(--line-strong); border-radius: 999px; background: transparent; color: var(--text-secondary); font-size: 10px; cursor: pointer; }
+    .token[aria-pressed="true"], .token.static { border-color: var(--action); color: var(--text-primary); background: color-mix(in srgb, var(--action) 12%, transparent); }
+    .candidate-count { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line-strong); border-radius: var(--radius-control); overflow: hidden; }
+    .candidate-count button { height: 36px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--text-secondary); cursor: pointer; }
+    .candidate-count button:last-child { border-right: 0; }
+    .candidate-count button[aria-pressed="true"] { background: var(--action); color: #fff; }
+    .form-stack > .primary-button { width: 100%; margin-top: 4px; }
+    .candidate-tabs { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); border-bottom: 1px solid var(--line); }
+    .candidate-tab { min-height: 90px; padding: 13px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; }
+    .candidate-tab:last-child { border-right: 0; }
+    .candidate-tab[aria-selected="true"] { background: color-mix(in srgb, var(--action) 12%, transparent); color: var(--text-primary); }
+    .candidate-tab .period-tag { color: var(--gold-400); font-size: 9px; }
+    .candidate-tab strong, .candidate-tab small { display: block; }
+    .candidate-tab strong { margin-top: 4px; font-family: var(--font-reading); }
+    .candidate-tab small { margin-top: 5px; color: var(--text-muted); font-size: 9px; }
+    .ruin-dossier { padding: 20px 22px; border-bottom: 1px solid var(--line); }
+    .ruin-dossier-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+    .ruin-dossier-heading strong { color: var(--gold-400); font-size: 10px; }
+    .ruin-dossier-heading span { font-family: var(--font-reading); font-size: 20px; }
+    .ruin-dossier .detail-list dd.history { max-height: 128px; overflow: auto; font-family: var(--font-reading); line-height: 1.9; }
+    .chronology { padding: 18px 22px; border-bottom: 1px solid var(--line); overflow: auto; }
+    .chronology-toolbar { display: flex; justify-content: space-between; margin-bottom: 18px; }
+    .chronology-toolbar span { color: var(--text-muted); font-size: 10px; }
+    .chronology-track { position: relative; display: grid; grid-template-columns: repeat(4, minmax(160px,1fr)); gap: 26px; min-width: 800px; padding: 28px 0 4px; }
+    .chronology-track::before { content: ""; position: absolute; left: 9%; right: 9%; top: 13px; height: 1px; background: color-mix(in srgb, var(--gold-400) 58%, transparent); }
+    .node-slot { position: relative; }
+    .node-slot::before { content: ""; position: absolute; left: 50%; top: -15px; height: 15px; width: 1px; background: var(--gold-400); }
+    .node-slot::after { content: ""; position: absolute; left: calc(50% - 4px); top: -20px; width: 7px; height: 7px; border: 1px solid var(--gold-400); border-radius: 50%; background: var(--surface-panel); }
+    .event-kind { color: var(--text-muted); font-size: 10px; }
+    .history-node { width: 100%; min-height: 98px; margin-top: 7px; padding: 13px; border: 1px solid var(--line-strong); background: var(--surface-raised); color: var(--text-secondary); text-align: left; cursor: pointer; }
+    .history-node[aria-selected="true"] { border-color: var(--action); color: var(--text-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--action) 30%, transparent); }
+    .history-node small, .history-node strong { display: block; }
+    .history-node small { color: var(--text-muted); font-size: 9px; }
+    .history-node strong { margin-top: 8px; font-family: var(--font-reading); font-size: 14px; }
+    .node-inspector { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 20px; padding: 18px 22px; }
+    .node-inspector strong { display: block; font-family: var(--font-reading); font-size: 17px; }
+    .node-inspector-meta { display: block; margin-top: 3px; color: var(--gold-400); font-size: 10px; }
+    .node-inspector p { margin: 8px 0 0; color: var(--text-secondary); font-size: 11px; }
+    .history-tools { display: flex; align-items: center; gap: 8px; }
+
+    .settings-shell { display: grid; grid-template-columns: 184px minmax(0,1fr); min-height: 660px; }
+    .settings-nav { padding: 10px; border-right: 1px solid var(--line); }
+    .settings-tab { width: 100%; min-height: 46px; padding: 8px 11px; border: 0; border-left: 2px solid transparent; background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; }
+    .settings-tab[aria-selected="true"] { border-left-color: var(--action); background: color-mix(in srgb, var(--action) 12%, transparent); color: var(--text-primary); }
+    .settings-pane { min-width: 0; padding: 24px; }
+    .settings-pane > header { margin-bottom: 20px; }
+    .settings-pane > header h2 { margin: 0; font-family: var(--font-reading); font-size: 24px; }
+    .settings-pane > header p { margin: 5px 0 0; color: var(--text-muted); }
+    .settings-group { margin-top: 20px; border-top: 1px solid var(--line); }
+    .settings-group-title { margin: 18px 0 5px; color: var(--gold-400); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+    .settings-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(220px,42%); align-items: center; gap: 20px; min-height: 76px; padding: 13px 0; border-bottom: 1px solid var(--line); }
+    .settings-copy strong { display: block; }
+    .settings-copy p { margin: 4px 0 0; color: var(--text-muted); font-size: 10px; line-height: 1.55; }
+    .settings-control { min-width: 0; }
+    .settings-control.actions { display: flex; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+    .module-choice-grid, .palette-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
+    .module-choice, .palette-choice { min-height: 82px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-control); background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; }
+    .module-choice[aria-pressed="true"], .palette-choice[aria-pressed="true"] { border-color: var(--action); background: color-mix(in srgb, var(--action) 11%, transparent); color: var(--text-primary); }
+    .module-choice strong, .module-choice small, .palette-choice strong, .palette-choice small { display: block; }
+    .module-choice small, .palette-choice small { margin-top: 5px; color: var(--text-muted); font-size: 9px; }
+    .swatch { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 50%; background: var(--swatch); vertical-align: -1px; }
+    .toggle { display: inline-flex; align-items: center; width: 46px; height: 25px; padding: 3px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface-shell); cursor: pointer; }
+    .toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .toggle span { width: 17px; height: 17px; border-radius: 50%; background: var(--text-muted); transition: transform 160ms var(--ease), background 160ms var(--ease); }
+    .toggle input:checked + span { transform: translateX(19px); background: var(--action-strong); }
+    .diagnostic-card { margin-top: 12px; padding: 14px; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface-raised) 62%, transparent); }
+    .diagnostic-card header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .diagnostic-card p { margin: 6px 0 0; color: var(--text-muted); font-size: 10px; }
+
+    dialog {
+      width: min(520px, calc(100% - 32px));
+      padding: 0;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-panel);
+      background: var(--surface-raised);
+      color: var(--text-primary);
+      box-shadow: 0 26px 80px rgba(0, 0, 0, .45);
+    }
+    dialog::backdrop { background: rgba(12, 10, 14, .68); backdrop-filter: blur(3px); }
+    .dialog-head { padding: 22px 24px 16px; border-bottom: 1px solid var(--line); }
+    .dialog-head h2 { margin: 0; font-family: var(--font-reading); font-size: 21px; }
+    .dialog-body { padding: 18px 24px; color: var(--text-secondary); line-height: 1.75; }
+    .dialog-actions { padding: 14px 24px 20px; display: flex; justify-content: flex-end; gap: 8px; }
+    .secondary-button { min-height: 42px; padding: 8px 15px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); background: transparent; color: var(--text-primary); cursor: pointer; }
+
+    @media (max-width: 1180px) {
+      .archive-layout { grid-template-columns: minmax(220px, 252px) minmax(0, 1fr); }
+      .genealogy-layout, .ruin-layout { grid-template-columns: 260px minmax(0, 1fr); }
+      .module-choice-grid, .palette-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 860px) {
+      .app { grid-template-columns: 1fr; padding-bottom: 70px; }
+      .rail {
+        position: fixed;
+        z-index: 10;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: auto;
+        min-height: 0;
+        height: 66px;
+        padding: 6px max(6px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+        border-right: 0;
+        border-top: 1px solid var(--line-strong);
+      }
+      .brand, .rail-label, .rail-foot { display: none; }
+      .rail-ornament { display: none; }
+      .nav-list { height: 100%; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; }
+      .nav-item { min-height: 52px; padding: 5px 2px; grid-template-columns: 1fr; grid-template-rows: 22px auto; justify-items: center; text-align: center; gap: 2px; }
+      .nav-item::before { left: 20%; right: 20%; top: -6px; bottom: auto; width: auto; height: 2px; }
+      .nav-item svg { width: 19px; height: 19px; }
+      .nav-text { font-size: 10px; font-weight: 600; white-space: nowrap; }
+      .nav-count { display: none; }
+      .topbar { padding: 10px 16px; min-height: 62px; }
+      main { padding: 22px 16px 32px; }
+      .module-head { align-items: start; }
+      .archive-layout { grid-template-columns: 1fr; }
+      .shelf { order: 1; }
+      .codex-stage { order: 2; }
+      .book-list { width: 100%; min-width: 0; grid-template-columns: repeat(3, 200px); overflow-x: auto; scroll-snap-type: x mandatory; }
+      .book-tab { min-width: 200px; scroll-snap-align: start; border-right: 1px solid var(--line); border-bottom: 0; }
+      .shelf-foot { display: none; }
+      .genealogy-layout, .ruin-layout { grid-template-columns: 1fr; }
+      .focus-panel { order: 1; }
+      .kinship-shell { order: 2; }
+      .tree-viewport { min-height: 520px; }
+      .archive-dual { grid-template-columns: 1fr; }
+      .effect-list { border-right: 0; border-bottom: 1px solid var(--line); }
+      .settings-shell { grid-template-columns: 1fr; }
+      .settings-nav { display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .settings-tab { border-left: 0; border-bottom: 2px solid transparent; text-align: center; font-size: 11px; }
+      .settings-tab[aria-selected="true"] { border-bottom-color: var(--action); }
+    }
+
+    @media (max-width: 620px) {
+      .top-title { max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .top-actions .icon-button:first-child { display: none; }
+      .module-head { grid-template-columns: 1fr; gap: 18px; }
+      .module-ledger { grid-template-columns: 1fr; }
+      .ledger-cell, .ledger-cell + .ledger-cell { padding: 9px 0; }
+      .ledger-cell + .ledger-cell::before { left: 0; right: 0; top: 0; bottom: auto; width: auto; height: 1px; }
+      .primary-button:not([hidden]) { width: 100%; }
+      .module-title { font-size: 30px; }
+      .library-bar { align-items: flex-start; flex-direction: column; gap: 3px; padding: 10px 14px; }
+      .library-identity { flex-wrap: wrap; }
+      .library-identity span:last-child { width: 100%; }
+      .library-hint { white-space: normal; }
+      .codex-stage, .codex-book, .codex-cover, .codex-spread, .codex-page, .empty-state { min-height: 520px; }
+      .codex-cover { padding: 30px 22px; border-width: 10px; outline-offset: -22px; }
+      .cover-content { width: 92%; }
+      .codex-page { padding: 28px 22px 38px; font-size: 15px; line-height: 1.9; }
+      .chapter summary { grid-template-columns: minmax(0, 1fr) 18px; }
+      .chapter-era { grid-column: 1 / -1; }
+      .time-overview, .runtime-grid, .date-range-grid { grid-template-columns: 1fr; }
+      .runtime-cell + .runtime-cell { border-left: 0; border-top: 1px solid var(--line); }
+      .surface-head { align-items: flex-start; flex-direction: column; }
+      .detail-list { grid-template-columns: 1fr; gap: 3px; }
+      .detail-list dd { margin-bottom: 8px; }
+      .effect-dossier-head { display: grid; }
+      .dossier-badges { justify-content: flex-start; }
+      .causal-route { grid-template-columns: 1fr; gap: 12px; }
+      .causal-stop { padding: 0 0 0 27px; }
+      .causal-stop::before { left: 2px; top: 5px; }
+      .causal-stop:not(:last-child)::after { left: 7px; right: auto; top: 15px; bottom: -13px; width: 1px; height: auto; }
+      .causal-stop.broken-next::after { width: 0; height: auto; border-top: 0; border-left: 1px dashed color-mix(in srgb, var(--wax-500) 70%, var(--line)); }
+      .causal-grid { grid-template-columns: 1fr; }
+      .node-inspector { grid-template-columns: 1fr; }
+      .node-inspector .primary-button { width: 100%; }
+      .candidate-tabs { grid-template-columns: 1fr; }
+      .candidate-tab { border-right: 0; border-bottom: 1px solid var(--line); }
+      .settings-pane { padding: 18px 14px; }
+      .settings-row { grid-template-columns: 1fr; gap: 8px; padding: 14px 0; }
+      .settings-control.actions { justify-content: flex-start; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+    }
+  </style>
+</head>
+<body data-theme="night">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <div class="app">
+    <aside class="rail" aria-label="工作台模块">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 42 48" fill="none">
+            <path d="M9 40V20C9 12.3 14.4 6 21 6s12 6.3 12 14v20" stroke="currentColor" stroke-width="1.2" />
+            <path d="M14 40V21c0-4.8 3.1-9 7-9s7 4.2 7 9v19" stroke="currentColor" stroke-width="1" opacity=".7" />
+            <path d="M6 40h30M11 44h20" stroke="currentColor" />
+            <path d="M15 25c3-4 9-4 12 0-3 4-9 4-12 0Z" stroke="currentColor" />
+            <circle cx="21" cy="25" r="2" fill="currentColor" />
+          </svg>
+        </div>
+        <div>
+          <p class="brand-title">虚嗣王庭</p>
+          <p class="brand-subtitle">Royal Scriptorium</p>
+        </div>
+      </div>
+      <p class="rail-label">见证档案院</p>
+      <nav class="nav-list">
+        <button class="nav-item" type="button" data-module="timeline">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" aria-hidden="true"><path d="M5 6h14M5 12h9M5 18h12"/><circle cx="18" cy="12" r="2.5"/></svg>
+          <span class="nav-text">历史长河</span><span class="nav-count">3</span>
+        </button>
+        <button class="nav-item" type="button" data-module="genealogy">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M12 7.5v4M6 15.5v-4h12v4"/></svg>
+          <span class="nav-text">宗族谱系</span><span class="nav-count">11</span>
+        </button>
+        <button class="nav-item" type="button" data-module="ruin">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" aria-hidden="true"><path d="M5 19h14M7 19V9l5-4 5 4v10M9.5 19v-6h5v6"/><path d="M4 9h16"/></svg>
+          <span class="nav-text">墟境探查</span><span class="nav-count">3</span>
+        </button>
+        <button class="nav-item" type="button" data-module="biography" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" aria-hidden="true"><path d="M4.5 5.5A3.5 3.5 0 0 1 8 2h11.5v17H8a3.5 3.5 0 0 0-3.5 3V5.5Z"/><path d="M8 2v17M11 7h5M11 11h5"/></svg>
+          <span class="nav-text">传记书库</span><span class="nav-count">3</span>
+        </button>
+        <button class="nav-item" type="button" data-module="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2.1-.6a7.6 7.6 0 0 0-.7-1.7l1.1-1.9-2.1-2.1-1.9 1.1a7.6 7.6 0 0 0-1.7-.7L11 2.5H8l-.6 2.1a7.6 7.6 0 0 0-1.7.7L3.8 4.2 1.7 6.3l1.1 1.9a7.6 7.6 0 0 0-.7 1.7L0 10.5v3l2.1.6c.2.6.4 1.2.7 1.7l-1.1 1.9 2.1 2.1 1.9-1.1c.5.3 1.1.5 1.7.7l.6 2.1h3l.6-2.1c.6-.2 1.2-.4 1.7-.7l1.9 1.1 2.1-2.1-1.1-1.9c.3-.5.5-1.1.7-1.7l2.1-.6Z" transform="translate(2 0) scale(.82)"/></svg>
+          <span class="nav-text">工作台设置</span><span class="nav-count">—</span>
+        </button>
+      </nav>
+      <div class="rail-ornament" aria-hidden="true">
+        <svg viewBox="0 0 72 122" fill="none" stroke-width="1">
+          <path d="M36 2v18M36 102v18M12 61h14M46 61h14"/>
+          <path d="M36 18c18 13 24 28 24 43S54 91 36 104C18 91 12 76 12 61s6-30 24-43Z"/>
+          <path d="M22 61c7-11 21-11 28 0-7 11-21 11-28 0Z"/>
+          <circle cx="36" cy="61" r="4" fill="currentColor" stroke="none"/>
+          <path d="M31 30c-5 5-7 11-7 18M41 92c5-5 7-11 7-18" opacity=".7"/>
+        </svg>
+      </div>
+      <div class="rail-foot">
+        <div class="system-line"><span class="system-dot"></span><span>档案连接稳定</span></div>
+        <p class="system-caption">当前纪元 · 复兴纪元 488 年</p>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="crumb">伊雍历史工作台 / <span id="crumb-module">传记书库</span></p>
+          <p class="top-title" id="top-context">《暮潮手札》· 当前有效版本</p>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button" type="button" aria-label="打开检索">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
+          </button>
+          <button class="icon-button" id="theme-toggle" type="button" aria-label="切换昼夜主题" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" aria-hidden="true"><path d="M20 15.5A8 8 0 1 1 8.5 4 6.5 6.5 0 0 0 20 15.5Z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main id="main" tabindex="-1">
+        <section class="module-head" aria-labelledby="module-title">
+          <div>
+            <p class="eyebrow" id="module-eyebrow">Biography Archive</p>
+            <h1 class="module-title" id="module-title">传记书库</h1>
+            <p class="module-summary" id="module-summary">按当前聊天收纳传记全文，并让人物、地点与器物传记参与谱系及墟境检索。</p>
+            <dl class="module-ledger" id="module-ledger" aria-label="传记书库摘要">
+              <div class="ledger-cell"><dt>收录典籍</dt><dd id="ledger-total">03 册</dd></div>
+              <div class="ledger-cell"><dt>保存位置</dt><dd>当前聊天</dd></div>
+              <div class="ledger-cell"><dt>墟境参考</dt><dd id="ledger-references">01 册</dd></div>
+            </dl>
+          </div>
+          <button class="primary-button" id="primary-action" type="button" hidden></button>
+        </section>
+
+        <section class="archive-layout" id="biography-view" aria-label="虚嗣王庭传记书库功能等价原型">
+          <header class="library-bar">
+            <div class="library-identity"><span class="library-sigil" aria-hidden="true">▣</span><strong>虚嗣王庭传记书库</strong><span>全文保存在当前聊天资料库</span></div>
+            <span class="library-hint">右键管理传记 · 选中后先查看封面</span>
+          </header>
+          <aside class="shelf" aria-label="传记目录">
+            <header class="panel-head">
+              <p class="panel-kicker" id="shelf-count">Archive Shelf · 03</p>
+              <h2 class="panel-title">藏书目录</h2>
+            </header>
+            <label class="search-wrap">
+              <span class="sr-only">检索传记</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
+              <input class="search" id="book-search" type="search" placeholder="检索标题或纪元" autocomplete="off" />
+            </label>
+            <div class="book-list" id="book-list" role="listbox" aria-label="传记列表"></div>
+            <div class="shelf-foot" id="shelf-result">显示 3 份档案 · 按最近更新排序</div>
+          </aside>
+
+          <main class="codex-stage" id="codex-stage" aria-live="polite"></main>
+        </section>
+
+        <section class="module-stage" id="module-stage" hidden aria-live="polite"></section>
+      </main>
+    </div>
+  </div>
+
+  <div id="context-menu-root"></div>
+
+  <dialog id="prototype-dialog" aria-labelledby="dialog-title">
+    <header class="dialog-head"><h2 id="dialog-title">原型操作说明</h2></header>
+    <div class="dialog-body" id="dialog-copy">这里展示统一浮层的视觉和信息层级。高保真原型不会触发模型、写入档案或修改任何工作台数据。</div>
+    <div class="dialog-actions"><button class="secondary-button" id="dialog-close" type="button">知道了</button></div>
+  </dialog>
+
+  <script>
+    const modules = {
+      timeline: { eyebrow: 'Historical Current', title: '历史长河', crumb: '历史长河', context: '现实锚点与墟境时空', summary: '核对现实锚点、当前墟境进程与已经归档的蝴蝶效应；历史在这里呈现为可追溯的运行状态。', action: null },
+      genealogy: { eyebrow: 'Genealogy Archive', title: '宗族谱系', crumb: '宗族谱系', context: '当前谱系 · 玲山·哈姆斯沃思', summary: '围绕 MVU 人物构建可追溯的父系、母系与后代关系，并把人物档案安全提供给墟境检索。', action: null },
+      ruin: { eyebrow: 'Ruin Chronicle', title: '墟境探查', crumb: '墟境探查', context: '候选历史 · 尚未进入', summary: '由地点、时间与可选重点参考生成候选史稿，再从缘起、经过、高潮或结果中选择进入时刻。', action: null },
+      biography: { eyebrow: 'Biography Archive', title: '传记书库', crumb: '传记书库', context: '《暮潮手札》· 当前有效版本', summary: '按当前聊天收纳传记全文，并让人物、地点与器物传记参与谱系及墟境检索。', action: null },
+      settings: { eyebrow: 'Workbench Settings', title: '工作台设置', crumb: '工作台设置', context: 'API调用、外观、资料检索与数据管理', summary: '配置四项生成能力、工作台外观、史料检索范围与当前聊天资料；每项操作都明确说明影响边界。', action: null }
+    };
+    const books = {
+      tide: {
+        title: '《暮潮手札》', subtitle: '一册从南境暗流哨所漂泊至艾瑟嘉德外港的水文记录。', accent: '#9c87ab', status: 'archived', metadata: ['器物传记', '6卷', '当前有效'], search: '暮潮手札 复兴纪元475 488 水文 弥拉 洛安',
+        origin: { title: '起源（复兴纪元475年3月）', content: '复兴纪元四七五年三月，南境旧水道前线的暗流哨所浸在咸湿冷雾里。老领航员费恩把防潮羊皮纸逐页穿孔，以浸蜡麻线扎成一册；第一笔并未记载军粮，而是石闸下反常倒卷的潮位。' },
+        stages: [
+          { title: '水门兵燹与残卷逃亡', type: 'turbulent', span: '复兴纪元476年—478年', content: '旧水门陷于兵火，抄写学徒洛安没有捡拾散落的铜币，而是从潮水与焦木间抢出残卷。羊皮虽已浸黑，最早的暗流刻度仍清晰可辨。' },
+          { title: '涸谷干滩的旧图新注', type: 'transition', span: '复兴纪元479年—481年', content: '河床枯竭后，昔日警示船夫的险滩标记反而成为寻找地下活水的线索。洛安沿着旧图补绘断流河脉，让残卷从航行戒律变成了逃难者的生路。' },
+          { title: '黑水驿栈的柴房岁月', type: 'stable', span: '复兴纪元481年—483年', content: '手札被误作无用账册抵进驿站柴房。潮气与烟灰侵蚀了封皮，掌柜的朱砂赊账却偶然护住一段即将剥落的洄流折线。' },
+          { title: '外港秋雾与暮潮移交', type: 'transition', span: '复兴纪元484年—485年', content: '外港档案与学者笔谈留下了相差一年的时间签：一份以实物进入第七泊位为准，另一份以全卷勘验归档为准。两道墨痕共同保存了一场分期完成的移交。' },
+          { title: '潮音神龛的守誓校录', type: 'stable', span: '复兴纪元485年—487年', content: '弥拉在潮音小圣堂以实测水位反驳旧仪轨，将残卷从私人物件变成可以被持续校勘的观测录。后来者的印记并未覆盖旧痕，而是沿着页边继续生长。' },
+          { title: '鲸筋重装与水文定本', type: 'transition', span: '复兴纪元486年—487年', content: '泊位装订师拆去腐朽麻线，以防腐鲸筋重装散页。修复没有把它伪装成新书，焦边、泥痕与两套交接日期仍被原样保留。' }
+        ],
+        present: { title: '现状（复兴纪元488年3月）', content: '如今《暮潮手札》安放在艾瑟嘉德观潮阁的双锁防潮匣中，年轻水文学者以其暗流折角校准新图。它既是水道测量的基准，也是外港移交公案尚未闭合的物证。' },
+        summary: '手札起于费恩的前线观测，经洛安在兵火与旱滩间保全，最终由弥拉接续校订。它的价值不只在于记录水流，也在于完整留下知识如何被抢救、误读、转交与重新理解的痕迹。'
+      },
+      press: {
+        title: '《旧港野录汇编》', subtitle: '瓦伦蒂亚旧城区地下出版活动的流转档案。', accent: '#845566', status: 'validated', metadata: ['组织传记', '5卷', '待正文归档'], search: '旧港野录汇编 复兴纪元485 488 地下出版 加斯东',
+        origin: { title: '起源（复兴纪元485年初）', content: '凛冬的石匠巷里，雕版师加斯东在阴湿地窖拼起一架手摇木盘印刷机，把亡命徒写在血污羊皮上的地底见闻反刻到梨木板上。' },
+        stages: [
+          { title: '毒墨侵骨的暗窖停摆', type: 'turbulent', span: '复兴纪元485年4月—12月', content: '为让违禁图谱耐住地底湿气，调墨工擅自加入赤铅与矿油，引发中毒与停摆。幸存者不得不重新学习如何让材料与人同时活下来。' },
+          { title: '沉睡之眼的街肆中转', type: 'transition', span: '复兴纪元486年', content: '印页不再依赖单一地窖，而是借杂货铺、肉摊与行会账册分散转运。出版网络由一个地点变成了许多普通人的日常动作。' },
+          { title: '薄页换版与夜市传抄', type: 'stable', span: '复兴纪元486年—487年', content: '更轻的纸张与可拆木版降低了被一次查抄彻底摧毁的风险，读者也开始在页边补写自己的勘误与见闻。' },
+          { title: '狂热传抄后的错页潮', type: 'turbulent', span: '复兴纪元487年', content: '传播过快带来大量错页与夸张异闻，地下编校者首次建立互校印记，试图区分见闻、猜测与蓄意伪造。' },
+          { title: '铅匣中的地下定本', type: 'stable', span: '复兴纪元487年—488年', content: '吉拉德将多轮勘误后的厚重定本封入石墙夹层的防潮铅匣，为四散的活页保存了一枚可以回溯的共同锚点。' }
+        ],
+        present: { title: '现状（复兴纪元488年3月）', content: '地下出版已溶入旧城区的肉铺、炉灶与码头工棚。印着隐秘符记的单页看似包鱼废纸，却仍沿着市井网络无声流散。' },
+        summary: '旧港私印从一座危险地窖成长为分布式的市井信息网络；材料、工艺与校勘制度的每次调整，都是为了让见闻在严法与误传之间继续存活。'
+      },
+      ling: {
+        title: '玲山·哈姆斯沃思', subtitle: '调查记者、报业掌权者与流亡翼民的生命记录。', accent: '#718979', status: 'archived', metadata: ['人物传记', '4卷', 'MVU人物'], search: '玲山 哈姆斯沃思 复兴纪元461 488 调查记者 报业',
+        origin: { title: '起源（约复兴纪元461年）', content: '玲山的档案并不以一纸完整的出生证明开始。宗族谱系、世界书与她亲手留下的报业记录从不同方向拼合出一个谨慎、锋利又拒绝屈从的见证者。' },
+        stages: [
+          { title: '群山工坊的寡言学徒', type: 'stable', span: '复兴纪元470年—478年', content: '她在严格的宗族秩序里学会辨认印记、文书与沉默的代价，也逐渐发现被擦除的记录往往比公开的训诫更接近事实。' },
+          { title: '黑曜监牢的断誓之夜', type: 'turbulent', span: '复兴纪元480年—481年', content: '因反对神殿以血亲连带征召铃羽，玲山遭到秘密囚禁。她在牢中斩断宗族法权，从此失去旧有身份，也为妹妹保留了不被连坐的可能。' },
+          { title: '帝国边境的流亡笔记', type: 'transition', span: '复兴纪元481年—484年', content: '流亡迫使玲山把调查从家族内部扩展到帝国官署、商路与报业。她以零碎证词建立消息网，并坚持把互相冲突的说法一同保留。' },
+          { title: '琉璃塔的报业掌权者', type: 'stable', span: '复兴纪元485年—488年', content: '进入琉璃塔信报社后，她把过去的警惕转化为编辑制度：任何足以改变他人命运的报道，都必须留下来源、删改与反证的痕迹。' }
+        ],
+        present: { title: '现状（复兴纪元488年3月）', content: '玲山现任琉璃塔信报社社长，以调查记者与报业掌权者身份维系跨城消息网。她仍在追索当年征召、监牢与宗族文书背后的共同权力链。' },
+        summary: '玲山从受宗族与神殿规训的翼民少女，成长为用报道对抗遗忘的见证者。她的传记保存的不只是胜利，也包括失败的辩护、冲突的年份与尚未获得回答的问题。'
+      }
+    };
+
+    const timelineArchives = [
+      {
+        id: 'run-watergate', scope: '聚落', status: '当前有效', title: '旧水门税契失效', summary: '外港旧航道税契被重新审视',
+        anchors: ['复兴纪元488年3月 · 艾瑟嘉德军港', '复兴纪元484年9月 · 第七泊位', '复兴纪元484年10月 · 第七泊位水窖'],
+        landing: '外港议事会暂停执行依赖旧水道基准的追缴令，三个商会被迫重新提交吃水单。',
+        evidence: '税关公告换上灰色暂缓封签；领航员公所连夜抄录《暮潮手札》的两套时间签。',
+        action: '<user>在回潮事故中保住弥拉接收湿卷的临时凭条，并将其送出被淹的公署。',
+        evolution: '一张原本不具官印的私人收条成为反证，使“何时完成移交”从学术争论转化为航运法理问题。'
+      },
+      {
+        id: 'run-printer', scope: '聚落', status: '当前有效', title: '石匠巷互校印记', summary: '地下活页开始保留来源等级',
+        anchors: ['复兴纪元488年3月 · 瓦伦蒂亚旧城区', '复兴纪元486年7月 · 染坊街暗窖', '复兴纪元486年8月 · 沉睡之眼后巷'],
+        landing: '旧城区私印者使用三种不同的页角缺口标记亲历、转述与推测，错页仍存在，却更容易追查。',
+        evidence: '鱼铺包纸上出现一致的三角缺口；菜市账房开始拒收没有互校印的地城图。',
+        action: '<user>把一块险些被焚毁的校样木版交给了街肆中转人，并指出两处互相矛盾的暗河刻度。',
+        evolution: '一次局部保全没有消除地下出版的混乱，却催生了可由普通读者辨识的低成本校勘习惯。'
+      },
+      {
+        id: 'run-failed', scope: '双人', status: '归档待重试', retryable: true, title: '监牢断誓余波', summary: '现世证据已冻结，叙事结算尚未完成',
+        anchors: ['复兴纪元488年3月 · 琉璃塔信报社', '复兴纪元480年8月 · 黑曜监牢', '复兴纪元480年9月 · 外环石廊'],
+        landing: '等待重新归档。冻结锚点仍被保留，不会因一次生成失败而丢失。',
+        evidence: '尚未完成', action: '<user>带出一角被撕裂的亲属连带状。', evolution: '蝴蝶效应文本未生成，技术详情只留在错误日志。'
+      }
+    ];
+
+    const genealogyPeople = [
+      { id: 'grandfather', generation: '祖辈', relation: '祖父', name: '托瓦尔·哈姆斯沃思', life: '约复兴纪元402年—475年', profession: '圣纹工坊匠师', personality: '沉默而守旧，对工艺精度近乎苛刻。', experience: '在贵族整肃前保存了数份旧式拓板。' },
+      { id: 'grandmother', generation: '祖辈', relation: '祖母', name: '艾丽莎·哈姆斯沃思', life: '约复兴纪元406年—在世', profession: '修补匠、账房', personality: '审慎节俭，习惯用账目保护家人。', experience: '长期维持下层岩沟的亲族互助网络。' },
+      { id: 'maternal-grandfather', generation: '祖辈', relation: '外祖父', name: '尤利乌斯·晨羽', life: '约复兴纪元404年—468年', profession: '边防领航员', personality: '爽直、警觉，对神殿公文缺乏信任。', experience: '曾为群山修道所运送冬粮与药材。' },
+      { id: 'maternal-grandmother', generation: '祖辈', relation: '外祖母', name: '莫妮卡·晨羽', life: '约复兴纪元408年—在世', profession: '修道所看护人', personality: '温和坚定，擅长调解家族争执。', experience: '照看过多批无权幼羽。' },
+      { id: 'father', generation: '父母辈', relation: '父亲', name: '瓦伦·哈姆斯沃思', life: '约复兴纪元435年—482年', profession: '圣纹工坊掌印文书', personality: '谨慎克制，习惯先保护亲眷再表达立场。', experience: '负责工坊图谱、配额与印信，晚年因旧卷案被长期审查。' },
+      { id: 'mother', generation: '父母辈', relation: '母亲', name: '塞拉菲娜·晨羽', life: '约复兴纪元438年—在世', profession: '修道所女官', personality: '虔敬而务实，对女儿抱有隐忍的保护欲。', experience: '熟悉修道所名册与神殿遴选规程。' },
+      { id: 'uncle', generation: '父母辈', relation: '舅父', name: '奥兰·晨羽', life: '约复兴纪元436年—在世', profession: '边防军需官', personality: '外向机警，善于与官署周旋。', experience: '维持晨羽旁支与外峰哨所的联系。', reference: true },
+      { id: 'aunt', generation: '父母辈', relation: '姑母', name: '克拉丽莎·哈姆斯沃思', life: '约复兴纪元440年—在世', profession: '矿彩研磨师', personality: '寡言敏锐，对旧工法抱有执念。', experience: '保存着家族早期的矿彩配方。' },
+      { id: 'ling', generation: '同辈', relation: '本人', name: '玲山·哈姆斯沃思', life: '约复兴纪元461年—在世', profession: '调查记者、报业掌权者', personality: '冷静敏锐，情绪深藏，坚持追索可核验的事实。', experience: '由梵尼亚流亡帝国，现任琉璃塔信报社社长。', focus: true },
+      { id: 'lingyu', generation: '同辈', relation: '亲妹妹', name: '铃羽·哈姆斯沃思', life: '约复兴纪元464年—在世', profession: '无尽地城守卫者', personality: '温顺虔敬，对亲近之人保有强烈依恋。', experience: '受辉煌女神幻梦征召后离开故乡。', reference: true },
+      { id: 'cousin', generation: '同辈', relation: '表姐', name: '莱昂娜·晨羽', life: '约复兴纪元462年—在世', profession: '修道所记录员', personality: '细心、善记，愿为亲族保存私人往来。', experience: '负责修道所药材与幼羽登记。' }
+    ];
+
+    const ruinCandidates = [
+      { id: 'r1', period: '过渡期', title: '暮潮过勘之隙', span: '复兴纪元484年9月12日—10月5日', summary: '洛安抵港交付手札，因码头清册改制仅订立托管契，埋下年份分歧。', shift: '动荡期 → 稳定期', history: '外港第七泊位终日弥漫着海盐与煤焦油气息。洛安携带浸损的《暮潮手札》靠岸，却因新章被保税仓佐拦下。弥拉不愿南境水文散佚，以观潮阁名义押付银币并签下代管勘验契。实物在四八四年进入学者之手，港务底册却直到次年才核销，由此留下两套同样真实的时间痕迹。' },
+      { id: 'r2', period: '动荡期', title: '分卷晦迹', span: '复兴纪元484年7月3日—8月14日', summary: '巡查逼近泊位，手札被拆作前卷与核心底本分期移交。', shift: '稳定期 → 动荡期', history: '南境水利图遭到严查时，洛安与弥拉在暴雨中的泵房割断腐朽脊线。前卷先由学派马车带走，核心水脉总谱则被迫滞留至次年秋日。这种物理拆分让“移交”同时拥有初次交付与全帙易手两种口径。' },
+      { id: 'r3', period: '稳定期', title: '重裱定录', span: '复兴纪元484年4月10日—5月22日', summary: '残卷完成修裱，预标年限与实际交割岁序错开。', shift: '动荡期 → 稳定期', history: '泊位皮匠以丁香油和鱼胶软化卤结残页，弥拉在新护封上题下备勘卷总目，并预先写入翌年试航年限。修复与命名完成于四八四年，正式归档却被预标日期牵向四八五年，后世因而各执一词。' },
+      { id: 'r4', period: '过渡期', title: '鱼箱夹册', span: '复兴纪元484年8月2日—11月18日', summary: '仓储误装令手札短暂失踪，口述交付早于实物寻回。', shift: '稳定期 → 过渡期', history: '搬运工把油布包误塞进腌鱼箱，洛安只得先向弥拉口述关键暗流标线。学者笔谈据此记下会面，而实物直到开仓后才重新出现，使“知识交付”和“册页交割”落在不同日期。' },
+      { id: 'r5', period: '动荡期', title: '税卡焚签风波', span: '复兴纪元484年10月1日—12月3日', summary: '税卡火灾毁去原始签条，仅存抄件与次年补印。', shift: '过渡期 → 动荡期', history: '第七泊位税卡遭遇夜火，洛安留下的原始签条被焚。弥拉手中抄件仍证明四八四年接触过手札，官署则在四八五年补盖印戳；档案的矛盾由灾损与补证共同形成。' }
+    ];
+    const ruinNodes = [
+      { id: 'origin', kind: '缘起', time: '复兴纪元484年9月12日08:15', title: '雾港抵达', location: '艾瑟嘉德外港·第七泊位外栈桥', trace: '油布包角滴落的咸水、未盖章的靠泊筹牌。', scene: '洛安刚踏上湿滑跳板，手札尚未离开怀中；保税仓的晨钟正在召集第一轮查验。' },
+      { id: 'passage', kind: '经过', time: '复兴纪元484年9月21日14:30', title: '雨棚争执', location: '第七泊位·驳运集亭', trace: '三枚押付银币、被反复折叠的清册新章。', scene: '弥拉与仓佐围绕“私产”还是“史料”僵持，洛安必须决定是否接受临时代管。' },
+      { id: 'climax', kind: '高潮', time: '复兴纪元484年9月27日22:40', title: '铅封箱前', location: '第七泊位·保税库暗廊', trace: '新压的铅封、半联私签、潮水浸湿的指印。', scene: '正式印契无法签发，三方只剩一夜决定实物去向；任何人的迟疑都会让手札再次流散。' },
+      { id: 'result', kind: '结果', time: '复兴纪元484年10月5日10:00', title: '留库备勘', location: '第七泊位·港务底册房', trace: '“留库备勘”四字与没有销号的税单。', scene: '实物已经随弥拉离开，制度记录却停在未完成状态，两套年份由此开始各自生长。' }
+    ];
+
+    const body = document.body;
+    const navItems = [...document.querySelectorAll('.nav-item')];
+    const biographyView = document.getElementById('biography-view');
+    const moduleStage = document.getElementById('module-stage');
+    const primary = document.getElementById('primary-action');
+      const dialog = document.getElementById('prototype-dialog');
+    const globalSearch = document.querySelector('.top-actions .icon-button:first-child');
+    const runtimeMode = new URLSearchParams(location.search).get('state') || 'ready';
+    const state = {
+      activeModule: 'biography', selected: 'tide', open: false, query: '', references: new Set(['tide']), contextMenu: null,
+      selectedArchive: 'run-watergate', genealogyFocus: 'ling', selectedPerson: 'ling', genealogyZoom: 1, ancestors: 2, descendants: 0, maxPerGeneration: 7, genealogyReferences: new Set(['uncle', 'lingyu']),
+      selectedCandidate: 'r1', selectedNode: 'climax', candidateCount: 3, ruinCharacters: new Set(['ling', 'lingyu']),
+      settingsTab: 'api', settingsTask: 'ruin', accent: 'jade', textTone: 'neutral', notice: ''
+    };
+
+    const el = (tag, className, text) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+
+    const visibleBooks = () => {
+      if (runtimeMode === 'empty') return [];
+      const query = state.query.trim().toLocaleLowerCase('zh-CN');
+      return Object.entries(books).filter(([, book]) => !query || book.search.toLocaleLowerCase('zh-CN').includes(query));
+    };
+
+    const stageTypeLabel = (type) => type === 'stable' ? '稳定期' : type === 'transition' ? '过渡期' : '动荡期';
+
+    function updateLedger() {
+      const total = runtimeMode === 'empty' ? 0 : Object.keys(books).length;
+      const referenceCount = runtimeMode === 'empty' ? 0 : state.references.size;
+      setLedger([
+        ['收录典籍', String(total).padStart(2, '0') + ' 册'],
+        ['保存位置', '当前聊天'],
+        ['墟境参考', String(referenceCount).padStart(2, '0') + ' 册']
+      ]);
+      document.getElementById('shelf-count').textContent = 'Archive Shelf · ' + String(total).padStart(2, '0');
+    }
+
+    function renderBookList() {
+      const list = document.getElementById('book-list');
+      const entries = visibleBooks();
+      if (entries.length && !entries.some(([key]) => key === state.selected)) {
+        state.selected = entries[0][0];
+        state.open = false;
+      }
+      list.replaceChildren(...entries.map(([key, book]) => {
+        const button = el('button', 'book-tab');
+        button.type = 'button';
+        button.setAttribute('role', 'option');
+        button.setAttribute('aria-selected', String(key === state.selected));
+        button.dataset.bookKey = key;
+
+        const accent = el('span', 'book-accent');
+        accent.style.setProperty('--book-accent', book.accent);
+        accent.setAttribute('aria-hidden', 'true');
+        const copy = el('span', 'book-copy');
+        copy.append(el('strong', 'book-name', book.title), el('small', 'book-meta', `${book.stages.length}卷${book.status === 'validated' ? ' · 待正文归档' : ''}`));
+        button.append(accent, copy);
+        if (state.references.has(key)) button.append(el('span', 'reference-badge', '墟境参考'));
+
+        button.addEventListener('click', () => {
+          state.selected = key;
+          state.open = false;
+          renderBiography();
+        });
+        button.addEventListener('contextmenu', (event) => {
+          event.preventDefault();
+          state.contextMenu = { key, x: Math.min(event.clientX, Math.max(12, innerWidth - 226)), y: Math.min(event.clientY, Math.max(12, innerHeight - 126)) };
+          renderContextMenu();
+        });
+        return button;
+      }));
+      document.getElementById('shelf-result').textContent = `显示 ${entries.length} 份档案 · 按最近更新排序`;
+    }
+
+    function crest() {
+      const mark = el('div', 'cover-crest');
+      mark.setAttribute('aria-hidden', 'true');
+      mark.innerHTML = '<svg viewBox="0 0 64 78" fill="none"><path d="M8 70V31C8 16 18 5 32 5s24 11 24 26v39M17 70V32c0-10 6-19 15-19s15 9 15 19v38M4 70h56M13 75h38"/><path d="M21 43c6-7 16-7 22 0-6 7-16 7-22 0Z"/><circle cx="32" cy="43" r="3" fill="currentColor" stroke="none"/></svg>';
+      return mark;
+    }
+
+    function createCodex(key, book) {
+      const article = el('article', 'codex-book' + (state.open ? ' open' : ''));
+      const cover = el('section', 'codex-cover');
+      cover.setAttribute('role', 'button');
+      cover.tabIndex = 0;
+      cover.setAttribute('aria-label', `展开${book.title}`);
+      const coverContent = el('div', 'cover-content');
+      coverContent.append(crest(), el('small', '', 'ROOT TRACE · SERPENT BIOGRAPHY'), el('h2', '', book.title), el('p', '', book.subtitle));
+      const tags = el('div', 'cover-tags');
+      book.metadata.forEach((tag) => tags.append(el('span', '', tag)));
+      const openButton = el('button', 'cover-open');
+      openButton.type = 'button';
+      openButton.textContent = '▤  展开王庭典籍';
+      coverContent.append(tags, openButton);
+      cover.append(coverContent);
+
+      const spread = el('section', 'codex-spread');
+      spread.setAttribute('aria-label', `${book.title}正文，点击空白处返回封面`);
+      const page = el('div', 'codex-page');
+      const opening = el('section', 'opening');
+      opening.append(el('span', '', '起源'), el('h2', '', book.origin.title), el('p', '', book.origin.content));
+      page.append(opening);
+
+      const chapters = el('div', 'chapters');
+      book.stages.forEach((stage) => {
+        const details = el('details', 'chapter');
+        const summary = document.createElement('summary');
+        summary.append(el('span', 'chapter-label', `${stage.title} · ${stageTypeLabel(stage.type)}`), el('small', 'chapter-era', stage.span), el('i', 'chapter-chevron'));
+        const chapterBody = el('div', 'chapter-body');
+        chapterBody.append(el('p', '', stage.content));
+        details.append(summary, chapterBody);
+        chapters.append(details);
+      });
+      page.append(chapters);
+      const divider = el('div', 'present-divider');
+      divider.append(el('span', '', '现世续章'));
+      const present = el('section', 'present');
+      present.append(el('span', '', '现状'), el('h2', '', book.present.title), el('p', '', book.present.content));
+      const summary = el('section', 'biography-summary');
+      summary.append(el('h3', '', '传记总结'), el('p', '', book.summary));
+      page.append(divider, present, summary, el('p', 'return-hint', '点击书页空白处返回封面'));
+      spread.append(page);
+      article.append(cover, spread);
+
+      const openBook = () => { state.open = true; article.classList.add('open'); };
+      cover.addEventListener('click', openBook);
+      cover.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openBook(); }
+      });
+      openButton.addEventListener('click', (event) => { event.stopPropagation(); openBook(); });
+      spread.addEventListener('click', (event) => {
+        if (event.target.closest('details, summary, button, a, input, select, textarea, label')) return;
+        state.open = false;
+        article.classList.remove('open');
+      });
+      return article;
+    }
+
+    function renderCodexStage() {
+      const stage = document.getElementById('codex-stage');
+      stage.replaceChildren();
+      if (runtimeMode === 'error') {
+        const empty = el('div', 'empty-state error');
+        empty.append(el('strong', '', '传记书库读取失败'), el('span', '', '演示错误状态：请检查当前聊天资料库后重试。'));
+        stage.append(empty);
+        return;
+      }
+      const entries = visibleBooks();
+      const book = books[state.selected];
+      if (!entries.length || !book) {
+        const empty = el('div', 'empty-state');
+        empty.append(el('strong', '', '尚无传记'), el('span', '', '对正文中的人物、地点或器物进行寻根溯源后，典籍会收录于此。'));
+        stage.append(empty);
+        document.getElementById('top-context').textContent = '当前聊天 · 尚无传记';
+        return;
+      }
+      stage.append(createCodex(state.selected, book));
+      document.getElementById('top-context').textContent = `${book.title} · ${book.status === 'validated' ? '待正文归档' : '当前有效版本'}`;
+      if (runtimeMode === 'generating') {
+        const overlay = el('div', 'generation-overlay');
+        overlay.setAttribute('role', 'status');
+        overlay.setAttribute('aria-live', 'polite');
+        const spinner = el('span', 'spinner');
+        spinner.setAttribute('aria-hidden', 'true');
+        const card = el('div', 'generation-card');
+        card.append(el('strong', 'eyon-voice', '伊雍正在整理史料'), el('small', '', '正在校验第 3 / 6 卷正文，随后生成现世续章与传记总结。'));
+        overlay.append(spinner, card);
+        stage.append(overlay);
+      }
+    }
+
+    function renderContextMenu() {
+      const root = document.getElementById('context-menu-root');
+      root.replaceChildren();
+      if (!state.contextMenu) return;
+      const { key, x, y } = state.contextMenu;
+      const menu = el('div', 'biography-context-menu');
+      menu.setAttribute('role', 'menu');
+      menu.style.left = x + 'px';
+      menu.style.top = y + 'px';
+      const toggle = el('button', '', state.references.has(key) ? '移出墟境参考' : '加入墟境参考');
+      toggle.type = 'button';
+      toggle.setAttribute('role', 'menuitem');
+      toggle.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.references.has(key)) state.references.delete(key); else state.references.add(key);
+        state.contextMenu = null;
+        renderBiography();
+      });
+      const remove = el('button', 'danger', '删除传记');
+      remove.type = 'button';
+      remove.setAttribute('role', 'menuitem');
+      remove.addEventListener('click', (event) => {
+        event.stopPropagation();
+        state.contextMenu = null;
+        renderContextMenu();
+        document.getElementById('dialog-title').textContent = '删除传记 · 原型说明';
+        document.getElementById('dialog-copy').textContent = `正式工作台会在确认后从当前聊天删除${books[key].title}。本页是独立视觉原型，因此不会写入或删除任何资料。`;
+        dialog.showModal();
+      });
+      menu.append(toggle, remove);
+      root.append(menu);
+    }
+
+    function renderBiography() {
+      updateLedger();
+      renderBookList();
+      renderCodexStage();
+      renderContextMenu();
+    }
+
+    function setLedger(cells) {
+      const ledger = document.getElementById('module-ledger');
+      ledger.hidden = false;
+      ledger.setAttribute('aria-label', `${modules[state.activeModule].title}摘要`);
+      ledger.replaceChildren(...cells.map(([label, value]) => {
+        const cell = el('div', 'ledger-cell');
+        cell.append(el('dt', '', label), el('dd', '', value));
+        return cell;
+      }));
+    }
+
+    function showPrototypeDialog(title, copy) {
+      document.getElementById('dialog-title').textContent = title;
+      document.getElementById('dialog-copy').textContent = copy;
+      dialog.showModal();
+    }
+
+    function createSurface(title, copy, mark = '◇') {
+      const panel = el('section', 'surface-panel');
+      const head = el('header', 'surface-head');
+      const identity = el('div', 'surface-title');
+      const heading = el('div');
+      heading.append(el('h2', '', title));
+      if (copy) heading.append(el('p', '', copy));
+      identity.append(el('span', '', mark), heading);
+      head.append(identity);
+      panel.append(head);
+      return { panel, head };
+    }
+
+    function appendDetails(target, entries) {
+      entries.forEach(([term, value, className]) => {
+        target.append(el('dt', '', term), el('dd', className || '', value));
+      });
+    }
+
+    function renderTimePlane(eyebrow, title, time, location, isRuin) {
+      const plane = el('article', 'time-plane' + (isRuin ? ' ruin' : ''));
+      plane.append(el('div', 'plane-label', eyebrow), el('h2', '', title));
+      [['时间', time], ['地点', location]].forEach(([label, value]) => {
+        const row = el('div', 'datum');
+        row.append(el('span', '', label), el('strong', '', value));
+        plane.append(row);
+      });
+      return plane;
+    }
+
+    function renderTimeline() {
+      moduleStage.replaceChildren();
+      const root = el('div', 'module-surface timeline-surface');
+      if (state.notice) root.append(el('div', 'prototype-notice', state.notice));
+      const overview = el('section', 'time-overview');
+      overview.append(
+        renderTimePlane('Reality Anchor', '现实锚点', '复兴纪元488年3月18日 申时', '艾瑟嘉德·军港调度分局', false),
+        renderTimePlane('Historical Ruin', '墟境时空', '复兴纪元484年9月27日 22:40', '艾瑟嘉德外港·第七泊位', true)
+      );
+      root.append(overview);
+
+      const runtime = createSurface('运行状态', '只允许时间内核写入 MVU', '⌁');
+      const refresh = el('button', 'quiet-button', '↻ 读取当前变量');
+      refresh.type = 'button';
+      refresh.addEventListener('click', () => { state.notice = '已重新读取演示快照；正式工作台会从当前聊天变量恢复这里的状态。'; renderTimeline(); });
+      runtime.head.append(refresh);
+      const runtimeBody = el('div', 'surface-body');
+      const grid = el('div', 'runtime-grid');
+      [['流程状态', '墟境探索中', 'teal'], ['墟境轮次', 'ruin-484-0927'], ['现实锚点', '已锁定'], ['历史档案', `${timelineArchives.length} 份`]].forEach(([label, value, className]) => {
+        const cell = el('div', 'runtime-cell');
+        cell.append(el('span', '', label), el('strong', className || '', value));
+        grid.append(cell);
+      });
+      const commands = el('div', 'command-bar');
+      const returnButton = el('button', 'primary-button', '遣返');
+      returnButton.type = 'button';
+      returnButton.addEventListener('click', () => showPrototypeDialog('遣返 · 原型边界', '正式工作台会冻结进入与离开锚点，结算蝴蝶效应后返回现实。本原型不会写入 MVU、Canon 或生成正文。'));
+      commands.append(returnButton);
+      runtimeBody.append(grid, commands);
+      runtime.panel.append(runtimeBody);
+      root.append(runtime.panel);
+
+      const archive = createSurface('蝴蝶效应档案', '当前聊天已提交的现世变化', '◈');
+      const dual = el('div', 'archive-dual');
+      const list = el('div', 'effect-list');
+      [
+        ['当前有效', timelineArchives.filter((item) => !item.retryable)],
+        ['待重新归档', timelineArchives.filter((item) => item.retryable)]
+      ].forEach(([label, items]) => {
+        if (!items.length) return;
+        list.append(el('div', 'effect-group-label', `${label} · ${items.length}`));
+        items.forEach((item) => {
+          const button = el('button', 'effect-row');
+          button.type = 'button';
+          button.setAttribute('aria-selected', String(item.id === state.selectedArchive));
+          button.dataset.runId = item.id;
+          const copy = el('span');
+          copy.append(el('strong', '', item.title), el('small', '', item.summary));
+          button.append(el('span', '', item.retryable ? '◌' : '◉'), copy, el('i', '', item.status));
+          button.addEventListener('click', () => { state.selectedArchive = item.id; renderTimeline(); });
+          list.append(button);
+        });
+      });
+      const detail = el('div', 'effect-detail');
+      const selected = timelineArchives.find((item) => item.id === state.selectedArchive) || timelineArchives[0];
+      const detailHead = el('header', 'effect-dossier-head');
+      const dossierCopy = el('div');
+      dossierCopy.append(el('span', '', '因果卷宗'), el('h3', '', selected.title));
+      const badges = el('div', 'dossier-badges');
+      badges.append(el('span', 'dossier-badge', `影响范围 · ${selected.scope}`), el('span', 'dossier-badge status', selected.status));
+      detailHead.append(dossierCopy, badges);
+      detail.append(detailHead);
+      if (selected.retryable) detail.append(el('div', 'prototype-notice error', '归档尚未完成；穿越锚点已经冻结，失败不会抹去本次行动。'));
+
+      detail.append(el('p', 'route-kicker', '穿越路径 · 按经历顺序而非年代顺序阅读'));
+      const route = el('div', 'causal-route');
+      [
+        ['现实锚点', '出发', selected.anchors[0]],
+        ['墟境进入', '回溯', selected.anchors[1]],
+        ['墟境离开', '带回', selected.anchors[2]],
+        ['改写后现世', selected.retryable ? '待结算' : '返回', selected.landing]
+      ].forEach(([title, phase, value], index) => {
+        const stop = el('div', 'causal-stop');
+        if (selected.retryable && index === 2) stop.classList.add('broken-next');
+        if (selected.retryable && index === 3) stop.classList.add('pending');
+        stop.append(el('small', '', phase), el('strong', '', title), el('span', '', value));
+        route.append(stop);
+      });
+      detail.append(route);
+
+      const causalGrid = el('div', 'causal-grid');
+      const actionCard = el('section', 'causal-card');
+      actionCard.append(el('span', '', '墟境中的行动'), el('p', '', selected.action));
+      const evidenceCard = el('section', 'causal-card' + (selected.retryable ? ' missing' : ''));
+      evidenceCard.append(el('span', '', '现世可感知证据'), el('p', '', selected.retryable ? '等待重新归档：证据字段尚未完成，但冻结锚点仍在。' : selected.evidence));
+      causalGrid.append(actionCard, evidenceCard);
+      detail.append(causalGrid);
+
+      const conclusion = el('section', 'causal-conclusion');
+      conclusion.append(
+        el('span', '', selected.retryable ? '待完成的历史演变' : '历史演变'),
+        el('p', '', selected.retryable ? '本次因果链停在返回现世之前。重新归档只会补写结果，不会重跑已冻结的墟境行动。' : selected.evolution)
+      );
+      detail.append(conclusion);
+      const detailActions = el('div', 'detail-actions');
+      if (selected.retryable) {
+        const retry = el('button', 'quiet-button', '重新归档');
+        retry.type = 'button';
+        retry.addEventListener('click', () => showPrototypeDialog('重新归档 · 原型边界', '正式工作台只重试当前蝴蝶效应，不改动已经完成的档案。本原型不会调用模型。'));
+        detailActions.append(retry);
+      }
+      const remove = el('button', 'danger-button', '删除档案');
+      remove.type = 'button';
+      remove.addEventListener('click', () => showPrototypeDialog('删除蝴蝶效应档案', '正式工作台只删除可见档案，不回滚已经生效的正史；活动干涉的紧凑因果摘要仍会保留。本原型不会删除资料。'));
+      detailActions.append(remove);
+      detail.append(detailActions);
+      dual.append(list, detail);
+      archive.panel.append(dual);
+      root.append(archive.panel);
+      moduleStage.append(root);
+      setLedger([['流程状态', '探索中'], ['现实锚点', '已锁定'], ['蝴蝶档案', `${timelineArchives.length} 份`]]);
+    }
+
+    function renderStepper(label, key, min, max, suffix) {
+      const wrap = el('div', 'field');
+      wrap.append(el('strong', '', label));
+      const stepper = el('div', 'stepper');
+      const minus = el('button', '', '−');
+      const plus = el('button', '', '＋');
+      minus.type = plus.type = 'button';
+      minus.disabled = state[key] <= min;
+      plus.disabled = state[key] >= max;
+      minus.setAttribute('aria-label', `减少${label}`);
+      plus.setAttribute('aria-label', `增加${label}`);
+      minus.addEventListener('click', () => { state[key] = Math.max(min, state[key] - 1); renderGenealogy(); });
+      plus.addEventListener('click', () => { state[key] = Math.min(max, state[key] + 1); renderGenealogy(); });
+      stepper.append(minus, el('strong', '', `${state[key]} ${suffix}`), plus);
+      wrap.append(stepper);
+      return wrap;
+    }
+
+    function renderGenealogy() {
+      moduleStage.replaceChildren();
+      const root = el('div', 'module-surface genealogy-layout');
+      const focus = genealogyPeople.find((person) => person.id === state.genealogyFocus) || genealogyPeople.find((person) => person.focus) || genealogyPeople[0];
+      const selected = genealogyPeople.find((person) => person.id === state.selectedPerson) || focus;
+      const aside = el('aside', 'surface-panel focus-panel');
+      const heading = el('div', 'focus-heading');
+      const headingCopy = el('div');
+      headingCopy.append(el('span', '', '谱系中心人物'), el('h2', '', focus.name));
+      heading.append(el('div', 'large-avatar', '玲'), headingCopy);
+      aside.append(heading);
+      const characterField = el('label', 'field');
+      characterField.append(el('strong', '', '选择 MVU 已有角色'));
+      const select = document.createElement('select');
+      select.setAttribute('aria-label', '选择 MVU 已有角色');
+      ['玲山·哈姆斯沃思', '铃羽·哈姆斯沃思'].forEach((name, index) => {
+        const option = document.createElement('option'); option.textContent = name; option.value = index ? 'lingyu' : 'ling'; select.append(option);
+      });
+      select.value = focus.id;
+      select.addEventListener('change', () => { state.genealogyFocus = select.value; state.selectedPerson = select.value; renderGenealogy(); });
+      characterField.append(select);
+      aside.append(characterField);
+      const brief = el('div', 'character-brief');
+      const briefList = el('dl');
+      appendDetails(briefList, [['种族', '翼族'], ['身份', '琉璃塔信报社社长'], ['职业', '调查记者、报业掌权者'], ['层级', '第四层级 / 史诗']]);
+      brief.append(briefList);
+      aside.append(brief, renderStepper('祖辈追溯', 'ancestors', 1, 8, '代'), renderStepper('后代追溯', 'descendants', 0, 6, '代'), renderStepper('每代最多人物', 'maxPerGeneration', 1, 7, '人'));
+      const build = el('button', 'primary-button', '⑂ 重新构建谱系');
+      build.type = 'button';
+      build.addEventListener('click', () => showPrototypeDialog('重新构建谱系 · 原型边界', '正式工作台会按当前追溯深度重新生成当前人物族谱，并只保存到当前聊天。本原型不会调用模型或覆盖已有谱系。'));
+      aside.append(build);
+      const focusDetail = el('section', 'focus-detail');
+      focusDetail.append(el('span', '', '选中人物'), el('strong', '', selected.name));
+      const selectedList = el('dl');
+      appendDetails(selectedList, [['关系', selected.relation], ['生卒', selected.life], ['职业', selected.profession], ['性格', selected.personality], ['经历', selected.experience]]);
+      focusDetail.append(selectedList);
+      aside.append(focusDetail);
+
+      const treePanel = el('section', 'surface-panel kinship-shell');
+      const toolbar = el('header', 'kinship-toolbar');
+      const identity = el('div'); identity.append(el('strong', '', '谱系人物'), el('span', '', `${genealogyPeople.length} 人`));
+      const controls = el('div', 'toolbar');
+      [['−', -0.1, '缩小谱系'], ['◎', 0, '居中当前人物'], ['＋', 0.1, '放大谱系'], ['↻', 9, '重新读取当前变量']].forEach(([label, delta, title]) => {
+        const button = el('button', 'icon-button', label); button.type = 'button'; button.title = title; button.setAttribute('aria-label', title);
+        button.addEventListener('click', () => {
+          if (delta === 9) { state.notice = '谱系演示快照已刷新。'; renderGenealogy(); return; }
+          if (delta === 0) { document.getElementById('tree-viewport')?.scrollTo({ left: 250, top: 280, behavior: 'smooth' }); return; }
+          state.genealogyZoom = Math.max(.7, Math.min(1.3, state.genealogyZoom + delta)); renderGenealogy();
+        });
+        controls.append(button);
+      });
+      toolbar.append(identity, controls);
+      const viewport = el('div', 'tree-viewport'); viewport.id = 'tree-viewport';
+      const tree = el('div', 'family-tree'); tree.style.setProperty('--tree-zoom', state.genealogyZoom);
+      ['祖辈', '父母辈', '同辈'].forEach((generationName) => {
+        const generation = el('section', 'generation');
+        generation.append(el('span', 'generation-label', generationName));
+        genealogyPeople.filter((person) => person.generation === generationName).forEach((person) => {
+          const node = el('button', 'family-node'); node.type = 'button'; node.setAttribute('aria-selected', String(person.id === selected.id));
+          node.append(el('small', '', person.relation), el('strong', '', person.name), el('span', '', person.life));
+          if (state.genealogyReferences.has(person.id)) node.append(el('em', '', '墟境参考'));
+          node.addEventListener('click', () => { state.selectedPerson = person.id; renderGenealogy(); });
+          node.addEventListener('contextmenu', (event) => { event.preventDefault(); if (state.genealogyReferences.has(person.id)) state.genealogyReferences.delete(person.id); else state.genealogyReferences.add(person.id); state.selectedPerson = person.id; renderGenealogy(); });
+          generation.append(node);
+        });
+        tree.append(generation);
+      });
+      viewport.append(tree);
+      treePanel.append(toolbar, viewport);
+      root.append(aside, treePanel);
+      moduleStage.append(root);
+      document.getElementById('top-context').textContent = `当前谱系 · ${focus.name}`;
+      setLedger([['中心人物', focus.name], ['谱系人物', `${genealogyPeople.length} 人`], ['墟境参考', `${state.genealogyReferences.size} 人`]]);
+    }
+
+    function createDateGroup(title, values) {
+      const group = el('div', 'field'); group.append(el('strong', '', title));
+      const parts = el('div', 'date-parts');
+      ['年', '月', '日'].forEach((label, index) => { const field = el('label', 'date-part'); field.append(el('span', '', label)); const input = document.createElement('input'); input.inputMode = 'numeric'; input.value = values[index]; field.append(input); parts.append(field); });
+      group.append(parts); return group;
+    }
+
+    function renderRuin() {
+      moduleStage.replaceChildren();
+      const root = el('div', 'module-surface ruin-layout');
+      const formPanel = createSurface('生成条件', '', '☷');
+      formPanel.panel.classList.add('ruin-form');
+      const form = el('div', 'surface-body form-stack');
+      const eraField = el('label', 'field'); eraField.append(el('strong', '', '所属纪元'));
+      const eraSelect = document.createElement('select'); ['创世纪元', '神明纪元', '混乱纪元', '英雄纪元', '复兴纪元'].forEach((value) => { const option = document.createElement('option'); option.textContent = value; if (value === '复兴纪元') option.selected = true; eraSelect.append(option); }); eraField.append(eraSelect);
+      const dates = el('div', 'date-range-grid'); dates.append(createDateGroup('起始时间（均可选）', ['484', '4', '']), createDateGroup('结束时间（均可选）', ['485', '12', '']));
+      const location = el('label', 'field'); location.append(el('strong', '', '地点范围（必填）')); const locationInput = document.createElement('input'); locationInput.value = '艾瑟嘉德外港·第七泊位'; locationInput.placeholder = '输入区域、城市、建筑或前文小地点'; location.append(locationInput, el('span', 'field-note', '优先检索世界书；未收录时读取可见正文，也允许手动补充。'));
+      form.append(eraField, dates, location);
+      const peopleField = el('div', 'field'); peopleField.append(el('strong', '', '重点参考人物（可选）')); const peopleTokens = el('div', 'token-row');
+      [{ id: 'ling', name: '玲山·哈姆斯沃思' }, { id: 'lingyu', name: '铃羽·哈姆斯沃思' }, { id: 'mira', name: '弥拉' }].forEach((person) => { const button = el('button', 'token', person.name); button.type = 'button'; button.setAttribute('aria-pressed', String(state.ruinCharacters.has(person.id))); button.addEventListener('click', () => { if (state.ruinCharacters.has(person.id)) state.ruinCharacters.delete(person.id); else state.ruinCharacters.add(person.id); renderRuin(); }); peopleTokens.append(button); });
+      peopleField.append(peopleTokens, el('span', 'field-note', '系统仍会自动读取相关世界书、谱系与正文；勾选只提高本次参考优先级。'));
+      const bioField = el('div', 'field'); bioField.append(el('strong', '', '重点参考传记（可选）')); const bioTokens = el('div', 'token-row'); bioTokens.append(el('span', 'token static', '《暮潮手札》')); bioField.append(bioTokens);
+      const direction = el('label', 'field'); direction.append(el('strong', '', '补充方向')); const area = document.createElement('textarea'); area.value = '关注手札在四八四年与四八五年移交记录之间形成冲突的具体原因。'; direction.append(area, el('span', 'field-note', '历史题材由伊雍骰表分配；这里仅约束本次创作重点。'));
+      const countField = el('div', 'field'); countField.append(el('strong', '', '候选数量')); const counts = el('div', 'candidate-count'); [3,4,5].forEach((count) => { const button = el('button', '', String(count)); button.type = 'button'; button.setAttribute('aria-pressed', String(state.candidateCount === count)); button.addEventListener('click', () => { state.candidateCount = count; if (!ruinCandidates.slice(0,count).some((item) => item.id === state.selectedCandidate)) state.selectedCandidate = 'r1'; renderRuin(); }); counts.append(button); }); countField.append(counts);
+      const generate = el('button', 'primary-button', '✦ 按历史波动生成候选'); generate.type = 'button'; generate.addEventListener('click', () => showPrototypeDialog('生成墟境候选 · 原型边界', '正式工作台会检索世界书、正文、谱系和重点传记，再依次扩写全部候选。本原型展示完整结果，但不会调用模型或创建新任务。'));
+      const reset = el('button', 'quiet-button', '＋ 新建任务（清空输入）'); reset.type = 'button'; reset.addEventListener('click', () => showPrototypeDialog('新建墟境任务 · 原型边界', '正式工作台会清空上次输入草稿与重点参考勾选。本页为了便于连续审阅，不会清除演示内容。'));
+      form.append(peopleField, bioField, direction, countField, generate, reset);
+      formPanel.panel.append(form);
+
+      const candidatesPanel = createSurface('候选墟境', `${state.candidateCount} 个 · 由历史波动与面板设定决定`, '⑂');
+      const historyTools = el('div', 'history-tools'); const historySelect = document.createElement('select'); historySelect.setAttribute('aria-label', '切换已生成的墟境任务'); const taskOption = document.createElement('option'); taskOption.textContent = '09/28 09:42 · 艾瑟嘉德外港'; historySelect.append(taskOption); const refresh = el('button', 'icon-button', '↻'); refresh.type = 'button'; refresh.title = '重新读取当前资料'; refresh.addEventListener('click', () => { state.notice = '墟境演示资料已刷新。'; renderRuin(); }); historyTools.append(historySelect, refresh); candidatesPanel.head.append(historyTools);
+      const available = ruinCandidates.slice(0, state.candidateCount);
+      const tabs = el('div', 'candidate-tabs');
+      available.forEach((candidate) => { const button = el('button', 'candidate-tab'); button.type = 'button'; button.setAttribute('aria-selected', String(candidate.id === state.selectedCandidate)); button.append(el('span', 'period-tag', candidate.period), el('strong', '', candidate.title), el('small', '', candidate.span)); button.addEventListener('click', () => { state.selectedCandidate = candidate.id; state.selectedNode = 'origin'; renderRuin(); }); tabs.append(button); });
+      const candidate = available.find((item) => item.id === state.selectedCandidate) || available[0];
+      const dossier = el('article', 'ruin-dossier'); const dossierHeading = el('div', 'ruin-dossier-heading'); dossierHeading.append(el('strong', '', candidate.period), el('span', '', candidate.title)); const dossierList = el('dl', 'detail-list'); appendDetails(dossierList, [['跨度', candidate.span], ['演变', candidate.summary], ['转向', candidate.shift], ['史稿', candidate.history, 'history']]); dossier.append(dossierHeading, dossierList);
+      const chronology = el('section', 'chronology'); const chronologyHead = el('header', 'chronology-toolbar'); const scale = el('div'); scale.append(el('strong', '', '因果节点'), el('span', '', ' · 缘起、经过、高潮与结果均可进入')); chronologyHead.append(scale, el('span', '', '4 个节点')); const track = el('div', 'chronology-track');
+      ruinNodes.forEach((node) => { const slot = el('div', 'node-slot'); slot.append(el('span', 'event-kind', node.kind)); const button = el('button', 'history-node'); button.type = 'button'; button.setAttribute('aria-selected', String(node.id === state.selectedNode)); button.append(el('small', '', node.time), el('strong', '', node.title)); button.addEventListener('click', () => { state.selectedNode = node.id; renderRuin(); }); slot.append(button); track.append(slot); }); chronology.append(chronologyHead, track);
+      const node = ruinNodes.find((item) => item.id === state.selectedNode) || ruinNodes[0];
+      const inspector = el('section', 'node-inspector'); const inspectorCopy = el('div'); inspectorCopy.append(el('strong', '', node.title), el('span', 'node-inspector-meta', `${node.time} · ${node.location}`), el('p', '', node.scene), el('p', '', `可感知痕迹：${node.trace}`)); const enter = el('button', 'primary-button', `↪ 进入${node.kind}`); enter.type = 'button'; enter.addEventListener('click', () => showPrototypeDialog(`进入${node.kind} · ${node.title}`, `正式工作台会把所选节点的精确时间、MVU 规范地点与场景投影写入墟境变量。当前选择是“${node.time}”，本原型不会改写聊天。`)); inspector.append(inspectorCopy, enter);
+      candidatesPanel.panel.append(tabs, dossier, chronology, inspector);
+      root.append(formPanel.panel, candidatesPanel.panel);
+      moduleStage.append(root);
+      document.getElementById('top-context').textContent = `候选历史 · ${candidate.title} · ${node.kind}`;
+      setLedger([['候选史稿', `${available.length} 份`], ['重点参考', `${state.ruinCharacters.size + 1} 项`], ['进入阶段', node.kind]]);
+    }
+
+    function settingsRow(title, copy, control) {
+      const row = el('div', 'settings-row'); const text = el('div', 'settings-copy'); text.append(el('strong', '', title), el('p', '', copy)); const holder = el('div', 'settings-control'); if (control) holder.append(control); row.append(text, holder); return row;
+    }
+
+    function renderSettings() {
+      moduleStage.replaceChildren();
+      const shell = el('section', 'surface-panel settings-shell');
+      const nav = el('nav', 'settings-nav'); nav.setAttribute('aria-label', '设置分类');
+      const tabs = [['api','API调用'],['appearance','外观皮肤'],['retrieval','资料检索'],['data','数据管理']];
+      tabs.forEach(([id,label]) => { const button = el('button', 'settings-tab', label); button.type = 'button'; button.setAttribute('aria-selected', String(id === state.settingsTab)); button.addEventListener('click', () => { state.settingsTab = id; renderSettings(); }); nav.append(button); });
+      const pane = el('section', 'settings-pane');
+      if (state.settingsTab === 'api') renderApiSettings(pane);
+      if (state.settingsTab === 'appearance') renderAppearanceSettings(pane);
+      if (state.settingsTab === 'retrieval') renderRetrievalSettings(pane);
+      if (state.settingsTab === 'data') renderDataSettings(pane);
+      shell.append(nav, pane); moduleStage.append(shell);
+      const tabLabel = tabs.find(([id]) => id === state.settingsTab)[1];
+      document.getElementById('top-context').textContent = `工作台设置 · ${tabLabel}`;
+      setLedger([['当前分类', tabLabel], ['保存范围', '本地设置'], ['工作台版本', 'P1—P4']]);
+    }
+
+    function settingsHeading(pane, title, copy) { const head = el('header'); head.append(el('h2', '', title), el('p', '', copy)); pane.append(head); }
+
+    function renderApiSettings(pane) {
+      settingsHeading(pane, '生成模块 API', '四项历史生成能力统一在此配置');
+      const root = el('div', 'settings-group'); root.append(el('p', 'settings-group-title', '全局请求边界'));
+      const timeout = document.createElement('input'); timeout.type = 'number'; timeout.value = '600'; timeout.min = '0'; timeout.max = '900'; root.append(settingsRow('请求超时（秒）', '单个生成请求最多等待时长，0 表示不限制。', timeout));
+      const structured = el('label', 'toggle'); const structuredInput = document.createElement('input'); structuredInput.type = 'checkbox'; structuredInput.checked = true; structured.append(structuredInput, el('span')); root.append(settingsRow('DeepSeek 一键结构化', '强制 JSON 输出、禁用思考模式并遵守官方输出上限。', structured));
+      root.append(el('p', 'settings-group-title', '模块选择'));
+      const choices = el('div', 'module-choice-grid'); [['genealogy','宗族谱系'],['ruin','墟境生成'],['biography','寻根溯源'],['butterfly','蝴蝶效应结算']].forEach(([id,label]) => { const button = el('button', 'module-choice'); button.type = 'button'; button.setAttribute('aria-pressed', String(id === state.settingsTask)); button.append(el('strong', '', label), el('small', '', id === 'ruin' ? '候选历史与因果节点' : '使用独立模块凭据')); button.addEventListener('click', () => { state.settingsTask = id; renderSettings(); }); choices.append(button); }); root.append(choices);
+      root.append(el('p', 'settings-group-title', `${state.settingsTask === 'ruin' ? '墟境生成' : '当前模块'} · 独立 API 凭据`));
+      const url = document.createElement('input'); url.value = 'https://api.example.com/v1'; root.append(settingsRow('接口地址', '支持 OpenAI 兼容的聊天补全接口。', url));
+      const key = document.createElement('input'); key.type = 'password'; key.value = '••••••••••••'; root.append(settingsRow('API 密钥', '不会写入世界书、聊天或导出资料。', key));
+      const model = document.createElement('select'); ['deepseek-chat','gpt-5.6-sol','自定义模型'].forEach((value) => { const option = document.createElement('option'); option.textContent = value; model.append(option); }); root.append(settingsRow('可调用模型', '填写地址和密钥后拉取列表，再从中选择。', model));
+      const actions = el('div', 'settings-control actions'); const save = el('button', 'primary-button', '保存当前模块'); const all = el('button', 'quiet-button', '应用到全部模块'); [save,all].forEach((button) => { button.type = 'button'; button.addEventListener('click', () => showPrototypeDialog(button.textContent, '正式工作台会保存本地凭据，但不会把密钥写入世界书、聊天或导出资料。本原型不会保存任何输入。')); actions.append(button); }); const row = el('div', 'settings-row'); row.append(el('div'), actions); root.append(row); pane.append(root);
+    }
+
+    function renderAppearanceSettings(pane) {
+      settingsHeading(pane, '外观皮肤', '分别设置明暗模式、界面强调色与正文字色');
+      const root = el('div', 'settings-group');
+      root.append(el('p', 'settings-group-title', '明暗模式'));
+      const modes = el('div', 'palette-grid'); [['night','夜间模式','#322b39'],['day','日间模式','#ebe5e4']].forEach(([id,label,color]) => { const button = el('button', 'palette-choice'); button.type = 'button'; button.setAttribute('aria-pressed', String(body.dataset.theme === id)); button.append(el('strong', '', label), el('small', '', id === 'night' ? '暗紫档案底色' : '暖白档案底色')); button.addEventListener('click', () => { body.dataset.theme = id; document.getElementById('theme-toggle').setAttribute('aria-pressed', String(id === 'day')); renderSettings(); }); modes.append(button); }); root.append(modes);
+      root.append(el('p', 'settings-group-title', 'UI 强调色'));
+      const accents = el('div', 'palette-grid'); [['jade','影蛇青','#52b8ad'],['gold','王庭金','#b49c78'],['blue','月辉蓝','#669fc7'],['crimson','绛红','#b65f67']].forEach(([id,label,color]) => { const button = el('button', 'palette-choice'); button.type = 'button'; button.setAttribute('aria-pressed', String(id === state.accent)); const title = el('strong'); const swatch = el('span', 'swatch'); swatch.style.setProperty('--swatch', color); title.append(swatch, document.createTextNode(label)); button.append(title, el('small', '', id === 'jade' ? '默认 · 克制的冷色强调' : '用于按钮与选择状态')); button.addEventListener('click', () => { state.accent = id; const map = { jade:'#72a8a0', gold:'#b49c78', blue:'#789db9', crimson:'#a86576' }; body.style.setProperty('--action', map[id]); renderSettings(); }); accents.append(button); }); root.append(accents);
+      root.append(el('p', 'settings-group-title', '字体色调'));
+      const tones = el('div', 'palette-grid'); [['neutral','中性霜白'],['warm','暖纸色'],['cool','冷银色']].forEach(([id,label]) => { const button = el('button', 'palette-choice'); button.type = 'button'; button.setAttribute('aria-pressed', String(id === state.textTone)); button.append(el('strong', '', label), el('small', '', '按明暗模式自动调整对比度')); button.addEventListener('click', () => { state.textTone = id; renderSettings(); }); tones.append(button); }); root.append(tones); pane.append(root);
+    }
+
+    function renderRetrievalSettings(pane) {
+      settingsHeading(pane, '资料检索', '控制独立生成模块在当前聊天中读取哪些史料');
+      const root = el('div', 'settings-group'); const toggle = el('label', 'toggle'); const input = document.createElement('input'); input.type = 'checkbox'; input.checked = true; toggle.append(input, el('span')); root.append(settingsRow('人物别名合并', '同名或别名冲突时仍要求玩家确认。', toggle));
+      const worldbooks = el('div', 'diagnostic-card'); const head = el('header'); head.append(el('strong', '', '世界书资料清单'), el('span', '', '18 / 21 条')); worldbooks.append(head, el('p', '', '按角色卡与全局世界书选择独立 API 会收到的条目，不改变酒馆正文注入。'));
+      ['命定之诗·人物档案','命定之诗·地点资料','当前角色卡补充设定'].forEach((name) => { const check = document.createElement('input'); check.type = 'checkbox'; check.checked = true; const label = el('label', 'settings-row'); const copy = el('div', 'settings-copy'); copy.append(el('strong', '', name), el('p', '', '已启用 · 条目按原世界书状态过滤')); const holder = el('div', 'settings-control actions'); holder.append(check); label.append(copy, holder); worldbooks.append(label); }); root.append(worldbooks); pane.append(root);
+    }
+
+    function renderDataSettings(pane) {
+      settingsHeading(pane, '数据管理', '当前聊天资料隔离、缓存、诊断与备份');
+      const root = el('div', 'settings-group');
+      const badge = el('span', 'token static', '已按聊天隔离'); root.append(settingsRow('聊天存档隔离', '传记、谱系、墟境方案均以当前聊天 ID 为一级索引。', badge));
+      const inspect = el('button', 'quiet-button', '检查资料库'); inspect.type = 'button'; inspect.addEventListener('click', () => showPrototypeDialog('资料库检查 · 原型边界', '正式工作台会验证当前聊天的传记、谱系、墟境与蝴蝶档案。本原型不会读取本地数据库。')); root.append(settingsRow('本地资料库', '21 条资料 · 工作台版本 P1—P4。', inspect));
+      const exportButton = el('button', 'quiet-button', '导出全部资料'); exportButton.type = 'button'; exportButton.addEventListener('click', () => showPrototypeDialog('导出备份 · 原型边界', '正式导出不会包含 API 密钥。本原型不创建下载文件。')); root.append(settingsRow('导出备份', 'API 密钥不会包含在备份中。', exportButton));
+      const clear = el('button', 'danger-button', '清理生成缓存'); clear.type = 'button'; clear.addEventListener('click', () => showPrototypeDialog('清理生成缓存', '正式工作台会清理候选墟境、临时重点参考与未归档结算快照；传记和已归档蝴蝶效应不受影响。本原型不会删除资料。')); root.append(settingsRow('清理生成缓存', '只清理可重建的临时产物，不影响已归档资料。', clear));
+      [['时间锚诊断','查看最近墟境生成的人物时间锚与注入文本。','刷新诊断'],['Canon 局部状态','只读查看 revision、变更与局部单位是否可复用。','刷新状态'],['低权连续性关系','查看并存视角与来源冲突，不裁定胜者。','刷新关系'],['蝴蝶记忆注入','核对正文注入了什么，以及为什么。','重新计算']].forEach(([title,copy,action]) => { const card = el('section', 'diagnostic-card'); const head = el('header'); const button = el('button', 'quiet-button', action); button.type = 'button'; button.addEventListener('click', () => showPrototypeDialog(title, `${copy} 本原型仅展示入口，不读取真实诊断快照。`)); head.append(el('strong', '', title), button); card.append(head, el('p', '', copy)); root.append(card); }); pane.append(root);
+    }
+
+    function renderModule(id) {
+      state.activeModule = id;
+      state.notice = '';
+      if (id === 'timeline') renderTimeline();
+      if (id === 'genealogy') renderGenealogy();
+      if (id === 'ruin') renderRuin();
+      if (id === 'settings') renderSettings();
+    }
+
+    navItems.forEach((button) => button.addEventListener('click', () => {
+      const id = button.dataset.module;
+      const data = modules[id];
+      navItems.forEach((item) => item.removeAttribute('aria-current'));
+      button.setAttribute('aria-current', 'page');
+      document.getElementById('module-eyebrow').textContent = data.eyebrow;
+      document.getElementById('module-title').textContent = data.title;
+      document.getElementById('module-summary').textContent = data.summary;
+      document.getElementById('crumb-module').textContent = data.crumb;
+      document.getElementById('top-context').textContent = data.context;
+      primary.hidden = !data.action;
+      primary.textContent = data.action || '';
+      state.activeModule = id;
+      const isBiography = id === 'biography';
+      biographyView.hidden = !isBiography;
+      moduleStage.hidden = isBiography;
+      globalSearch.hidden = !isBiography;
+      if (isBiography) renderBiography(); else renderModule(id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }));
+
+    document.getElementById('theme-toggle').addEventListener('click', (event) => {
+      const isDay = body.dataset.theme === 'day';
+      body.dataset.theme = isDay ? 'night' : 'day';
+      event.currentTarget.setAttribute('aria-pressed', String(!isDay));
+    });
+
+    primary.addEventListener('click', () => {
+      document.getElementById('dialog-title').textContent = primary.textContent;
+      document.getElementById('dialog-copy').textContent = '公共模块操作的视觉位置已经保留；当前独立原型不会触发模型、写入档案或修改工作台数据。';
+      dialog.showModal();
+    });
+    document.getElementById('dialog-close').addEventListener('click', () => dialog.close());
+
+    document.getElementById('book-search').addEventListener('input', (event) => {
+      state.query = event.target.value;
+      renderBiography();
+    });
+
+    globalSearch.addEventListener('click', () => document.getElementById('book-search').focus());
+    document.addEventListener('click', (event) => {
+      if (!state.contextMenu || event.target.closest('.biography-context-menu')) return;
+      state.contextMenu = null;
+      renderContextMenu();
+    });
+
+    renderBiography();
+  </script>
+</body>
+</html>

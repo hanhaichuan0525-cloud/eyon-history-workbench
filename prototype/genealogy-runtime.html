@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>伊雍宗族谱系 · 正式构建预览</title>
+  <style>
+    html { color-scheme: dark; background: #050809; }
+    body { margin: 0; padding: 18px; }
+    [data-eyon-genealogy-workbench] { width: min(1600px, 100%); margin: 0 auto; }
+    @media (max-width: 700px) { body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <main data-eyon-genealogy-workbench data-theme="dark"></main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const previewRoot = document.querySelector('[data-eyon-genealogy-workbench]');
+    if (params.get('theme') === 'light') {
+      previewRoot.dataset.theme = 'light';
+      document.documentElement.style.colorScheme = 'light';
+      document.documentElement.style.background = '#f6f5f1';
+    }
+
+    const characters = [
+      {
+        mvuId: '夜见哉川',
+        name: '夜见哉川',
+        aliases: [],
+        race: '人类',
+        identities: ['历史调查者', '命定契约者'],
+        professions: ['调查者', '旅人'],
+        lifeLevel: '第四层级',
+      },
+      {
+        mvuId: '维奥莱塔·马克西姆·奥古斯塔',
+        name: '维奥莱塔·马克西姆·奥古斯塔',
+        aliases: ['铁血女皇'],
+        race: '人类',
+        identities: ['奥古斯提姆帝国女皇', '大陆级称号：铁血女皇'],
+        professions: ['统治者', '神话战士'],
+        lifeLevel: '第六层级',
+      },
+      {
+        mvuId: '伊伽',
+        name: '伊伽',
+        aliases: [],
+        race: '精灵',
+        identities: ['同行者'],
+        professions: ['游侠', '斥候'],
+        lifeLevel: '第四层级',
+      },
+    ];
+
+    const life = (label, status = 'deceased') => ({
+      status,
+      era: '复兴纪元',
+      year: null,
+      month: null,
+      day: null,
+      precision: 'approximate',
+      label,
+    });
+    const node = (id, name, generation, relation, span, options = {}) => ({
+      id,
+      mvuId: options.mvu ? name : '',
+      name,
+      aliases: [],
+      generation,
+      isFocus: Boolean(options.focus),
+      isMvuCharacter: Boolean(options.mvu),
+      viewable: true,
+      canInjectToRuin: Boolean(options.mvu),
+      provenance: options.provenance || 'explicit',
+      birth: life(span.split('—')[0]),
+      death: life(span.split('—')[1] || '在世', span.includes('在世') ? 'alive' : 'deceased'),
+      race: '人类',
+      identities: options.identities || ['夜川家族成员'],
+      professions: options.professions || ['地方官员'],
+      lifeLevel: '',
+      relationToFocus: relation,
+      summary: `${name}是当前谱系中可追溯的${relation}。`,
+      profile: {
+        personality: '谨慎而重视家族承诺。',
+        lifeExperience: `${name}的生平由现存谱系与家族记录共同还原。`,
+      },
+      sourceRefs: [options.source || '世界书亲属记录'],
+      historyRefs: [],
+    });
+
+    const nodes = [
+      node('great-grandfather', '夜川宗正', -3, '父系曾祖父', '复兴纪元372年—复兴纪元431年'),
+      node('great-grandmother', '芙雷雅·洛温', -3, '父系曾祖母', '复兴纪元378年—复兴纪元445年'),
+      node('maternal-great-grandfather', '奥托·卡缇恩', -3, '母系曾祖父', '复兴纪元376年—复兴纪元438年'),
+      node('maternal-great-grandmother', '艾妲·洛萨', -3, '母系曾祖母', '复兴纪元380年—复兴纪元449年'),
+      node('grandfather', '夜川玄司', -2, '祖父', '复兴纪元401年—复兴纪元466年'),
+      node('grandmother', '梅尔莎', -2, '祖母', '复兴纪元408年—复兴纪元471年'),
+      node('maternal-grandfather', '卡提恩·洛萨', -2, '外祖父', '复兴纪元404年—复兴纪元469年'),
+      node('father', '夜川信宗', -1, '父亲', '复兴纪元433年—复兴纪元479年', { mvu: true }),
+      node('mother', '卡提娅', -1, '母亲', '复兴纪元438年—在世', { mvu: true }),
+      node('sister', '伊莎·夜川', 0, '姐姐', '复兴纪元466年—在世', { mvu: true }),
+      node('focus', '夜见哉川', 0, '当前人物', '复兴纪元462年—在世', {
+        focus: true,
+        mvu: true,
+        identities: ['历史调查者', '命定契约者'],
+        professions: ['调查者', '旅人'],
+        source: 'MVU角色列表',
+      }),
+      node('daughter', '伊莎贝尔', 1, '养女', '复兴纪元481年—在世', { mvu: true }),
+    ];
+    const edge = (id, from, to, type, label) => ({
+      id, from, to, relationType: type, label, sourceRefs: ['世界书亲属记录'],
+    });
+    const edges = [
+      edge('e1', 'great-grandfather', 'grandfather', 'child', '父子'),
+      edge('e2', 'great-grandmother', 'grandfather', 'child', '母子'),
+      edge('e3', 'grandfather', 'father', 'child', '父子'),
+      edge('e4', 'grandmother', 'father', 'child', '母子'),
+      edge('e5', 'maternal-great-grandfather', 'maternal-grandfather', 'child', '父子'),
+      edge('e6', 'maternal-great-grandmother', 'maternal-grandfather', 'child', '母子'),
+      edge('e7', 'maternal-grandfather', 'mother', 'child', '父女'),
+      edge('e8', 'father', 'focus', 'child', '父子'),
+      edge('e9', 'mother', 'focus', 'child', '母子'),
+      edge('e10', 'father', 'sister', 'child', '父女'),
+      edge('e11', 'focus', 'daughter', 'adoptiveChild', '养父女'),
+    ];
+    const now = Date.now();
+    const makeRecord = () => ({
+      key: 'preview::genealogy::night',
+      namespace: { characterKey: '伊雍', chatId: 'preview' },
+      requestId: 'preview-genealogy',
+      triggerMessageId: 12,
+      triggerTextHash: 'preview',
+      triggerSwipeId: null,
+      sourceHash: 'preview',
+      input: {
+        focusCharacter: { mvuId: '夜见哉川', name: '夜见哉川', aliases: [] },
+        depth: { ancestors: 4, descendants: 3, maxPerGeneration: 4 },
+      },
+      result: {
+        schema: 'eyon.genealogy.v2',
+        requestId: 'preview-genealogy',
+        focusCharacterId: '夜见哉川',
+        focusCharacterName: '夜见哉川',
+        depth: { ancestors: 4, descendants: 3, maxPerGeneration: 4 },
+        nodes,
+        edges,
+        referenceSummary: {
+          familyNames: ['夜川'],
+          knownResidences: ['金谷城'],
+          knownOrganizations: [],
+          brief: '夜川家系的已知谱系。',
+        },
+        qualityChecks: {
+          focusIsMvuCharacter: true,
+          generatedNodesHaveProvenance: true,
+          allNodesHaveLifeDates: true,
+          allNodesHaveBasicProfiles: true,
+          onlyMvuNodesCanInjectToRuin: true,
+          noConflictNarrative: true,
+        },
+      },
+      createdAt: now,
+    });
+    let records = [makeRecord()];
+    let ruinReferences = [];
+    const settings = {
+      schemaVersion: 1,
+      generation: {
+        genealogy: { mode: 'follow_tavern' },
+        ruin: { mode: 'follow_tavern' },
+        biography: { mode: 'follow_tavern' },
+        butterfly: { mode: 'follow_tavern' },
+      },
+      ruinDraft: null,
+      genealogyDepth: { ancestors: 4, descendants: 3, maxPerGeneration: 4 },
+    };
+    window.EyonHistoryWorkbench = {
+      version: '0.10.0-preview',
+      getSettings: () => settings,
+      updateSettings: patch => Object.assign(settings, patch),
+      setGenerationSettings: () => settings,
+      applyGenerationSettingsToAll: () => settings,
+      setRuinDraft: () => settings,
+      getRuinRuntimeSnapshot: async () => ({
+        flowState: 'idle', runId: '', realityTime: '', realityLocation: '', ruinTime: '', ruinLocation: '',
+      }),
+      listGenealogyCharacters: async () => structuredClone(characters),
+      listCharacterWorldbookEntries: async () => [],
+      setCharacterWorldbookEntryEnabled: async () => [],
+      setCharacterWorldbookEntriesEnabled: async () => [],
+      listGenealogies: async () => structuredClone(records),
+      listRuinCharacterReferences: async () => structuredClone(ruinReferences),
+      removeRuinCharacterReference: async referenceId => {
+        ruinReferences = ruinReferences.filter(item => item.mvuId !== referenceId);
+        return structuredClone(ruinReferences);
+      },
+      toggleGenealogyNodeRuinReference: async (recordKey, nodeId) => {
+        const record = records.find(item => item.key === recordKey);
+        const target = record?.result.nodes.find(item => item.id === nodeId);
+        if (!target?.canInjectToRuin || !target.mvuId) {
+          throw new Error('Only confirmed MVU characters can be used');
+        }
+        const exists = ruinReferences.some(item => item.mvuId === target.mvuId);
+        ruinReferences = exists
+          ? ruinReferences.filter(item => item.mvuId !== target.mvuId)
+          : [...ruinReferences, {
+              mvuId: target.mvuId,
+              name: target.name,
+              source: 'genealogy',
+              identities: target.identities,
+              race: target.race,
+              professions: target.professions,
+              relations: [target.relationToFocus],
+              lifespan: `${target.birth.label} - ${target.death.label}`,
+              contextSummary: target.summary,
+            }];
+        return structuredClone(ruinReferences);
+      },
+      generateGenealogy: async input => {
+        window.dispatchEvent(new CustomEvent('eyon-history-workbench:status', {
+          detail: { status: 'generating_genealogy', detail: '伊雍正在梳理宗脉' },
+        }));
+        await new Promise(resolve => setTimeout(resolve, 650));
+        const selected = characters.find(item => item.mvuId === input.focusCharacter.mvuId);
+        const record = makeRecord();
+        record.key = `preview::genealogy::${input.focusCharacter.mvuId}`;
+        record.requestId = `preview-${Date.now()}`;
+        record.result.requestId = record.requestId;
+        record.result.focusCharacterName = selected.name;
+        record.result.nodes = selected.mvuId === '夜见哉川'
+          ? nodes
+          : [node('focus', selected.name, 0, '当前人物', '生卒未详', {
+              focus: true,
+              mvu: true,
+              identities: selected.identities,
+              professions: selected.professions,
+              source: 'MVU角色列表',
+            })];
+        record.result.edges = selected.mvuId === '夜见哉川' ? edges : [];
+        record.createdAt = Date.now();
+        records = records.filter(item => item.result.focusCharacterName !== selected.name);
+        records.push(record);
+        window.dispatchEvent(new CustomEvent('eyon-history-workbench:status', {
+          detail: { status: 'ready', detail: '宗族谱系已经完成' },
+        }));
+        return structuredClone(record);
+      },
+      generateRuin: async () => { throw new Error('preview only'); },
+      listRuins: async () => [],
+      listBiographies: async () => [],
+      listButterflies: async () => [],
+      fetchCustomApiModels: async () => [],
+      deleteButterfly: async () => false,
+      inspectCurrentData: async () => ({}),
+      exportCurrentData: async () => ({}),
+      clearGenerationCache: async () => ({
+        ruinDraftCleared: true, ruinReferencesCleared: 0, genealogiesCleared: 0,
+        ruinsCleared: 0, butterflyPendingCleared: 0,
+      }),
+      clearErrorLog: () => settings,
+      enterRuin: async () => undefined,
+      returnRuin: async () => undefined,
+      retryButterfly: async () => undefined,
+      dispose() {},
+    };
+  </script>
+  <script type="module" src="../dist/genealogy.js"></script>
+</body>
+</html>

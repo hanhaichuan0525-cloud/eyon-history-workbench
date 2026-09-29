@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>伊雍伴生入口 · 微型舞台重构</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #13111a;
+      --panel: rgba(31, 27, 42, 0.78);
+      --panel-strong: rgba(24, 21, 33, 0.92);
+      --line: rgba(234, 227, 246, 0.13);
+      --line-strong: rgba(211, 188, 235, 0.28);
+      --text: #eee9f5;
+      --muted: #aaa1b7;
+      --accent: #c9a8ed;
+      --accent-strong: #a778dd;
+      --success: #93d3bc;
+      --danger: #e5a0b1;
+      --shadow: 0 18px 52px rgba(4, 3, 8, 0.38);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { min-height: 100%; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--text);
+      font-family: Inter, "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 74% 14%, rgba(118, 78, 154, 0.13), transparent 34%),
+        radial-gradient(circle at 18% 86%, rgba(75, 120, 124, 0.09), transparent 28%),
+        var(--bg);
+    }
+
+    button { font: inherit; }
+
+    .preview-shell {
+      min-height: 100vh;
+      padding: 22px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    .preview-header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .eyebrow {
+      margin: 0 0 7px;
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-family: "Noto Serif SC", "Songti SC", serif;
+      font-size: clamp(22px, 3vw, 34px);
+      font-weight: 600;
+      letter-spacing: 0.035em;
+    }
+
+    .header-note {
+      max-width: 460px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+      text-align: right;
+    }
+
+    .host-stage {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background:
+        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px),
+        rgba(15, 13, 21, 0.72);
+      background-size: 24px 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .mock-chat {
+      width: min(760px, calc(100% - 48px));
+      margin: 34px auto 110px;
+      display: grid;
+      gap: 13px;
+      opacity: 0.72;
+    }
+
+    .mock-message {
+      padding: 16px 18px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 15px;
+      background: rgba(30, 27, 38, 0.62);
+    }
+
+    .mock-message.user {
+      width: min(72%, 540px);
+      justify-self: end;
+      background: rgba(71, 55, 87, 0.46);
+    }
+
+    .mock-kicker {
+      margin: 0 0 6px;
+      color: #d4c5e2;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+    }
+
+    .mock-lines {
+      display: grid;
+      gap: 7px;
+    }
+
+    .mock-line {
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(231, 226, 238, 0.12);
+    }
+
+    .mock-line:nth-child(2) { width: 83%; }
+    .mock-line:nth-child(3) { width: 61%; }
+
+    .test-console {
+      position: absolute;
+      left: 18px;
+      bottom: 18px;
+      z-index: 2;
+      width: min(760px, calc(100% - 36px));
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(22, 19, 30, 0.86);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 12px 36px rgba(0,0,0,0.28);
+    }
+
+    .test-console__title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .test-console__title strong {
+      color: var(--text);
+      font-weight: 650;
+    }
+
+    .state-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .state-button {
+      min-height: 36px;
+      padding: 0 13px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(255,255,255,0.035);
+      cursor: pointer;
+      transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+    }
+
+    .state-button:hover,
+    .state-button:focus-visible {
+      border-color: var(--line-strong);
+      color: var(--text);
+      outline: none;
+    }
+
+    .state-button[aria-pressed="true"] {
+      border-color: rgba(201, 168, 237, 0.5);
+      color: #f5edff;
+      background: rgba(151, 105, 199, 0.18);
+    }
+
+    .pixel-loupe {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      z-index: 1;
+      width: 222px;
+      padding: 11px 12px 13px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: rgba(22, 19, 30, 0.7);
+    }
+
+    .pixel-loupe__label {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .loupe-window {
+      position: relative;
+      width: 192px;
+      height: 192px;
+      margin: auto;
+      overflow: hidden;
+      border-radius: 12px;
+      background: radial-gradient(circle, rgba(141, 110, 168, 0.11), transparent 64%);
+    }
+
+    .loupe-window .eyon-sheet {
+      width: 768px;
+      height: 1920px;
+      --step: 192px;
+      --row-y: 0px;
+      image-rendering: pixelated;
+    }
+
+    .eyon-companion {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 50;
+      width: 56px;
+      height: 56px;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .eyon-avatar {
+      position: relative;
+      width: 56px;
+      height: 56px;
+      padding: 0;
+      overflow: visible;
+      border: 0;
+      color: inherit;
+      background: transparent;
+      cursor: grab;
+      filter: drop-shadow(0 5px 8px rgba(0, 0, 0, 0.52));
+    }
+
+    .eyon-avatar:active { cursor: grabbing; }
+
+    .eyon-avatar:focus-visible {
+      outline: 2px solid rgba(205, 177, 239, 0.88);
+      outline-offset: 3px;
+      border-radius: 12px;
+    }
+
+    .eyon-frame {
+      position: absolute;
+      left: -4px;
+      top: -8px;
+      width: 64px;
+      height: 64px;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .eyon-frame.is-current { z-index: 2; opacity: 1; }
+    .eyon-frame.is-outgoing { z-index: 1; }
+
+    .eyon-companion.is-transitioning .eyon-frame.is-current {
+      animation: eyon-layer-in 190ms ease-out both;
+    }
+
+    .eyon-companion.is-transitioning .eyon-frame.is-outgoing {
+      animation: eyon-layer-out 190ms ease-in both;
+    }
+
+    @keyframes eyon-layer-in {
+      from { opacity: 0; transform: translateY(3px) scale(0.9); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes eyon-layer-out {
+      from { opacity: 1; transform: translateY(0) scale(1); }
+      to { opacity: 0; transform: translateY(-2px) scale(1.05); }
+    }
+
+    .eyon-sheet {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 256px;
+      height: 640px;
+      max-width: none;
+      --step: 64px;
+      --row-y: 0px;
+      --intro-duration: 950ms;
+      --loop-duration: 1500ms;
+      transform: translate3d(0, var(--row-y), 0);
+      pointer-events: none;
+    }
+
+    .eyon-frame[data-playback="intro-loop"][data-phase="intro"] .eyon-sheet,
+    .loupe-window[data-playback="intro-loop"][data-phase="intro"] .eyon-sheet {
+      animation: eyon-intro var(--intro-duration) steps(1, end) 1 forwards;
+    }
+
+    .eyon-frame[data-playback="intro-loop"][data-phase="loop"] .eyon-sheet,
+    .loupe-window[data-playback="intro-loop"][data-phase="loop"] .eyon-sheet {
+      animation: eyon-settled-loop var(--loop-duration) steps(1, end) infinite;
+    }
+
+    .eyon-frame[data-motion="biography"] .eyon-sheet,
+    .loupe-window[data-motion="biography"] .eyon-sheet { --row-y: calc(var(--step) * -1); --intro-duration: 1100ms; --loop-duration: 1800ms; }
+    .eyon-frame[data-motion="success"] .eyon-sheet,
+    .loupe-window[data-motion="success"] .eyon-sheet { --row-y: calc(var(--step) * -2); --intro-duration: 900ms; --loop-duration: 1500ms; }
+    .eyon-frame[data-motion="error"] .eyon-sheet,
+    .loupe-window[data-motion="error"] .eyon-sheet { --row-y: calc(var(--step) * -3); --intro-duration: 1150ms; --loop-duration: 1300ms; }
+    .eyon-frame[data-motion="genealogy"] .eyon-sheet,
+    .loupe-window[data-motion="genealogy"] .eyon-sheet { --row-y: calc(var(--step) * -4); --intro-duration: 1100ms; --loop-duration: 1650ms; }
+    .eyon-frame[data-motion="ruin-map"] .eyon-sheet,
+    .loupe-window[data-motion="ruin-map"] .eyon-sheet { --row-y: calc(var(--step) * -5); --intro-duration: 1100ms; --loop-duration: 1700ms; }
+    .eyon-frame[data-motion="ruin-portal"] .eyon-sheet,
+    .loupe-window[data-motion="ruin-portal"] .eyon-sheet { --row-y: calc(var(--step) * -6); --intro-duration: 950ms; --loop-duration: 760ms; }
+    .eyon-frame[data-motion="butterfly"] .eyon-sheet,
+    .loupe-window[data-motion="butterfly"] .eyon-sheet { --row-y: calc(var(--step) * -7); --intro-duration: 900ms; --loop-duration: 1400ms; }
+    .eyon-frame[data-motion="system"] .eyon-sheet,
+    .loupe-window[data-motion="system"] .eyon-sheet { --row-y: calc(var(--step) * -8); --intro-duration: 1050ms; --loop-duration: 1450ms; }
+    .eyon-frame[data-motion="workbench"] .eyon-sheet,
+    .loupe-window[data-motion="workbench"] .eyon-sheet { --row-y: calc(var(--step) * -9); --intro-duration: 1100ms; --loop-duration: 1750ms; }
+
+    @keyframes eyon-intro {
+      0%, 34.999% { transform: translate3d(0, var(--row-y), 0); }
+      35%, 67.999% { transform: translate3d(calc(var(--step) * -1), var(--row-y), 0); }
+      68%, 100% { transform: translate3d(calc(var(--step) * -2), var(--row-y), 0); }
+    }
+
+    @keyframes eyon-settled-loop {
+      0%, 63.999% { transform: translate3d(calc(var(--step) * -2), var(--row-y), 0); }
+      64%, 82.999% { transform: translate3d(calc(var(--step) * -3), var(--row-y), 0); }
+      83%, 100% { transform: translate3d(calc(var(--step) * -2), var(--row-y), 0); }
+    }
+
+    .eyon-bubble {
+      position: absolute;
+      right: 48px;
+      bottom: 44px;
+      width: min(270px, calc(100vw - 84px));
+      padding: 11px 13px 12px;
+      border: 1px solid rgba(224, 213, 238, 0.18);
+      border-radius: 14px;
+      color: var(--text);
+      background: rgba(22, 19, 29, 0.76);
+      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(8px);
+      transform-origin: 92% 100%;
+      transition: opacity 150ms ease, transform 150ms ease;
+      pointer-events: auto;
+    }
+
+    .eyon-bubble[hidden] {
+      display: block;
+      opacity: 0;
+      transform: translateY(5px) scale(0.97);
+      pointer-events: none;
+      visibility: hidden;
+    }
+
+    .eyon-bubble::after {
+      content: "";
+      position: absolute;
+      right: 10px;
+      bottom: -5px;
+      width: 9px;
+      height: 9px;
+      border-right: 1px solid rgba(224, 213, 238, 0.18);
+      border-bottom: 1px solid rgba(224, 213, 238, 0.18);
+      background: rgba(22, 19, 29, 0.76);
+      transform: rotate(45deg);
+    }
+
+    .eyon-companion[data-side="right"] .eyon-bubble {
+      right: auto;
+      left: 48px;
+      transform-origin: 8% 100%;
+    }
+
+    .eyon-companion[data-side="right"] .eyon-bubble::after {
+      right: auto;
+      left: 10px;
+      transform: rotate(225deg);
+    }
+
+    .bubble-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .bubble-orb {
+      width: 7px;
+      height: 7px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(201, 168, 237, 0.09);
+    }
+
+    .eyon-companion[data-state="success"] .bubble-orb { background: var(--success); }
+    .eyon-companion[data-state="error"] .bubble-orb { background: var(--danger); }
+
+    .bubble-title {
+      min-width: 0;
+      overflow: hidden;
+      font-size: 13px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bubble-detail {
+      margin: 5px 0 0 15px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .bubble-progress {
+      height: 2px;
+      margin: 9px 0 0 15px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .bubble-progress::after {
+      content: "";
+      display: block;
+      width: 42%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      animation: eyon-progress 1500ms ease-in-out infinite;
+    }
+
+    @keyframes eyon-progress {
+      from { transform: translateX(-115%); }
+      to { transform: translateX(280%); }
+    }
+
+    .eyon-companion:is([data-state="idle"], [data-state="success"], [data-state="error"], [data-state="workbench"]) .bubble-progress { display: none; }
+
+    @media (max-width: 640px) {
+      .preview-shell { padding: 12px; gap: 12px; }
+      .preview-header { align-items: start; }
+      .header-note { display: none; }
+      .host-stage { border-radius: 17px; }
+      .pixel-loupe { display: none; }
+      .mock-chat { width: calc(100% - 26px); margin-top: 18px; }
+      .test-console { left: 10px; bottom: 10px; width: calc(100% - 20px); }
+      .eyon-companion { right: 16px; bottom: 128px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+      }
+
+      .eyon-sheet {
+        animation: none !important;
+        transform: translate3d(calc(var(--step) * -2), var(--row-y), 0) !important;
+      }
+    }
+
+    @supports not (backdrop-filter: blur(1px)) {
+      .test-console, .eyon-bubble { background: var(--panel-strong); }
+    }
+  </style>
+</head>
+<body>
+  <main class="preview-shell">
+    <header class="preview-header">
+      <div>
+        <p class="eyebrow">Miniature theatre · 56px launcher</p>
+        <h1>伊雍伴生入口</h1>
+      </div>
+      <p class="header-note">拖动右下角的伊雍，气泡会始终跟随。空闲时气泡消失；只有任务、完成或异常需要说话时才出现。</p>
+    </header>
+
+    <section class="host-stage" aria-label="模拟酒馆宿主">
+      <div class="mock-chat" aria-hidden="true">
+        <article class="mock-message">
+          <p class="mock-kicker">SILLYTAVERN · ASSISTANT MESSAGE</p>
+          <div class="mock-lines"><span class="mock-line"></span><span class="mock-line"></span><span class="mock-line"></span></div>
+        </article>
+        <article class="mock-message user">
+          <p class="mock-kicker">USER</p>
+          <div class="mock-lines"><span class="mock-line"></span><span class="mock-line"></span></div>
+        </article>
+        <article class="mock-message">
+          <p class="mock-kicker">EYON HISTORY WORKBENCH</p>
+          <div class="mock-lines"><span class="mock-line"></span><span class="mock-line"></span><span class="mock-line"></span></div>
+        </article>
+      </div>
+
+      <aside class="pixel-loupe" aria-label="三倍表情检查镜">
+        <p class="pixel-loupe__label">3× 表情检查镜 · 不代表运行尺寸</p>
+        <div class="loupe-window" data-motion="idle" data-playback="intro-loop" data-phase="intro" data-loupe>
+          <img class="eyon-sheet" src="./assets/eyon-companion-prototype-v5.png" alt="" />
+        </div>
+      </aside>
+
+      <section class="test-console" aria-label="状态试演">
+        <div class="test-console__title">
+          <strong>状态试演</strong>
+          <span>实际入口为 56 × 56</span>
+        </div>
+        <div class="state-controls" role="group" aria-label="切换伊雍状态">
+          <button class="state-button" type="button" data-state-button="idle" aria-pressed="true">空闲好奇</button>
+          <button class="state-button" type="button" data-state-button="biography" aria-pressed="false">专注整理</button>
+          <button class="state-button" type="button" data-state-button="success" aria-pressed="false">成功窃喜</button>
+          <button class="state-button" type="button" data-state-button="error" aria-pressed="false">卡住委屈</button>
+          <button class="state-button" type="button" data-state-button="genealogy" aria-pressed="false">梳理谱系</button>
+          <button class="state-button" type="button" data-state-button="ruin-map" aria-pressed="false">绘制墟境</button>
+          <button class="state-button" type="button" data-state-button="ruin-portal" aria-pressed="false">开启历史切口</button>
+          <button class="state-button" type="button" data-state-button="butterfly" aria-pressed="false">锚定蝴蝶效应</button>
+          <button class="state-button" type="button" data-state-button="system" aria-pressed="false">系统校准</button>
+          <button class="state-button" type="button" data-state-button="workbench" aria-pressed="false">打开工作台</button>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div class="eyon-companion" data-companion data-state="idle" data-motion="idle" data-side="left">
+    <button class="eyon-avatar" type="button" aria-label="伊雍历史工作台；拖动可移动，点击可查看状态" data-avatar>
+      <span class="eyon-frame is-outgoing" data-frame="outgoing" data-motion="idle" data-playback="intro-loop" data-phase="intro" aria-hidden="true">
+        <img class="eyon-sheet" src="./assets/eyon-companion-prototype-v5.png" alt="" draggable="false" />
+      </span>
+      <span class="eyon-frame is-current" data-frame="current" data-motion="idle" data-playback="intro-loop" data-phase="intro" aria-hidden="true">
+        <img class="eyon-sheet" src="./assets/eyon-companion-prototype-v5.png" alt="" draggable="false" />
+      </span>
+    </button>
+    <section class="eyon-bubble" role="status" aria-live="polite" hidden data-bubble>
+      <div class="bubble-head">
+        <span class="bubble-orb" aria-hidden="true"></span>
+        <span class="bubble-title" data-bubble-title></span>
+      </div>
+      <p class="bubble-detail" data-bubble-detail></p>
+      <div class="bubble-progress" aria-hidden="true"></div>
+    </section>
+  </div>
+
+  <script>
+    (() => {
+      const companion = document.querySelector('[data-companion]');
+      const avatar = document.querySelector('[data-avatar]');
+      const bubble = document.querySelector('[data-bubble]');
+      const title = document.querySelector('[data-bubble-title]');
+      const detail = document.querySelector('[data-bubble-detail]');
+      const loupe = document.querySelector('[data-loupe]');
+      const buttons = [...document.querySelectorAll('[data-state-button]')];
+      const currentFrame = document.querySelector('[data-frame="current"]');
+      const outgoingFrame = document.querySelector('[data-frame="outgoing"]');
+      const currentSheet = currentFrame.querySelector('.eyon-sheet');
+      const outgoingSheet = outgoingFrame.querySelector('.eyon-sheet');
+      const loupeSheet = loupe.querySelector('.eyon-sheet');
+
+      const states = {
+        idle: { title: '', detail: '', motion: 'idle', playback: 'intro-loop', visible: false },
+        biography: { title: '我去书架上找那一卷……', detail: '慢一点没关系，漏掉主人的线索才糟糕。', motion: 'biography', playback: 'intro-loop', visible: true },
+        success: { title: '成啦，线索全都对上了！', detail: '我、我就知道能帮上忙……主人有看到吧？', motion: 'success', playback: 'intro-loop', visible: true },
+        error: { title: '不行……它又打结了——！', detail: '原稿还在，可是、可是我明明差一点就做好了……', motion: 'error', playback: 'intro-loop', visible: true },
+        genealogy: { title: '这些亲缘线总算肯排队了……', detail: '主人看，最爱藏起来的那一支在这里。', motion: 'genealogy', playback: 'intro-loop', visible: true },
+        'ruin-map': { title: '我在地图上找历史的薄处', detail: '等我把时间和地点叠好，再带主人过去。', motion: 'ruin-map', playback: 'intro-loop', visible: true },
+        'ruin-portal': { title: '历史切口已经张开', detail: '请跟紧我——我先进去替主人看一眼！', motion: 'ruin-portal', playback: 'intro-loop', visible: true },
+        butterfly: { title: '余波正在改变方向……', detail: '一只很小的蝶，也能让很远的年代听见。', motion: 'butterfly', playback: 'intro-loop', visible: true },
+        system: { title: '我在给工作台重新上弦', detail: '齿轮刚才欺负我了……不过现在是我赢。', motion: 'system', playback: 'intro-loop', visible: true },
+        workbench: { title: '工作台为主人展开了', detail: '卷宗、谱系与时间暗流，都请从这里看。', motion: 'workbench', playback: 'intro-loop', visible: true },
+      };
+
+      let activeState = 'idle';
+      let pointer = null;
+      let dragOrigin = null;
+      let moved = false;
+      let activeMotion = 'idle';
+      let transitionTimer = null;
+
+      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+      function updateSide() {
+        const rect = companion.getBoundingClientRect();
+        companion.dataset.side = rect.left < window.innerWidth / 2 ? 'right' : 'left';
+      }
+
+      function restartSheet(sheet) {
+        sheet.style.animation = 'none';
+        void sheet.offsetWidth;
+        sheet.style.animation = '';
+      }
+
+      function startIntro(container, sheet) {
+        container.dataset.phase = 'intro';
+        restartSheet(sheet);
+      }
+
+      function settleIntoLoop(container, sheet, event) {
+        if (event.animationName !== 'eyon-intro' || container.dataset.phase !== 'intro') return;
+        container.dataset.phase = 'loop';
+        restartSheet(sheet);
+      }
+
+      currentSheet.addEventListener('animationend', (event) => settleIntoLoop(currentFrame, currentSheet, event));
+      loupeSheet.addEventListener('animationend', (event) => settleIntoLoop(loupe, loupeSheet, event));
+
+      function setMotion(motion, playback) {
+        loupe.dataset.motion = motion;
+        loupe.dataset.playback = playback;
+        startIntro(loupe, loupeSheet);
+
+        if (motion === activeMotion) {
+          currentFrame.dataset.playback = playback;
+          startIntro(currentFrame, currentSheet);
+          return;
+        }
+
+        window.clearTimeout(transitionTimer);
+        const frozenTransform = getComputedStyle(currentSheet).transform;
+        outgoingFrame.dataset.motion = currentFrame.dataset.motion;
+        outgoingFrame.dataset.playback = currentFrame.dataset.playback;
+        outgoingFrame.dataset.phase = currentFrame.dataset.phase;
+        outgoingSheet.style.animation = 'none';
+        outgoingSheet.style.transform = frozenTransform;
+        outgoingFrame.style.opacity = '1';
+
+        currentFrame.dataset.motion = motion;
+        currentFrame.dataset.playback = playback;
+        currentFrame.dataset.phase = 'intro';
+        companion.dataset.motion = motion;
+        activeMotion = motion;
+        startIntro(currentFrame, currentSheet);
+
+        companion.classList.remove('is-transitioning');
+        void companion.offsetWidth;
+        companion.classList.add('is-transitioning');
+        transitionTimer = window.setTimeout(() => {
+          companion.classList.remove('is-transitioning');
+          outgoingFrame.style.opacity = '';
+          outgoingSheet.style.animation = '';
+          outgoingSheet.style.transform = '';
+        }, 210);
+      }
+
+      function setState(next) {
+        const config = states[next] || states.idle;
+        activeState = next in states ? next : 'idle';
+        companion.dataset.state = activeState;
+        setMotion(config.motion, config.playback);
+        title.textContent = config.title;
+        detail.textContent = config.detail;
+        bubble.hidden = !config.visible;
+        buttons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.stateButton === activeState)));
+        updateSide();
+      }
+
+      buttons.forEach((button) => button.addEventListener('click', () => setState(button.dataset.stateButton)));
+
+      avatar.addEventListener('click', () => {
+        if (moved) return;
+        setState(activeState === 'idle' ? 'biography' : 'idle');
+      });
+
+      avatar.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        pointer = event.pointerId;
+        moved = false;
+        const rect = companion.getBoundingClientRect();
+        dragOrigin = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+        avatar.setPointerCapture(pointer);
+      });
+
+      avatar.addEventListener('pointermove', (event) => {
+        if (pointer !== event.pointerId || !dragOrigin) return;
+        const dx = event.clientX - dragOrigin.x;
+        const dy = event.clientY - dragOrigin.y;
+        if (Math.hypot(dx, dy) > 3) moved = true;
+        const left = clamp(dragOrigin.left + dx, 8, window.innerWidth - 64);
+        const top = clamp(dragOrigin.top + dy, 8, window.innerHeight - 64);
+        Object.assign(companion.style, { left: `${left}px`, top: `${top}px`, right: 'auto', bottom: 'auto' });
+        updateSide();
+      });
+
+      avatar.addEventListener('pointerup', (event) => {
+        if (pointer !== event.pointerId) return;
+        avatar.releasePointerCapture(pointer);
+        pointer = null;
+        dragOrigin = null;
+        requestAnimationFrame(() => { moved = false; });
+      });
+
+      window.addEventListener('resize', () => {
+        const rect = companion.getBoundingClientRect();
+        const left = clamp(rect.left, 8, window.innerWidth - 64);
+        const top = clamp(rect.top, 8, window.innerHeight - 64);
+        Object.assign(companion.style, { left: `${left}px`, top: `${top}px`, right: 'auto', bottom: 'auto' });
+        updateSide();
+      });
+
+      const previewState = new URLSearchParams(window.location.search).get('state');
+      setState(previewState && previewState in states ? previewState : 'idle');
+    })();
+  </script>
+</body>
+</html>

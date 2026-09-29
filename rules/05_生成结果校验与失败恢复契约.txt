@@ -1,6 +1,6 @@
 ---
 id: eyon.generation.validation
-version: 1
+version: 2
 consumer: script
 mode: validation_contract
 ---
@@ -131,7 +131,7 @@ butterfly失败且冻结快照仍完整
 - 每条边引用的节点存在。
 - 生卒日期纪元合法。
 - 不得形成无法解释的父母循环。
-- `canInjectToRuin` 只允许对应MVU人物。
+- `canInjectToRuin` 作为原始资料兼容标记时只对应MVU人物；它不限制工作台操作。所有已通过校验、具备人物短传的谱系节点均可由玩家右键加入墟境参考。
 - 推断和自动补全节点必须保留来源标记。
 
 ## 6.2 墟境候选
@@ -142,9 +142,9 @@ butterfly失败且冻结快照仍完整
 - `requestId`一致。
 - 候选数量等于骰表 `candidateCount`。
 - 每个候选拥有4至8个时间单调不减的节点。
-- 至少一个可进入 `anomaly`。
-- 非 `anomaly` 节点不得可进入。
-- 每个可进入特异点至少两个合理分支。
+- `origin`、`process`、`anomaly`、`result` 四类节点依次各一次且全部可进入；`anomaly` 在界面显示为“高潮”，机器键保持兼容。
+- 每个节点都有明确介入机会和至少一个合理分支；结果阶段不得无因抹除已发生前史。
+- 每个节点地点都是从大到小的 4～8 层 MVU 完整路径；不得用未知占位词凑层级。
 - `historyProse`、`fusion`和节点描述同一段历史。
 - 每组骰表素材只用于对应候选。
 - `selectedCharacters`逐项出现在 `selectedCharacterUsage`。
@@ -152,7 +152,7 @@ butterfly失败且冻结快照仍完整
 - 纪元、地点和玩家补充方向符合输入。
 - 选定候选生成的 `ruinTraceRaw` 同时包含唯一 `[RuinTrace]` 与 `[/RuinTrace]`。
 - `ruinTraceRaw` 字段严格按 `Title::`、`Type::`、`Span::`、`History::`、`Shift::`、`NodeTime::` 顺序各出现一次。
-- `ruinTraceRaw` 能被现有墟境美化正则完整匹配，且捕获值与选定候选及特异点的结构化字段一致。
+- `ruinTraceRaw` 能被现有墟境美化正则完整匹配，且捕获值与选定候选及历史节点的结构化字段一致。
 - 格式校验失败时只允许从已校验JSON重新序列化，不得重新调用生成API，也不得让正文模型修补格式。
 
 ## 6.3 寻根溯源
@@ -165,9 +165,9 @@ butterfly失败且冻结快照仍完整
 - 明确时间范围未被越界。
 - 时期数量和类型符合 `stagePlan`。
 - 相邻时期拥有完整过渡字段。
-- `rootTrace`同时包含唯一 `[RootTrace]`与`[/RootTrace]`。
-- 所有 `<details>` 正确闭合且默认不带 `open`。
-- `rootTrace`与结构化时期内容一致。
+- API只提交结构化传记，不承担 `rootTrace` 展示副本。
+- 结构化传记通过对象、来源、时间与时期校验后，由脚本确定性渲染唯一 `[RootTrace]...[/RootTrace]`。
+- 脚本渲染结果中的所有 `<details>` 必须正确闭合且默认不带 `open`；渲染失败时只做本地重建，不重试API。
 - 禁止历史结晶商店、`<item_info>`、变量更新和伊雍对白。
 
 ## 6.4 蝴蝶效应
@@ -186,6 +186,9 @@ butterfly失败且冻结快照仍完整
 - `historicalKeywords`包含4至10项非空去重关键词。
 - `causalStages`包含2至5项，`order`连续且唯一。
 - 每个因果阶段拥有承载者、变化和通往下一阶段的连接。
+- `directEffects`为可缺省的直接变化索引卡；存在时只消费非空 `subject` 与 `change`，`time`、`stateHint`保持自然语言。
+- `directEffects`缺失、类型错误、单项残缺或状态提示陌生时必须局部忽略或降级为通用历史变化，禁止使整轮蝴蝶效应、遣返正文或正史提交失败。
+- `directEffects`不得携带模型生成的事实ID、实体ID或来源ID；稳定ID由脚本在提交时映射。
 - 所有来源ID能够在本请求 `sourceIndex` 中找到。
 - 不得输出三套锚点替代值、JSON Patch、变量路径、面板标签、HTML或Markdown表格。
 

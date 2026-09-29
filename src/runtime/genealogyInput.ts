@@ -5,7 +5,11 @@ import type {
 import type { RuntimeContextSourceProvider } from './contracts.ts';
 
 export interface GenealogyDepthProvider {
-  getGenealogyDepth(): { ancestors: number; descendants: number };
+  getGenealogyDepth(): {
+    ancestors: number;
+    descendants: number;
+    maxPerGeneration: number;
+  };
 }
 
 export class TavernGenealogyInputProvider {

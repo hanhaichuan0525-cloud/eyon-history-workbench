@@ -3,7 +3,19 @@ import type {
   GenealogyContextAssembler,
   GenealogyContextBundle,
 } from '../core/context.ts';
-import type { RuntimeContextSourceProvider, TavernRuntime } from './contracts.ts';
+import {
+  loadRuntimeWorldbookCorpus,
+  type RuntimeContextSourceProvider,
+  type TavernRuntime,
+} from './contracts.ts';
+import type { RetrievalShadowCapture } from '../retrieval/runtimeShadow.ts';
+import type { EvidenceBundle } from '../retrieval/contracts.ts';
+import { resolveActiveRetrieval } from './activeRetrieval.ts';
+import type { CanonRepository } from '../storage/canon.ts';
+import { namespaceKey, type WorkbenchNamespace } from '../core/namespace.ts';
+import type { BiographyRepository } from '../storage/biographies.ts';
+import { buildContinuityViewSafely } from './continuityAnchors.ts';
+import { currentGenealogyHistoryReferences } from './genealogyContinuity.ts';
 
 const RECENT_MESSAGE_LIMIT = 24;
 const CONTENT_LIMIT = 12000;
@@ -11,10 +23,32 @@ const CONTENT_LIMIT = 12000;
 export class TavernGenealogyContextAssembler implements GenealogyContextAssembler {
   private readonly runtime: TavernRuntime;
   private readonly sources: RuntimeContextSourceProvider;
+  private readonly retrievalShadow?: RetrievalShadowCapture;
+  /** 年龄基准时间 ensure（按聊天开局锁定）；未提供则 null。 */
+  private readonly ensureBaselineTime?: (
+    namespace: WorkbenchNamespace,
+    currentWorldTime: string,
+  ) => string;
+  private readonly canonRepository?: CanonRepository;
+  private readonly biographyRepository?: BiographyRepository;
 
-  constructor(runtime: TavernRuntime, sources: RuntimeContextSourceProvider) {
+  constructor(
+    runtime: TavernRuntime,
+    sources: RuntimeContextSourceProvider,
+    retrievalShadow?: RetrievalShadowCapture,
+    ensureBaselineTime?: (
+      namespace: WorkbenchNamespace,
+      currentWorldTime: string,
+    ) => string,
+    canonRepository?: CanonRepository,
+    biographyRepository?: BiographyRepository,
+  ) {
     this.runtime = runtime;
     this.sources = sources;
+    this.retrievalShadow = retrievalShadow;
+    this.ensureBaselineTime = ensureBaselineTime;
+    this.canonRepository = canonRepository;
+    this.biographyRepository = biographyRepository;
   }
 
   async assemble(input: {
@@ -23,12 +57,22 @@ export class TavernGenealogyContextAssembler implements GenealogyContextAssemble
     triggerMessageId: number;
     directive: string;
   }): Promise<GenealogyContextBundle> {
-    const [currentWorld, worldbook, characters, biographies] = await Promise.all([
+    const [
+      currentWorld,
+      worldbookCorpus,
+      characters,
+      genealogies,
+      biographies,
+      butterflies,
+    ] = await Promise.all([
       this.sources.getCurrentWorld(),
-      this.sources.getWorldbookSources(),
+      loadRuntimeWorldbookCorpus(this.sources),
       this.sources.getCharacterSources(),
+      this.sources.getGenealogySources(),
       this.sources.getBiographySources(),
+      this.sources.getButterflySources(),
     ]);
+    const worldbook = worldbookCorpus.sources;
     const worldbookContext = mapSources(worldbook, 'worldbook', 100);
     const recentContext = mapSources(
       this.buildRecentSources(input.triggerMessageId),
@@ -37,15 +81,75 @@ export class TavernGenealogyContextAssembler implements GenealogyContextAssemble
     );
     const characterContext = mapSources(characters, 'mvu', 95);
     const biographyRefs = mapSources(biographies, 'biography', 70);
-    const sourceIndex = [
+    const genealogyCandidates = mapSources(genealogies, 'genealogy', 75);
+    const butterflyCandidates = mapSources(butterflies, 'butterfly', 70);
+    const legacySourceIndex = [
       ...worldbookContext,
       ...characterContext,
       ...recentContext,
       ...biographyRefs,
     ];
+    const canonBranch = await this.canonRepository?.getBranch(input.namespace);
+    const active = await resolveActiveRetrieval({
+      retrieval: this.retrievalShadow,
+      requestId: input.requestId,
+      taskType: 'genealogy',
+      query: input.directive,
+      contextQuery: [
+        currentWorld.time,
+        currentWorld.location,
+        ...recentContext.slice(-8).flatMap(source => [
+          source.title,
+          source.content.slice(0, 1800),
+        ]),
+      ].join('\n'),
+      runtimeCandidates: [
+        ...worldbook.map(source => ({ ...source, sourceType: 'worldbook' as const })),
+        ...characterContext,
+        ...recentContext,
+        ...genealogyCandidates,
+        ...biographyRefs,
+        ...butterflyCandidates,
+      ],
+      contextCandidates: [
+        ...worldbookContext,
+        ...characterContext,
+        ...recentContext,
+        ...genealogyCandidates,
+        ...biographyRefs,
+        ...butterflyCandidates,
+      ],
+      legacySourceIds: legacySourceIndex.map(source => source.sourceId),
+      worldbookCorpusReceipt: worldbookCorpus.receipt,
+      baselineWorldTime: this.ensureBaselineTime?.(input.namespace, currentWorld.time) ?? null,
+      canonBranch,
+    });
+    const sourceIndex = active.sourceIndex;
+    const activeWorldbookContext = sourceIndex.filter(source => source.sourceType === 'worldbook');
+    const activeRecentContext = sourceIndex.filter(source => source.sourceType === 'chat');
+    const activeCharacterContext = sourceIndex.filter(source => source.sourceType === 'mvu');
+    const activeBiographyRefs = sourceIndex.filter(source => source.sourceType === 'biography');
     const warnings: string[] = [];
-    if (worldbookContext.length === 0) warnings.push('worldbook_context_empty');
-    if (characterContext.length === 0) warnings.push('character_context_empty');
+    if (activeWorldbookContext.length === 0) warnings.push('worldbook_context_empty');
+    if (activeCharacterContext.length === 0) warnings.push('character_context_empty');
+    if (sourceIndex.length === 0) warnings.push('active_retrieval_empty');
+    let continuityView: GenealogyContextBundle['continuityView'];
+    let historyReferenceCandidates: GenealogyContextBundle['historyReferenceCandidates'];
+    if (canonBranch && active.bundle.canonResolvedView && this.biographyRepository) {
+      try {
+        const records = await this.biographyRepository.list(input.namespace);
+        continuityView = buildContinuityViewSafely({ records, branchId: canonBranch.branchId, canonRevision: active.bundle.canonResolvedView.resolvedRevision,
+          query: input.directive, targetView: active.bundle.canonResolvedView, branch: canonBranch,
+          cacheScope: {
+            namespace: namespaceKey(input.namespace),
+            module: 'genealogy',
+            subjectScope: [input.directive],
+            timeScope: [currentWorld.time],
+            locationScope: [currentWorld.location],
+          } });
+        historyReferenceCandidates = currentGenealogyHistoryReferences(records, canonBranch);
+      } catch { warnings.push('genealogy_continuity_unavailable'); }
+    }
 
     return {
       schema: 'eyon.context.v1',
@@ -53,13 +157,22 @@ export class TavernGenealogyContextAssembler implements GenealogyContextAssemble
       requestId: input.requestId,
       scope: { ...input.namespace, triggerMessageId: input.triggerMessageId },
       currentWorld,
-      worldbookContext,
-      recentContext,
-      characterContext,
-      biographyRefs,
+      worldbookContext: activeWorldbookContext,
+      recentContext: activeRecentContext,
+      characterContext: activeCharacterContext,
+      biographyRefs: activeBiographyRefs,
       sourceIndex,
+      evidenceBundle: active.bundle,
+      continuityView,
+      historyReferenceCandidates,
       warnings,
-      sourceHash: await hashSources(input.directive, currentWorld, sourceIndex),
+      sourceHash: await hashSources(
+        input.directive,
+        currentWorld,
+        sourceIndex,
+        active.bundle,
+        continuityView,
+      ),
     };
   }
 
@@ -101,15 +214,36 @@ async function hashSources(
   directive: string,
   currentWorld: { time: string; location: string },
   sources: ContextSource[],
+  evidenceBundle: EvidenceBundle,
+  continuityView?: GenealogyContextBundle['continuityView'],
 ): Promise<string> {
   const input = JSON.stringify({
     directive,
+    continuityView,
     currentWorld,
     sources: sources.map(source => [
       source.sourceId,
       source.sourceType,
       source.content,
     ]),
+    passageStrategyVersion: evidenceBundle.receipt.passageBudget.strategyVersion,
+    passages: evidenceBundle.passages.map(passage => [
+      passage.passageId,
+      passage.contentHash,
+    ]),
+    personFactIds: evidenceBundle.personCanonViews?.flatMap(view => view.relevantFactIds) ?? [],
+    taskAnchorAttachments: evidenceBundle.taskAnchorAttachments?.map(attachment => [
+      attachment.attachmentId,
+      attachment.contentHash,
+    ]) ?? [],
+    canonView: evidenceBundle.canonResolvedView
+      ? [
+          evidenceBundle.canonResolvedView.viewId,
+          evidenceBundle.canonResolvedView.branchId,
+          evidenceBundle.canonResolvedView.resolvedRevision,
+          evidenceBundle.canonResolvedView.queryScopeHash,
+        ]
+      : null,
   });
   const digest = await crypto.subtle.digest(
     'SHA-256',

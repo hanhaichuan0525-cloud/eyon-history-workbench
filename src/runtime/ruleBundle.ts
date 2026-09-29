@@ -18,16 +18,10 @@ export const embeddedBiographyRules: BiographyRuleSet = {
 };
 
 export const embeddedRuinRules: RuinRuleSet = {
-  sharedContext,
-  retrievalContract,
-  validationContract,
   generationContract: ruinGenerationContract,
 };
 
 export const embeddedGenealogyRules: GenealogyRuleSet = {
-  sharedContext,
-  retrievalContract,
-  validationContract,
   generationContract: genealogyGenerationContract,
 };
 

@@ -8,6 +8,7 @@ import {
 } from '../workflows/genealogy.ts';
 import type { TavernRuntime } from './contracts.ts';
 import { fingerprintText } from './transactionIdentity.ts';
+import { isTaskCancellationError } from './tavernGeneration.ts';
 
 export type GenealogyControllerStatus =
   | 'assembling_context'
@@ -103,12 +104,13 @@ export class GenealogyController {
 
     const task = (async () => {
       try {
-        this.hooks.onStatus?.('assembling_context', '伊雍正在检索宗脉记录');
-        this.hooks.onStatus?.('generating_genealogy', '伊雍正在梳理宗脉');
+        this.hooks.onStatus?.('assembling_context', '正在查找中心人物与宗族的旧记录');
+        this.hooks.onStatus?.('generating_genealogy', '正在核对年龄、世代与亲缘位置');
         const record = await this.workflow.generate(command, input, identity);
-        this.hooks.onStatus?.('ready', '宗族谱系已经完成');
+        this.hooks.onStatus?.('ready', '宗族谱系已完成并写入当前存档');
         return record;
       } catch (error) {
+        if (isTaskCancellationError(error)) throw error;
         this.hooks.onStatus?.(
           'failed',
           error instanceof Error ? error.message : String(error),
@@ -180,7 +182,6 @@ export function createGenealogyIdentityAssertion(
       || message.is_hidden
       || fingerprintText(message.message) !== identity.triggerTextHash
       || runtime.getMessageSwipeId(identity.triggerMessageId) !== identity.triggerSwipeId
-      || runtime.getLastMessageId() !== identity.triggerMessageId
     ) {
       throw new Error('Genealogy anchor floor changed while request was running');
     }

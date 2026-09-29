@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>伊雍历史工作台 · 王庭编辑部样稿</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #e9e4e1;
+      --shell: #f4f1ed;
+      --paper: #fbf8f2;
+      --paper-strong: #fffdf9;
+      --paper-muted: #eee8e1;
+      --ink: #29242d;
+      --ink-soft: #5f5763;
+      --ink-faint: #8a818c;
+      --violet: #6d5876;
+      --violet-deep: #4c3b56;
+      --violet-soft: #e8e0ea;
+      --teal: #357b7c;
+      --teal-soft: #deeceb;
+      --gold: #a28155;
+      --gold-soft: #e9dcc8;
+      --line: rgba(67, 54, 71, .14);
+      --line-strong: rgba(67, 54, 71, .25);
+      --shadow: 0 24px 70px rgba(48, 38, 52, .12);
+      --shadow-soft: 0 10px 26px rgba(48, 38, 52, .07);
+      --sans: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      --serif: "Noto Serif SC", "Songti SC", STSong, serif;
+      --radius-shell: 24px;
+      --radius-panel: 16px;
+      --radius-control: 11px;
+      --ease: cubic-bezier(.2, .75, .2, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(circle at 12% -8%, rgba(109, 88, 118, .12), transparent 33rem),
+        radial-gradient(circle at 94% 22%, rgba(53, 123, 124, .08), transparent 28rem),
+        var(--canvas);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.6;
+    }
+
+    button, input, textarea, select { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+      outline: 3px solid rgba(53, 123, 124, .24);
+      outline-offset: 2px;
+    }
+
+    .app {
+      width: min(1560px, calc(100% - 32px));
+      min-height: calc(100dvh - 32px);
+      margin: 16px auto;
+      overflow: hidden;
+      background: var(--shell);
+      border: 1px solid rgba(255, 255, 255, .74);
+      border-radius: var(--radius-shell);
+      box-shadow: var(--shadow);
+    }
+
+    .topbar {
+      min-height: 72px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 20px;
+      padding: 12px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(251, 248, 242, .82);
+    }
+
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .brand-mark {
+      width: 38px;
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      color: var(--violet);
+      font-family: var(--serif);
+      font-size: 17px;
+      font-weight: 700;
+    }
+    .brand strong { display: block; font-family: var(--serif); letter-spacing: .12em; }
+    .brand small { display: block; color: var(--ink-faint); font-size: 10px; letter-spacing: .17em; }
+
+    .view-tabs {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .56);
+    }
+    .view-tab {
+      min-height: 38px;
+      padding: 7px 17px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ink-soft);
+      cursor: pointer;
+      transition: background 160ms var(--ease), color 160ms var(--ease), box-shadow 160ms var(--ease);
+    }
+    .view-tab[aria-selected="true"] {
+      background: var(--paper-strong);
+      color: var(--ink);
+      box-shadow: 0 2px 9px rgba(57, 45, 61, .08);
+    }
+    .top-actions { justify-self: end; display: flex; gap: 8px; }
+    .icon-button {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--paper-strong);
+      color: var(--ink-soft);
+      cursor: pointer;
+    }
+
+    .view { display: none; }
+    .view.is-active { display: block; animation: view-in 220ms var(--ease); }
+    @keyframes view-in { from { opacity: 0; transform: translateY(5px); } }
+
+    .page-head {
+      min-height: 154px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(620px, 1.2fr);
+      align-items: end;
+      gap: 34px;
+      padding: 30px 34px 26px;
+      background:
+        linear-gradient(90deg, rgba(109, 88, 118, .045) 1px, transparent 1px) 0 0 / 42px 100%,
+        var(--paper);
+      border-bottom: 1px solid var(--line);
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--teal);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      margin-bottom: 7px;
+      font-family: var(--serif);
+      font-size: clamp(30px, 3vw, 43px);
+      line-height: 1.16;
+      letter-spacing: .035em;
+      font-weight: 650;
+    }
+    .page-intro { max-width: 660px; margin-bottom: 0; color: var(--ink-soft); }
+
+    .stepper { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+    .step {
+      position: relative;
+      min-width: 0;
+      padding: 0 14px 0 22px;
+      border-left: 1px solid var(--line-strong);
+    }
+    .step::before {
+      content: "";
+      position: absolute;
+      left: -4px;
+      top: 0;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--paper);
+      border: 1px solid var(--gold);
+    }
+    .step.is-active::before { background: var(--teal); border-color: var(--teal); box-shadow: 0 0 0 5px var(--teal-soft); }
+    .step-number { display: block; color: var(--gold); font: 700 10px/1 var(--sans); letter-spacing: .12em; }
+    .step strong { display: block; margin-top: 7px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .step span:last-child { display: block; margin-top: 2px; color: var(--ink-faint); font-size: 11px; }
+
+    .ruin-layout {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      min-height: 720px;
+    }
+    .parameter-rail {
+      padding: 24px;
+      background: #eee9e6;
+      border-right: 1px solid var(--line);
+    }
+    .section-kicker {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+      color: var(--ink-faint);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+    .section-kicker::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+    .field { display: grid; gap: 7px; margin-bottom: 17px; }
+    .field label { font-size: 13px; font-weight: 700; }
+    .field small { color: var(--ink-faint); font-size: 11px; line-height: 1.5; }
+    .control {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-control);
+      background: rgba(255, 255, 255, .58);
+      color: var(--ink);
+    }
+    textarea.control { min-height: 100px; resize: vertical; }
+    .date-row { display: grid; grid-template-columns: 1.3fr .8fr .8fr; gap: 8px; }
+    .choice-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+    .choice {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255,255,255,.42);
+      color: var(--ink-soft);
+      cursor: pointer;
+    }
+    .choice.is-selected { border-color: rgba(53, 123, 124, .45); background: var(--teal-soft); color: var(--teal); font-weight: 800; }
+    .rail-button {
+      width: 100%;
+      min-height: 46px;
+      margin-top: 7px;
+      border: 1px solid rgba(109, 88, 118, .25);
+      border-radius: 12px;
+      background: var(--violet-soft);
+      color: var(--violet-deep);
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .history-canvas { min-width: 0; padding: 24px 28px 30px; background: var(--shell); }
+    .candidate-index {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .candidate-tab {
+      min-width: 0;
+      min-height: 72px;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 12px;
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgba(255, 255, 255, .44);
+      text-align: left;
+      cursor: pointer;
+    }
+    .candidate-tab.is-selected { border-color: rgba(53, 123, 124, .42); background: var(--paper-strong); box-shadow: var(--shadow-soft); }
+    .candidate-no { color: var(--gold); font: 650 22px/1 var(--serif); }
+    .candidate-meta { min-width: 0; }
+    .candidate-meta small { display: block; color: var(--teal); font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+    .candidate-meta strong { display: block; margin: 3px 0 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .candidate-meta span { display: block; color: var(--ink-faint); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .history-sheet {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(250px, .65fr);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-panel);
+      background: var(--paper-strong);
+      overflow: hidden;
+    }
+    .history-story { min-width: 0; padding: 28px 30px 30px; }
+    .history-story header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 19px; border-bottom: 1px solid var(--line); }
+    .period-badge { display: inline-flex; align-items: center; gap: 7px; color: var(--teal); font-size: 11px; font-weight: 800; letter-spacing: .1em; }
+    .period-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--teal); }
+    .history-story h2 { margin: 7px 0 5px; font: 650 clamp(24px, 2vw, 32px)/1.25 var(--serif); }
+    .history-span { color: var(--ink-faint); font-size: 12px; }
+    .edition-mark { flex: 0 0 auto; padding: 5px 8px; border: 1px solid var(--gold-soft); color: var(--gold); font-size: 10px; letter-spacing: .12em; }
+    .prose {
+      max-width: 74ch;
+      margin: 22px 0 0;
+      color: #433b45;
+      font-family: var(--serif);
+      font-size: 16px;
+      line-height: 1.95;
+      text-align: justify;
+    }
+    .prose::first-letter { float: left; margin: .04em .15em 0 0; color: var(--violet); font-size: 3.1em; line-height: .82; }
+    .read-more { margin-top: 18px; border: 0; border-bottom: 1px solid var(--line-strong); background: transparent; color: var(--violet); font-weight: 700; cursor: pointer; }
+    .dossier { padding: 24px; border-left: 1px solid var(--line); background: #f5f0ea; }
+    .dossier h3 { margin-bottom: 16px; font: 650 17px/1.4 var(--serif); }
+    .fact { padding: 13px 0; border-top: 1px solid var(--line); }
+    .fact:first-of-type { border-top: 0; padding-top: 0; }
+    .fact dt { margin-bottom: 4px; color: var(--gold); font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+    .fact dd { margin: 0; color: var(--ink-soft); font-size: 13px; }
+    .confidence { display: flex; gap: 5px; margin-top: 8px; }
+    .confidence i { width: 24px; height: 3px; background: var(--line-strong); }
+    .confidence i.on { background: var(--teal); }
+
+    .node-strip { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: #f8f4ef; overflow: hidden; }
+    .node-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+    .node-head strong { font-family: var(--serif); }
+    .node-head span { color: var(--ink-faint); font-size: 11px; }
+    .nodes { display: grid; grid-template-columns: repeat(4, 1fr); }
+    .node {
+      position: relative;
+      min-width: 0;
+      min-height: 112px;
+      padding: 20px 16px 15px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .node:last-child { border-right: 0; }
+    .node::before { content: ""; position: absolute; top: 0; left: 16px; right: 16px; height: 2px; background: var(--line-strong); }
+    .node:hover, .node.is-selected { background: var(--paper-strong); }
+    .node.is-selected::before { background: var(--teal); }
+    .node small { color: var(--ink-faint); font-size: 10px; }
+    .node strong { display: block; margin: 5px 0 3px; font-family: var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .node span { display: block; color: var(--ink-soft); font-size: 11px; }
+
+    .action-dock {
+      position: sticky;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 14px;
+      padding: 13px 15px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(251, 248, 242, .94);
+      box-shadow: 0 15px 32px rgba(48, 38, 52, .12);
+    }
+    .selected-summary { min-width: 0; }
+    .selected-summary small { display: block; color: var(--ink-faint); font-size: 10px; letter-spacing: .1em; }
+    .selected-summary strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .primary {
+      min-height: 46px;
+      padding: 10px 20px;
+      border: 1px solid var(--violet-deep);
+      border-radius: 12px;
+      background: var(--violet-deep);
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .biography-view { background: #ece6e2; }
+    .biography-head {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 0 25px;
+      border-bottom: 1px solid var(--line);
+      background: var(--paper);
+    }
+    .biography-title { min-width: 0; }
+    .biography-title strong { display: block; font: 650 18px/1.3 var(--serif); }
+    .biography-title span { display: block; margin-top: 2px; color: var(--ink-faint); font-size: 11px; }
+    .biography-head > span { color: var(--ink-faint); font-size: 10px; letter-spacing: .08em; }
+    .biography-layout {
+      display: grid;
+      grid-template-columns: minmax(250px, 294px) minmax(0, 1fr);
+      gap: 16px;
+      min-height: 720px;
+      padding: 16px;
+    }
+
+    .archive-shelf {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-panel);
+      background: rgba(251, 248, 242, .72);
+    }
+    .shelf-head { padding: 20px 18px 15px; border-bottom: 1px solid var(--line); }
+    .shelf-head small { color: var(--teal); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+    .shelf-head h2 { margin: 5px 0 0; font: 650 20px/1.3 var(--serif); }
+    .book-search {
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr);
+      align-items: center;
+      gap: 7px;
+      margin: 14px;
+      padding: 0 11px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .58);
+      color: var(--ink-faint);
+    }
+    .book-search input { min-width: 0; height: 43px; border: 0; outline: 0; background: transparent; color: var(--ink); }
+    .archive-books { display: grid; padding: 0 9px; }
+    .library-book {
+      width: 100%;
+      min-height: 76px;
+      display: grid;
+      grid-template-columns: 5px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 11px;
+      padding: 10px 9px 10px 7px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .library-book:last-child { border-bottom: 0; }
+    .library-book:hover, .library-book.is-selected { background: rgba(53, 123, 124, .075); }
+    .library-book::before { content: ""; width: 5px; height: 48px; border-radius: 3px; background: var(--book-color, var(--violet)); }
+    .library-book span { min-width: 0; }
+    .library-book strong { display: block; overflow: hidden; font: 650 13px/1.35 var(--serif); text-overflow: ellipsis; white-space: nowrap; }
+    .library-book small { display: block; margin-top: 5px; color: var(--ink-faint); font-size: 10px; }
+    .library-book em { align-self: start; padding: 2px 5px; border: 1px solid rgba(53, 123, 124, .24); border-radius: 999px; color: var(--teal); font-size: 9px; font-style: normal; }
+    .shelf-foot { margin-top: auto; padding: 13px 17px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 10px; }
+
+    .reading-stage {
+      position: relative;
+      min-width: 0;
+      min-height: 686px;
+      padding: 18px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-panel);
+      background:
+        radial-gradient(circle at 50% 8%, rgba(109, 88, 118, .09), transparent 30rem),
+        linear-gradient(135deg, rgba(255,255,255,.35), transparent 45%),
+        #ded8d5;
+      perspective: 1800px;
+    }
+    .reading-stage::before {
+      content: "";
+      position: absolute;
+      inset: 22px;
+      border: 1px solid rgba(109, 88, 118, .08);
+      border-radius: 18px;
+      pointer-events: none;
+    }
+    .codex-sample {
+      position: relative;
+      width: min(960px, 96%);
+      min-height: 610px;
+      transform-style: preserve-3d;
+    }
+    .codex-cover-sample,
+    .codex-spread-sample {
+      position: absolute;
+      inset: 0;
+      min-height: 610px;
+      border-radius: 10px 18px 18px 10px;
+    }
+    .codex-cover-sample {
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      padding: 46px;
+      overflow: hidden;
+      border: 1px solid #927950;
+      color: #554127;
+      background:
+        repeating-linear-gradient(135deg, transparent 0 19px, rgba(84,61,33,.045) 19px 20px),
+        repeating-linear-gradient(45deg, transparent 0 19px, rgba(84,61,33,.035) 19px 20px),
+        radial-gradient(circle at 50% 45%, rgba(109,88,118,.08), transparent 42%),
+        #d8c6a9;
+      box-shadow: 0 24px 48px rgba(45, 35, 48, .18), inset 18px 0 24px rgba(78, 57, 35, .08);
+      transform-origin: left center;
+      backface-visibility: hidden;
+      transition: transform 620ms cubic-bezier(.65,.05,.32,1), opacity 180ms linear 410ms;
+      cursor: pointer;
+    }
+    .codex-cover-sample::before {
+      content: "";
+      position: absolute;
+      inset: 26px;
+      border: 1px solid rgba(86, 62, 34, .22);
+      border-radius: 4px 12px 12px 4px;
+      box-shadow: inset 0 0 0 7px rgba(230, 215, 189, .28), inset 0 0 0 8px rgba(86, 62, 34, .09);
+    }
+    .codex-cover-sample::after { content: ""; position: absolute; left: 18px; top: 0; bottom: 0; width: 4px; background: rgba(84,61,33,.16); box-shadow: 5px 0 0 rgba(255,255,255,.12); }
+    .cover-copy-sample { position: relative; z-index: 1; width: min(650px, 86%); text-align: center; }
+    .cover-copy-sample small { color: var(--teal); font-size: 11px; font-weight: 800; letter-spacing: .18em; }
+    .cover-copy-sample h1 { margin: 26px 0 15px; font-size: clamp(34px, 4vw, 52px); }
+    .cover-copy-sample p { max-width: 610px; margin: 0 auto 21px; font-family: var(--serif); font-size: 15px; }
+    .book-meta { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; }
+    .meta-chip { padding: 5px 8px; border: 1px solid rgba(103,78,44,.24); color: #725838; font-size: 10px; }
+    .open-book { margin-top: 25px; }
+    .codex-sample.is-open .codex-cover-sample { opacity: 0; transform: rotateY(-108deg); pointer-events: none; }
+
+    .codex-spread-sample {
+      overflow: hidden;
+      border: 1px solid rgba(90,65,37,.24);
+      color: #433528;
+      background: #e8dcc8;
+      box-shadow: 0 24px 52px rgba(45, 35, 48, .19);
+      opacity: .68;
+      transform: translateX(-8px) scale(.994);
+      transition: opacity 380ms var(--ease) 120ms, transform 500ms var(--ease) 80ms;
+    }
+    .codex-sample.is-open .codex-spread-sample { opacity: 1; transform: none; }
+    .book-page {
+      position: relative;
+      min-width: 0;
+      min-height: 610px;
+      padding: 42px 72px 52px;
+      background:
+        radial-gradient(circle at 16% 16%, rgba(255,255,255,.24) 0 1px, transparent 1.5px) 0 0 / 24px 20px,
+        linear-gradient(rgba(92,65,35,.025) 50%, transparent 50%) 0 0 / 100% 5px,
+        #e8dcc8;
+      font-family: var(--serif);
+      box-shadow: inset 18px 0 24px rgba(91,67,40,.045), inset -18px 0 24px rgba(91,67,40,.045);
+    }
+    .book-page-inner { width: min(720px, 100%); margin: 0 auto; }
+    .page-label { color: #87642c; font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+    .book-page h2 { margin: 7px 0 12px; font-size: 23px; }
+    .book-page-inner > p { margin-bottom: 22px; font-size: 14px; line-height: 1.9; text-align: justify; }
+    .chapter-list { display: grid; margin-top: 18px; border-top: 1px solid rgba(92,65,35,.22); }
+    .chapter-row { padding: 12px 2px; border-bottom: 1px solid rgba(92,65,35,.18); }
+    .chapter-row strong { display: block; font-size: 14px; }
+    .chapter-row span { display: block; margin-top: 2px; color: #806d51; font-size: 10px; }
+    .chapter-active { padding: 15px 16px; border: 1px solid rgba(92,65,35,.2); background: rgba(255,255,255,.14); }
+    .chapter-active h3 { margin: 0 0 10px; font-size: 18px; }
+    .chapter-active p { margin: 0; font-size: 14px; line-height: 1.9; text-align: justify; }
+    .page-folio { position: absolute; bottom: 15px; left: 0; right: 0; color: rgba(67,53,40,.55); font: 10px/1 var(--sans); text-align: center; letter-spacing: .12em; }
+    .close-book {
+      position: absolute;
+      right: 17px;
+      top: 15px;
+      z-index: 4;
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(92,65,35,.2);
+      border-radius: 50%;
+      background: rgba(255,255,255,.15);
+      color: #705b3f;
+      cursor: pointer;
+    }
+    .volume-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 27px 0 16px;
+      color: #87642c;
+      font: 800 10px/1 var(--sans);
+      letter-spacing: .16em;
+    }
+    .volume-divider::before,
+    .volume-divider::after { content: ""; flex: 1; height: 1px; background: rgba(92,65,35,.2); }
+
+    @media (max-width: 1080px) {
+      .page-head { grid-template-columns: 1fr; }
+      .ruin-layout { grid-template-columns: 280px minmax(0, 1fr); }
+      .history-sheet { grid-template-columns: 1fr; }
+      .dossier { border-left: 0; border-top: 1px solid var(--line); }
+      .biography-layout { grid-template-columns: 248px minmax(0, 1fr); }
+      .codex-sample { width: 100%; }
+    }
+
+    @media (max-width: 760px) {
+      .app { width: 100%; min-height: 100dvh; margin: 0; border-radius: 0; }
+      .topbar { grid-template-columns: 1fr auto; padding: 10px 14px; }
+      .view-tabs { grid-column: 1 / -1; grid-row: 2; justify-content: center; }
+      .top-actions { grid-column: 2; grid-row: 1; }
+      .page-head { padding: 25px 20px; }
+      .stepper { grid-template-columns: repeat(2, 1fr); gap: 18px 0; }
+      .ruin-layout { display: block; }
+      .parameter-rail { border-right: 0; border-bottom: 1px solid var(--line); }
+      .history-canvas { padding: 18px 14px 24px; }
+      .candidate-index { grid-template-columns: 1fr; }
+      .history-story { padding: 22px 19px; }
+      .nodes { grid-template-columns: repeat(2, 1fr); }
+      .node:nth-child(2) { border-right: 0; }
+      .node:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+      .action-dock { align-items: stretch; flex-direction: column; }
+      .primary { width: 100%; }
+      .biography-head { align-items: flex-start; flex-direction: column; padding: 16px 18px; }
+      .biography-layout { grid-template-columns: 1fr; padding: 10px; }
+      .archive-books { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .shelf-foot { display: none; }
+      .reading-stage { min-height: 570px; padding: 10px; }
+      .codex-sample, .codex-cover-sample, .codex-spread-sample { min-height: 530px; }
+      .codex-spread-sample { overflow: auto; }
+      .book-page { min-height: auto; padding: 30px 24px 44px; }
+      .codex-cover-sample { padding: 28px 20px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand" aria-label="伊雍历史工作台">
+        <span class="brand-mark" aria-hidden="true">伊</span>
+        <span><strong>伊雍历史工作台</strong><small>COURT EDITORIAL ARCHIVE</small></span>
+      </div>
+
+      <nav class="view-tabs" aria-label="样稿页面">
+        <button class="view-tab" type="button" data-view-target="ruin" aria-selected="true">墟境勘录</button>
+        <button class="view-tab" type="button" data-view-target="biography" aria-selected="false">王庭传记</button>
+      </nav>
+
+      <div class="top-actions">
+        <button class="icon-button" type="button" aria-label="刷新样稿">↻</button>
+        <button class="icon-button" type="button" aria-label="关闭样稿">×</button>
+      </div>
+    </header>
+
+    <section class="view is-active" data-view="ruin">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Ruin Cartography · 07</p>
+          <h1>墟境候选与四阶段入口</h1>
+          <p class="page-intro">先定史料边界，再审阅候选因果。界面只保留一个主任务：选择值得进入的历史节点。</p>
+        </div>
+        <div class="stepper" aria-label="墟境生成流程">
+          <div class="step"><span class="step-number">01</span><strong>范围设定</strong><span>纪元、地点与跨度</span></div>
+          <div class="step"><span class="step-number">02</span><strong>史料锚点</strong><span>人物与传记参照</span></div>
+          <div class="step is-active"><span class="step-number">03</span><strong>候选审阅</strong><span>因果与正文核验</span></div>
+          <div class="step"><span class="step-number">04</span><strong>节点进入</strong><span>选择具体时刻</span></div>
+        </div>
+      </header>
+
+      <div class="ruin-layout">
+        <aside class="parameter-rail" aria-label="墟境参数">
+          <div class="section-kicker">勘录条件</div>
+          <div class="field">
+            <label for="era">所属纪元</label>
+            <select class="control" id="era"><option>复兴纪元</option><option>自定义纪元</option></select>
+          </div>
+          <div class="field">
+            <label>起始时间</label>
+            <div class="date-row"><input class="control" value="450" aria-label="起始年"><input class="control" value="2" aria-label="起始月"><input class="control" value="11" aria-label="起始日"></div>
+          </div>
+          <div class="field">
+            <label>结束时间</label>
+            <div class="date-row"><input class="control" value="450" aria-label="结束年"><input class="control" value="5" aria-label="结束月"><input class="control" value="19" aria-label="结束日"></div>
+          </div>
+          <div class="field">
+            <label for="location">地点范围</label>
+            <input class="control" id="location" value="梵尼亚 · 神迹群山 · 圣纹工坊">
+            <small>已关联 3 条世界书地点资料。</small>
+          </div>
+          <div class="field">
+            <label for="direction">补充方向</label>
+            <textarea class="control" id="direction">寻找哈姆斯沃思家族形成谨慎门风的早期事件。</textarea>
+          </div>
+          <div class="field">
+            <label>候选数量</label>
+            <div class="choice-row"><button class="choice is-selected" type="button">3</button><button class="choice" type="button">4</button><button class="choice" type="button">5</button></div>
+          </div>
+          <button class="rail-button" type="button">重新推演候选</button>
+        </aside>
+
+        <div class="history-canvas">
+          <div class="candidate-index" role="tablist" aria-label="墟境候选">
+            <button class="candidate-tab is-selected" type="button" role="tab" aria-selected="true"><span class="candidate-no">01</span><span class="candidate-meta"><small>动荡期</small><strong>绝壁抄录日</strong><span>450年3月12日—4月5日</span></span></button>
+            <button class="candidate-tab" type="button" role="tab" aria-selected="false"><span class="candidate-no">02</span><span class="candidate-meta"><small>过渡期</small><strong>冷槽淬金术</strong><span>450年7月4日—8月19日</span></span></button>
+            <button class="candidate-tab" type="button" role="tab" aria-selected="false"><span class="candidate-no">03</span><span class="candidate-meta"><small>稳定期</small><strong>冬至风铃祭</strong><span>450年11月20日—12月31日</span></span></button>
+          </div>
+
+          <article class="history-sheet">
+            <div class="history-story">
+              <header>
+                <div><span class="period-badge">动荡期</span><h2>绝壁抄录日</h2><span class="history-span">复兴纪元450年3月12日 —— 450年4月5日</span></div>
+                <span class="edition-mark">候选 01 / 03</span>
+              </header>
+              <p class="prose">复兴纪元四百五十年早春，神迹群山的风雪尚未退尽。圣纹工坊里，十五岁的瓦伦与兄长埃利亚斯在灯油将尽的夜里核对军备图册。贵族监工带来的新名录删去了下层匠户原有的叙职资格，也把两兄弟推到必须选择沉默或抗辩的关口。那一夜留下的并非英雄史诗，而是一套在压迫中形成的核账习惯；它后来沿着家族文书，沉入哈姆斯沃思一脉谨慎而执拗的门风。</p>
+              <button class="read-more" type="button">展开完整史稿</button>
+            </div>
+            <aside class="dossier">
+              <h3>编辑边注</h3>
+              <dl>
+                <div class="fact"><dt>演变</dt><dd>兄弟二人在军备册整肃中学会互相复核，以避免独自承担文书罪责。</dd></div>
+                <div class="fact"><dt>转向</dt><dd>动荡期 → 稳定期</dd></div>
+                <div class="fact"><dt>因果钉</dt><dd>叙职名录被改写，家族必须用更严苛的内部核验保护自身。</dd></div>
+                <div class="fact"><dt>史料可信度</dt><dd>两条明确资料，三处时代推断。<span class="confidence" aria-label="可信度三格中的两格"><i class="on"></i><i class="on"></i><i></i></span></dd></div>
+              </dl>
+            </aside>
+          </article>
+
+          <section class="node-strip" aria-label="因果节点">
+            <div class="node-head"><strong>四阶段投影</strong><span>四个节点均可进入；正文共享，落点与开场不同。</span></div>
+            <div class="nodes">
+              <button class="node is-selected" type="button"><small>缘起 · 08:15</small><strong>霜风中的微颤</strong><span>监工抵达前</span></button>
+              <button class="node" type="button"><small>经过 · 14:30</small><strong>贵族监工的督令</strong><span>名册被宣读</span></button>
+              <button class="node" type="button"><small>高潮 · 22:40</small><strong>地火改道之夜</strong><span>冲突即将发生</span></button>
+              <button class="node" type="button"><small>结果 · 10:00</small><strong>降等与沉默</strong><span>余波开始固化</span></button>
+            </div>
+          </section>
+
+          <div class="action-dock">
+            <div class="selected-summary"><small>当前选择</small><strong>候选 01 · 缘起「霜风中的微颤」</strong></div>
+            <button class="primary" type="button">进入这一历史节点</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view biography-view" data-view="biography">
+      <header class="biography-head">
+        <div class="biography-title"><strong>虚嗣王庭传记书库</strong><span>按当前聊天收纳传记全文，并参与谱系与墟境检索</span></div>
+        <span>右键管理传记 · 选中后先查看封面</span>
+      </header>
+
+      <div class="biography-layout">
+        <aside class="archive-shelf" aria-label="藏书目录">
+          <header class="shelf-head"><small>ARCHIVE SHELF · 04</small><h2>藏书目录</h2></header>
+          <label class="book-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="检索传记" aria-label="检索传记"></label>
+          <div class="archive-books">
+            <button class="library-book is-selected" style="--book-color:#6d5876" type="button"><span><strong>《这根烤串的油烟与铁签小史》</strong><small>6卷 · 复兴纪元481—488年</small></span><em>墟境参考</em></button>
+            <button class="library-book" style="--book-color:#357b7c" type="button"><span><strong>《暮潮手札移交公案》</strong><small>5卷 · 复兴纪元484—485年</small></span></button>
+            <button class="library-book" style="--book-color:#8b654b" type="button"><span><strong>《黑曜监牢逃亡录》</strong><small>4卷 · 复兴纪元480—481年</small></span></button>
+            <button class="library-book" style="--book-color:#68745a" type="button"><span><strong>《圣纹工坊与沉默家门》</strong><small>6卷 · 复兴纪元450—488年</small></span></button>
+          </div>
+          <footer class="shelf-foot">显示 4 份档案 · 按最近更新排序</footer>
+        </aside>
+
+        <main class="reading-stage">
+          <article class="codex-sample">
+            <section class="codex-cover-sample" role="button" tabindex="0" aria-label="展开王庭典籍" data-open-codex>
+              <div class="cover-copy-sample">
+                <small>ROOT TRACE · SERPENT BIOGRAPHY</small>
+                <h1>《这根烤串的油烟与铁签小史》</h1>
+                <p>从军港防波堤的废铁丝绞肉，到流转于街巷食肆的焦香物证。</p>
+                <div class="book-meta"><span class="meta-chip">复兴纪元481—488年</span><span class="meta-chip">6个历史时期</span><span class="meta-chip">版本 R1 · 已归档</span></div>
+                <button class="primary open-book" type="button">展开王庭典籍</button>
+              </div>
+            </section>
+
+            <section class="codex-spread-sample" aria-label="传记正文">
+              <section class="book-page">
+                <button class="close-book" type="button" aria-label="返回封面" onclick="this.closest('.codex-sample').classList.remove('is-open'); return false;">×</button>
+                <div class="book-page-inner">
+                  <span class="page-label">ORIGIN · 起源</span>
+                  <h2>军港废铁的第二次生命</h2>
+                  <p>复兴纪元四八一年，军港防波堤翻修留下的废弩丝与扭曲铁条被泥水匠格罗特收进工具棚。最初它们只是用于洞穿甲胄缝隙的细杆，后来却在炭火与油脂之间获得了另一种用途。</p>
+                  <div class="chapter-list">
+                    <div class="chapter-row"><strong>水道风隙与防波堤猎头</strong><span>稳定期 · 复兴纪元481年1月—12月</span></div>
+                    <div class="chapter-row"><strong>退役弩丝与炙肉钢签</strong><span>过渡期 · 复兴纪元483年1月—11月</span></div>
+                    <div class="chapter-row"><strong>外港食肆的流传</strong><span>稳定期 · 复兴纪元485年3月—486年8月</span></div>
+                  </div>
+                  <div class="volume-divider">VOLUME II · 过渡期</div>
+                  <div class="chapter-active"><h3>退役弩丝与炙肉钢签</h3><p>泥水匠将拆下的弹簧副钢丝细长柔韧，却因带倒刺难以熔铸，被当作废渣倾倒在道旁泥沟里。守着修械炉的老铁匠布兰登披着浓痰，挑出两根被海风蚀出发蓝光泽的钢丝，随手用砂轮抹去倒刺，又在淬火水槽里顺势甩出尖头。那批曾经绞紧机关、随时准备洞穿甲胄的杀伐精钢，从此成了街巷炉火旁最寻常的炙肉工具。</p></div>
+                  <div class="chapter-list"><div class="chapter-row"><strong>现世续章</strong><span>蜜醋、红盐与一枚铜角子</span></div><div class="chapter-row"><strong>传记总结</strong><span>王庭档案同样记得普通人的炉火</span></div></div>
+                </div>
+                <span class="page-folio">— 王庭档案 · 12 —</span>
+              </section>
+            </section>
+          </article>
+        </main>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const viewButtons = [...document.querySelectorAll('[data-view-target]')];
+    const views = [...document.querySelectorAll('[data-view]')];
+
+    function showView(name) {
+      viewButtons.forEach(button => button.setAttribute('aria-selected', String(button.dataset.viewTarget === name)));
+      views.forEach(view => view.classList.toggle('is-active', view.dataset.view === name));
+      history.replaceState(null, '', `#${name}`);
+    }
+
+    viewButtons.forEach(button => button.addEventListener('click', () => showView(button.dataset.viewTarget)));
+
+    document.querySelectorAll('.choice').forEach(button => button.addEventListener('click', () => {
+      button.parentElement.querySelectorAll('.choice').forEach(item => item.classList.remove('is-selected'));
+      button.classList.add('is-selected');
+    }));
+
+    document.querySelectorAll('.candidate-tab').forEach(button => button.addEventListener('click', () => {
+      document.querySelectorAll('.candidate-tab').forEach(item => {
+        item.classList.remove('is-selected');
+        item.setAttribute('aria-selected', 'false');
+      });
+      button.classList.add('is-selected');
+      button.setAttribute('aria-selected', 'true');
+    }));
+
+    document.querySelectorAll('.node').forEach(button => button.addEventListener('click', () => {
+      document.querySelectorAll('.node').forEach(item => item.classList.remove('is-selected'));
+      button.classList.add('is-selected');
+      const summary = document.querySelector('.selected-summary strong');
+      summary.textContent = `候选 01 · ${button.querySelector('small').textContent.split(' · ')[0]}「${button.querySelector('strong').textContent}」`;
+    }));
+
+    const codex = document.querySelector('.codex-sample');
+    const openCodex = () => codex?.classList.add('is-open');
+    document.querySelector('[data-open-codex]')?.addEventListener('click', openCodex);
+    document.querySelector('[data-open-codex]')?.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openCodex();
+      }
+    });
+    document.querySelector('.open-book')?.addEventListener('click', event => {
+      event.stopPropagation();
+      openCodex();
+    });
+    document.querySelector('.close-book')?.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      codex?.classList.remove('is-open');
+    });
+    document.querySelectorAll('.library-book').forEach(button => button.addEventListener('click', () => {
+      document.querySelectorAll('.library-book').forEach(item => item.classList.remove('is-selected'));
+      button.classList.add('is-selected');
+      codex?.classList.remove('is-open');
+    }));
+
+    showView(location.hash === '#biography' ? 'biography' : 'ruin');
+  </script>
+</body>
+</html>

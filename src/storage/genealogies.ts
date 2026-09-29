@@ -4,6 +4,8 @@ import type {
   GenealogyGenerationInput,
   GenealogyResult,
 } from '../schemas/genealogy.ts';
+import type { ArtifactCanonBinding } from '../retrieval/contracts.ts';
+import type { GenealogyLocalEvidence, GenealogyLocalView } from '../core/genealogyLocalView.ts';
 import {
   GENEALOGY_STORE,
   historyDatabase,
@@ -21,6 +23,13 @@ export interface GenealogyRecord {
   sourceHash: string;
   input: GenealogyGenerationInput;
   result: GenealogyResult;
+  /** P2-A：每个 node/edge 的不可变 Canon 依赖；旧记录缺省即 unbound。 */
+  canonBindings?: ArtifactCanonBinding[];
+  /** P4-B immutable script-owned identity and temporal evidence receipt. */
+  localEvidence?: GenealogyLocalEvidence;
+  validationWarnings?: string[];
+  /** Read-time UI envelope only; never persisted by the generation workflow. */
+  localView?: GenealogyLocalView;
   createdAt: number;
 }
 
@@ -28,6 +37,7 @@ export interface GenealogyRepository {
   save(record: GenealogyRecord): Promise<void>;
   get(key: string): Promise<GenealogyRecord | null>;
   list(namespace: WorkbenchNamespace): Promise<GenealogyRecord[]>;
+  clear(namespace: WorkbenchNamespace): Promise<number>;
 }
 
 export function genealogyRecordKey(
@@ -56,6 +66,16 @@ export class MemoryGenealogyRepository implements GenealogyRepository {
         record.namespace.characterKey === namespace.characterKey
         && record.namespace.chatId === namespace.chatId)
       .map(record => structuredClone(record));
+  }
+
+  async clear(namespace: WorkbenchNamespace): Promise<number> {
+    const keys = [...this.records.entries()]
+      .filter(([, record]) =>
+        record.namespace.characterKey === namespace.characterKey
+        && record.namespace.chatId === namespace.chatId)
+      .map(([key]) => key);
+    keys.forEach(key => this.records.delete(key));
+    return keys.length;
   }
 }
 
@@ -98,5 +118,17 @@ export class IndexedDbGenealogyRepository implements GenealogyRepository {
     );
     await transactionComplete(transaction);
     return records.map(({ namespaceKey: _namespaceKey, ...record }) => record);
+  }
+
+  async clear(namespace: WorkbenchNamespace): Promise<number> {
+    const database = await historyDatabase();
+    const transaction = database.transaction(GENEALOGY_STORE, 'readwrite');
+    const store = transaction.objectStore(GENEALOGY_STORE);
+    const keys = await requestResult(
+      store.index('namespace').getAllKeys(namespaceKey(namespace)),
+    );
+    keys.forEach(key => store.delete(key));
+    await transactionComplete(transaction);
+    return keys.length;
   }
 }

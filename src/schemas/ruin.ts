@@ -1,12 +1,29 @@
 import { z } from 'zod';
 
-export const EyonEraSchema = z.enum([
+z.config({ jitless: true });
+
+export const KNOWN_EYON_ERAS = [
   '创世纪元',
   '神明纪元',
   '混乱纪元',
   '英雄纪元',
   '复兴纪元',
-]);
+] as const;
+
+export type KnownEyonEra = typeof KNOWN_EYON_ERAS[number];
+
+/**
+ * 墟境可读取角色卡扩展自定义的纪年名。这里只接受一个简短的
+ * 纪年标识；具体是否真实存在，由墟境 Context 在完整世界书语料中
+ * 做精确锚定，而不在 schema 里猜测。
+ */
+export const EyonEraSchema = z.preprocess(
+  value => typeof value === 'string' ? value.normalize('NFKC').trim() : value,
+  z.string()
+    .min(2, '纪年名称至少需要2个字符')
+    .max(32, '纪年名称不得超过32个字符')
+    .refine(value => !/[\r\n<>]/u.test(value), '纪年名称不得包含换行或标签字符'),
+);
 
 export const RuinPeriodTypeSchema = z.enum([
   'stable',
@@ -24,8 +41,153 @@ export const RuinWaveLevelSchema = z.enum([
 const NullableCalendarPart = z.number().int().nullable();
 const SourceRefs = z.array(z.string().min(1));
 
+const HISTORY_PROSE_TARGET_MAX = 650;
+const HISTORY_PROSE_SENTENCE_FLOOR = 480;
+
+function chineseCharacterCount(source: string): number {
+  return source.match(/\p{Script=Han}/gu)?.length ?? 0;
+}
+
+function normalizeHistoryProse(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const source = value.trim();
+  if (chineseCharacterCount(source) <= HISTORY_PROSE_TARGET_MAX) return source;
+
+  let hanCount = 0;
+  let hardCut = source.length;
+  let sentenceCut = -1;
+  for (let index = 0; index < source.length;) {
+    const codePoint = source.codePointAt(index);
+    if (codePoint === undefined) break;
+    const character = String.fromCodePoint(codePoint);
+    const width = character.length;
+    if (/\p{Script=Han}/u.test(character)) hanCount += 1;
+    if (
+      hanCount >= HISTORY_PROSE_SENTENCE_FLOOR
+      && hanCount <= HISTORY_PROSE_TARGET_MAX
+      && /[。！？；]/u.test(character)
+    ) {
+      sentenceCut = index + width;
+    }
+    if (hanCount >= HISTORY_PROSE_TARGET_MAX) {
+      hardCut = index + width;
+      break;
+    }
+    index += width;
+  }
+
+  const cut = sentenceCut >= 0 ? sentenceCut : hardCut;
+  const trimmed = source.slice(0, cut).trimEnd();
+  return /[。！？；]$/u.test(trimmed) ? trimmed : `${trimmed}。`;
+}
+
+function ruinNodeTimeTuple(value: unknown): number[] | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const time = (value as Record<string, unknown>).time;
+  if (!time || typeof time !== 'object' || Array.isArray(time)) return null;
+  const record = time as Record<string, unknown>;
+  if (typeof record.year !== 'number') return null;
+  return [
+    record.year,
+    typeof record.month === 'number' ? record.month : 0,
+    typeof record.day === 'number' ? record.day : 0,
+    typeof record.hour === 'number' ? record.hour : 0,
+    typeof record.minute === 'number' ? record.minute : 0,
+  ];
+}
+
+function compareTimeTuple(left: number[], right: number[]): number {
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const difference = (left[index] ?? 0) - (right[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+function normalizeRuinNodeOrder(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value
+    .map((node, index) => ({ node, index, time: ruinNodeTimeTuple(node) }))
+    .sort((left, right) => {
+      if (!left.time || !right.time) return left.index - right.index;
+      return compareTimeTuple(left.time, right.time) || left.index - right.index;
+    })
+    .map(item => item.node);
+}
+
+const RUIN_CAST_KIND_ALIASES: Readonly<Record<string, string>> = {
+  individual: 'person',
+  character: 'person',
+  npc: 'person',
+  '人物': 'person',
+  '个人': 'person',
+  clan: 'family',
+  house: 'family',
+  lineage: 'family',
+  dynasty: 'family',
+  '家族': 'family',
+  '宗族': 'family',
+  '氏族': 'family',
+  institution: 'organization',
+  guild: 'organization',
+  church: 'organization',
+  company: 'organization',
+  academy: 'organization',
+  order: 'organization',
+  '组织': 'organization',
+  '机构': 'organization',
+  '教会': 'organization',
+  '行会': 'organization',
+  '商会': 'organization',
+  '学院': 'organization',
+  camp: 'faction',
+  bloc: 'faction',
+  party: 'faction',
+  force: 'faction',
+  '势力': 'faction',
+  '阵营': 'faction',
+  '派系': 'faction',
+  settlement: 'community',
+  village: 'community',
+  town: 'community',
+  population: 'community',
+  '社群': 'community',
+  '社区': 'community',
+  '聚落': 'community',
+  '村镇': 'community',
+};
+
+function normalizeRuinCastKind(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const normalized = value.normalize('NFKC').trim().toLocaleLowerCase('en-US');
+  return RUIN_CAST_KIND_ALIASES[normalized] ?? normalized;
+}
+
+function normalizeModelBoolean(value: unknown): unknown {
+  if (typeof value === 'boolean') return value;
+  if (value === 1) return true;
+  if (value === 0) return false;
+  if (typeof value !== 'string') return value;
+  const normalized = value.normalize('NFKC').trim().toLocaleLowerCase('en-US');
+  if (['true', 'yes', 'y', '1', '是', '真', '通过', '符合'].includes(normalized)) {
+    return true;
+  }
+  if (['false', 'no', 'n', '0', '否', '假', '不通过', '不符合'].includes(normalized)) {
+    return false;
+  }
+  return value;
+}
+
+function normalizeInferenceFlag(value: unknown): boolean {
+  const normalized = normalizeModelBoolean(value);
+  return typeof normalized === 'boolean' ? normalized : true;
+}
+
+const ModelBoolean = z.preprocess(normalizeModelBoolean, z.boolean());
+const InferenceBoolean = z.preprocess(normalizeInferenceFlag, z.boolean());
+
 export const RuinDateSchema = z.strictObject({
-  year: z.number().int(),
+  year: z.number().int().nullable(),
   month: NullableCalendarPart,
   day: NullableCalendarPart,
 });
@@ -44,7 +206,12 @@ const RuinBranchSchema = z.strictObject({
 const RuinInterestSchema = z.strictObject({
   actor: z.string().min(1),
   wants: z.string().min(1),
-  fears: z.string().min(1),
+  fears: z.preprocess(
+    value => typeof value === 'string' && value.trim()
+      ? value.trim()
+      : '其既有立场、资源或安全保障遭到破坏',
+    z.string().min(1),
+  ),
 });
 
 export const RuinNodeSchema = z.strictObject({
@@ -63,20 +230,23 @@ export const RuinNodeSchema = z.strictObject({
   visibleTrace: z.string().min(1),
   intervention: z.string(),
   possibleBranches: z.array(RuinBranchSchema),
-  enterable: z.boolean(),
-  inference: z.boolean(),
+  enterable: ModelBoolean,
+  inference: InferenceBoolean,
   sourceRefs: SourceRefs,
 });
 
 const RuinCastSchema = z.strictObject({
   name: z.string().min(1),
-  kind: z.enum(['person', 'family', 'organization', 'faction', 'community']),
+  kind: z.preprocess(
+    normalizeRuinCastKind,
+    z.enum(['person', 'family', 'organization', 'faction', 'community']),
+  ),
   identity: z.string().min(1),
   role: z.string().min(1),
   desire: z.string().min(1),
   constraint: z.string().min(1),
   sourceRefs: SourceRefs,
-  inference: z.boolean(),
+  inference: InferenceBoolean,
 });
 
 const SelectedCharacterUsageSchema = z.strictObject({
@@ -107,6 +277,27 @@ const BiographyUsageSchema = z.strictObject({
   explanation: z.string().min(1),
 });
 
+const RuinCanonInterpretationSchema = z.strictObject({
+  /** 默认是独立事件；只有史料确实语焉不详时，才把多个候选声明为互斥解释。 */
+  mode: z.enum(['independent-event', 'alternative-interpretation']),
+  hypothesis: z.string().min(1),
+  evidenceFactIds: z.array(z.string().min(1)),
+  /** 世界书/MVU/历史产物中的 passage-local 证据；与人物 factId 严格分栏。 */
+  evidencePassageIds: z.array(z.string().min(1)).optional(),
+  eventUsages: z.array(z.strictObject({
+    eventId: z.string().min(1),
+    usage: z.enum(['occurs', 'aftermath', 'recollection', 'evidence', 'background']),
+    explanation: z.string().min(1),
+  })).min(1),
+  assumptions: z.array(z.strictObject({
+    claim: z.string().min(1),
+    evidenceFactIds: z.array(z.string().min(1)),
+    evidencePassageIds: z.array(z.string().min(1)).optional(),
+    confidence: z.enum(['high', 'medium', 'low']),
+    alternatives: z.array(z.string().min(1)),
+  })),
+});
+
 export const RuinCandidateSchema = z.strictObject({
   id: z.string().min(1),
   candidateKey: z.string().min(1),
@@ -119,7 +310,7 @@ export const RuinCandidateSchema = z.strictObject({
   }),
   premise: z.string().min(1),
   summary: z.string().min(1),
-  historyProse: z.string().min(1),
+  historyProse: z.preprocess(normalizeHistoryProse, z.string().min(1)),
   fusion: z.strictObject({
     normalOrder: z.string().min(1),
     latentFault: z.string().min(1),
@@ -148,7 +339,10 @@ export const RuinCandidateSchema = z.strictObject({
     to: RuinPeriodTypeSchema,
     explanation: z.string().min(1),
   }),
-  nodes: z.array(RuinNodeSchema).min(4).max(8),
+  nodes: z.preprocess(
+    normalizeRuinNodeOrder,
+    z.array(RuinNodeSchema).min(4).max(8),
+  ),
   cast: z.array(RuinCastSchema).min(1),
   selectedCharacterUsage: z.array(SelectedCharacterUsageSchema),
   historicalTexture: z.strictObject({
@@ -159,16 +353,18 @@ export const RuinCandidateSchema = z.strictObject({
   }),
   sourceRefs: SourceRefs,
   biographyUsage: z.array(BiographyUsageSchema).max(3),
+  /** P0-C 机器可读解释回执；旧缓存可缺省，新提纲会确定性补齐。 */
+  canonInterpretation: RuinCanonInterpretationSchema.optional(),
   inferenceNotes: z.array(z.string().min(1)),
   qualityChecks: z.strictObject({
-    threeMaterialsIntegrated: z.boolean(),
-    causalChainComplete: z.boolean(),
-    anomalyEnterable: z.boolean(),
-    timelineConsistent: z.boolean(),
-    distinctFromOtherCandidates: z.boolean(),
-    supplementaryDirectionFulfilled: z.boolean(),
-    selectedCharactersReconciled: z.boolean(),
-    clicheDependence: z.boolean(),
+    threeMaterialsIntegrated: ModelBoolean,
+    causalChainComplete: ModelBoolean,
+    anomalyEnterable: ModelBoolean,
+    timelineConsistent: ModelBoolean,
+    distinctFromOtherCandidates: ModelBoolean,
+    supplementaryDirectionFulfilled: ModelBoolean,
+    selectedCharactersReconciled: ModelBoolean,
+    clicheDependence: ModelBoolean,
   }),
 });
 
@@ -182,6 +378,36 @@ export const RuinCandidatesSchema = z.strictObject({
     candidateCount: z.number().int().min(3).max(5),
   }),
   candidates: z.array(RuinCandidateSchema).min(3).max(5),
+  // 候选重名提示（internal.76 收尾 A3）：跨候选相同名字但不同身份 → warning，不 repair。
+  castNameWarnings: z.array(z.string()).default([]),
+});
+
+export const RuinCandidateResponseSchema = z.strictObject({
+  schema: z.literal('eyon.ruin.candidate.v1'),
+  requestId: z.string().min(1),
+  era: EyonEraSchema,
+  location: z.string().min(1),
+  candidateKey: z.string().min(1),
+  candidate: RuinCandidateSchema,
+});
+
+export const RuinCandidatePlanSchema = z.strictObject({
+  candidateKey: z.string().min(1),
+  periodType: RuinPeriodTypeSchema,
+  titleDirection: z.string().min(1),
+  centralIncident: z.string().min(1),
+  causalDifference: z.string().min(1),
+  anomalyDirection: z.string().min(1),
+  castDirection: z.array(z.strictObject({
+    name: z.string().min(1),
+    identity: z.string().min(1),
+  })).min(1).max(5),
+});
+
+export const RuinPlanResponseSchema = z.strictObject({
+  schema: z.literal('eyon.ruin.plan.v1'),
+  requestId: z.string().min(1),
+  plans: z.array(RuinCandidatePlanSchema).min(3).max(5),
 });
 
 export const RuinCandidatesErrorSchema = z.strictObject({
@@ -201,6 +427,7 @@ export const RuinCandidatesErrorSchema = z.strictObject({
 });
 
 export const RuinSelectedCharacterSchema = z.strictObject({
+  referenceId: z.string().min(1).optional(),
   mvuId: z.string().min(1),
   name: z.string().min(1),
   source: z.enum(['mvu', 'genealogy']),
@@ -236,5 +463,10 @@ export const RuinGenerationInputSchema = z.strictObject({
 
 export type RuinCandidates = z.infer<typeof RuinCandidatesSchema>;
 export type RuinCandidate = z.infer<typeof RuinCandidateSchema>;
+export type RuinCandidateResponse = z.infer<typeof RuinCandidateResponseSchema>;
+export type RuinCandidatePlan = z.infer<typeof RuinCandidatePlanSchema>;
+export type RuinPlanResponse = z.infer<typeof RuinPlanResponseSchema>;
+export type RuinPeriodType = z.infer<typeof RuinPeriodTypeSchema>;
 export type RuinNode = z.infer<typeof RuinNodeSchema>;
+export type RuinMaterial = z.infer<typeof RuinMaterialSchema>;
 export type RuinGenerationInput = z.infer<typeof RuinGenerationInputSchema>;

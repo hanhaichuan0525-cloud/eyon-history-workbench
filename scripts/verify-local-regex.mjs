@@ -4,11 +4,11 @@ import process from 'node:process';
 
 const beautyRoot = process.argv[2]
   ? path.resolve(process.argv[2])
-  : path.resolve('..', '我的核心及美化项目', '美化', '伊雍美化 新');
+  : path.resolve('regex');
 
 const cases = [
   {
-    file: 'regex-伊雍-传记美化.json',
+    file: 'regex-伊雍-传记美化（as）.json',
     sample: [
       '[RootTrace]',
       'Title:: 《测试传记》',
@@ -24,7 +24,7 @@ const cases = [
     ].join('\n'),
   },
   {
-    file: 'regex-伊雍-墟境输出面板美化.json',
+    file: 'regex-伊雍-墟境输出面板美化（as）.json',
     sample: [
       '[RuinTrace]',
       'Title:: 旧影的回音',
@@ -37,7 +37,7 @@ const cases = [
     ].join('\n'),
   },
   {
-    file: 'regex-伊雍-蝴蝶效应面板美化.json',
+    file: 'regex-伊雍-蝴蝶效应面板美化（as）.json',
     sample: [
       '<butterfly_panel>',
       '[波及范围|42|聚落]',
@@ -47,6 +47,15 @@ const cases = [
       '[历史演变|残卷失踪改变了后续水网规划。]',
       '[历史关键词|水文残卷、锈水镇]',
       '</butterfly_panel>',
+    ].join('\n'),
+  },
+  {
+    file: 'regex-伊雍-对话框美化（as）.json',
+    sample: [
+      '<eyon name="伊雍" mood="curious">',
+      '「主人，我已经把这段历史整理好了。」',
+      '</eyon>',
+      '<eyon_court/>',
     ].join('\n'),
   },
 ];

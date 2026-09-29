@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>伊雍墟境时空</title>
+  <style>
+    html, body { min-height: 100%; margin: 0; background: #080c0d; }
+    [data-eyon-timeline-workbench] { width: min(1440px, 100%); margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <main data-eyon-timeline-workbench data-theme="dark"></main>
+  <script>
+    const butterfly = (runId, updatedAt, status = 'committed') => ({
+      key: runId,
+      namespace: { characterKey: '伊雍', chatId: 'preview-chat' },
+      runId,
+      requestId: `request-${runId}`,
+      request: {
+        anchors: {
+          reality: { time: '复兴纪元488年3月15日14:09', location: '金谷城近郊·布劳尔子爵城堡' },
+          ruinEntry: { time: '复兴纪元145年5月20日23:18', location: '地下教堂·侧翼忏悔室' },
+          ruinExit: { time: '复兴纪元145年5月21日02:40', location: '地下教堂·坍塌回廊' },
+        },
+      },
+      result: {
+        schema: 'eyon.butterfly.v1',
+        requestId: `request-${runId}`,
+        runId,
+        effect: {
+          roll: 68,
+          scope: runId === 'RUN-39' ? '城市' : '聚落',
+          presentLanding: runId === 'RUN-39'
+            ? '金谷城商会势力的暗流与布劳尔家族部分农庄抵押流失'
+            : '南城门旧墙结构变异与一个古老守卫家族的断嗣',
+          perceptibleEvidence: ['旧账本中出现一笔无法解释的抵押记录', '城堡挂毯上的家徽细节发生改变'],
+          ruinActionRecord: '夜见哉川在历史节点中截断了原本必然发生的交接。',
+          historicalEvolution: '一次局部干预沿着继承、债务与地方权力结构逐代传递，最终在现世留下可被察觉的变化。',
+          historicalKeywords: ['金谷城', '布劳尔家族', '商会', '继承'],
+        },
+        causalStages: [],
+        sourceIds: [],
+        inferences: [],
+        warnings: [],
+        qualityChecks: {
+          anchorsUntouched: true,
+          scopeRespected: true,
+          causalChainComplete: true,
+          presentEvidenceConcrete: true,
+          playerAgencyPreserved: true,
+          canonConflictsResolved: true,
+        },
+      },
+      sourceHash: 'preview',
+      panel: '',
+      archiveEntry: `### 《蝴蝶效应锚定日志${runId === 'RUN-39' ? 4 : 3}》`,
+      assistantMessageId: 10,
+      status,
+      revision: 1,
+      createdAt: updatedAt,
+      updatedAt,
+    });
+    const settings = {
+      schemaVersion: 1,
+      generation: {
+        genealogy: { mode: 'follow_tavern' },
+        ruin: { mode: 'follow_tavern' },
+        biography: { mode: 'follow_tavern' },
+        butterfly: { mode: 'follow_tavern' },
+      },
+      ruinDraft: null,
+      genealogyDepth: { ancestors: 4, descendants: 3 },
+    };
+    window.EyonHistoryWorkbench = {
+      version: 'preview',
+      getSettings: () => settings,
+      updateSettings: () => settings,
+      setGenerationSettings: () => settings,
+      applyGenerationSettingsToAll: () => settings,
+      setRuinDraft: () => settings,
+      getRuinRuntimeSnapshot: async () => ({
+        flowState: 'exploring',
+        runId: 'RUN-39',
+        realityTime: '复兴纪元488年-风信之月(3月)-15日-14:09',
+        realityLocation: '阿斯塔利亚大陆中东部-金谷城近郊-布劳尔子爵城堡-底层马厩',
+        ruinTime: '复兴纪元145年-5月-20日-23:18',
+        ruinLocation: '阿斯塔利亚大陆西南端-地下教堂-侧翼忏悔室',
+      }),
+      listButterflies: async () => [
+        butterfly('RUN-39', 40),
+        butterfly('RUN-31', 30),
+      ],
+      listButterflyPending: async () => [],
+      returnRuin: async () => undefined,
+      retryButterfly: async () => undefined,
+      listGenealogyCharacters: async () => [],
+      listCharacterWorldbookEntries: async () => [],
+      setCharacterWorldbookEntryEnabled: async () => [],
+      setCharacterWorldbookEntriesEnabled: async () => [],
+      generateGenealogy: async () => undefined,
+      listGenealogies: async () => [],
+      listRuinCharacterReferences: async () => [],
+      toggleGenealogyNodeRuinReference: async () => [],
+      removeRuinCharacterReference: async () => [],
+      fetchCustomApiModels: async () => [],
+      deleteButterfly: async () => false,
+      inspectCurrentData: async () => ({}),
+      exportCurrentData: async () => ({}),
+      clearGenerationCache: async () => ({
+        ruinDraftCleared: true, ruinReferencesCleared: 0, genealogiesCleared: 0,
+        ruinsCleared: 0, butterflyPendingCleared: 0,
+      }),
+      clearErrorLog: () => settings,
+      generateRuin: async () => undefined,
+      listRuins: async () => [],
+      listBiographies: async () => [],
+      enterRuin: async () => undefined,
+      dispose: () => undefined,
+    };
+    window.dispatchEvent(new CustomEvent('eyon-history-workbench:ready', {
+      detail: window.EyonHistoryWorkbench,
+    }));
+  </script>
+  <script type="module" src="../dist/timeline.js"></script>
+</body>
+</html>

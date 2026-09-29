@@ -1,4 +1,5 @@
 import type { TavernRuntime } from './contracts.ts';
+import { findGenerationTriggerUserMessage } from './generationTrigger.ts';
 
 const SUPPORTED_GENERATION_TYPES = new Set<string | undefined>([
   undefined,
@@ -18,7 +19,7 @@ export class BiographyLifecycle {
 
   async beforeGeneration(type?: string): Promise<boolean> {
     if (!SUPPORTED_GENERATION_TYPES.has(type)) return false;
-    const userMessage = this.findLatestVisibleUserMessage();
+    const userMessage = findGenerationTriggerUserMessage(this.runtime, type);
     if (!userMessage) return false;
     return (await this.controller.prepareText(userMessage.message)) !== null;
   }
@@ -31,19 +32,6 @@ export class BiographyLifecycle {
     await this.controller.cancelPending();
   }
 
-  private findLatestVisibleUserMessage() {
-    const lastMessageId = this.runtime.getLastMessageId();
-    if (lastMessageId < 0) return null;
-    const messages = this.runtime.getChatMessages(
-      `0-${lastMessageId}`,
-      { include_swipes: false },
-    );
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (message.role === 'user' && !message.is_hidden) return message;
-    }
-    return null;
-  }
 }
 
 export interface BiographyLifecycleController {

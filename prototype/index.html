@@ -4,7 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>伊雍历史系统 · 交互原型</title>
-  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script>
+    (() => {
+      const params = new URLSearchParams(location.search);
+      if (params.get('legacy-design') === '1') return;
+      const target = new URL('./workbench-runtime.html', location.href);
+      for (const key of ['view', 'mode', 'accent', 'text']) {
+        const value = params.get(key);
+        if (value) target.searchParams.set(key, value);
+      }
+      location.replace(target);
+    })();
+  </script>
   <style>
     :root {
       --bg: #080b0c;
@@ -1630,7 +1641,6 @@
       </div>
       <nav class="nav" aria-label="主导航">
         <button class="nav-button active" data-view="time"><i data-lucide="clock-3"></i><span>墟境时空</span><small>01</small></button>
-        <button class="nav-button" data-view="people"><i data-lucide="users"></i><span>人物查看</span><small>24</small></button>
         <button class="nav-button" data-view="genealogy"><i data-lucide="git-fork"></i><span>宗族谱系</span><small>07</small></button>
         <button class="nav-button" data-view="generator"><i data-lucide="waypoints"></i><span>墟境生成</span><small>03</small></button>
         <button class="nav-button" data-view="library"><i data-lucide="library-big"></i><span>传记书库</span><small>12</small></button>
@@ -2095,7 +2105,6 @@
   <script>
     const pages = {
       time: ["墟境时空", "现实锚点、墟境进程与明确的状态操作"],
-      people: ["人物查看", "读取MVU人物，建立不改写变量的自定义分类"],
       genealogy: ["宗族谱系", "按祖辈与后代代数整理已确认亲属，作为传记与墟境参考"],
       generator: ["墟境生成", "用时间尺和因果图选择真正要进入的历史特异点"],
       library: ["传记书库", "按卷册存放传记全文，并参与谱系与墟境检索"],

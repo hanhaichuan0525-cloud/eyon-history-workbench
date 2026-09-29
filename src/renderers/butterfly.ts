@@ -17,14 +17,19 @@ export interface ButterflyArchiveAnchors {
 export function serializeButterflyPanel(effect: ButterflyEffect): string {
   return [
     '<butterfly_panel>',
-    `[波及范围|${effect.roll}|${effect.scope.trim()}]`,
-    `[现世落点|${effect.presentLanding.trim()}]`,
-    `[可感知证据|${effect.perceptibleEvidence.map(value => value.trim()).join('；')}]`,
-    `[墟境行动记录|${effect.ruinActionRecord.trim()}]`,
-    `[历史演变|${effect.historicalEvolution.trim()}]`,
-    `[历史关键词|${effect.historicalKeywords.map(value => value.trim()).join('、')}]`,
+    `[波及范围|${effect.roll}|${panelUserName(effect.scope)}]`,
+    `[现世落点|${panelUserName(effect.presentLanding)}]`,
+    `[可感知证据|${effect.perceptibleEvidence.map(panelUserName).join('；')}]`,
+    `[墟境行动记录|${panelUserName(effect.ruinActionRecord)}]`,
+    `[历史演变|${panelUserName(effect.historicalEvolution)}]`,
+    `[历史关键词|${effect.historicalKeywords.map(panelUserName).join('、')}]`,
     '</butterfly_panel>',
   ].join('\n');
+}
+
+/** 只改可见面板文本；归档与 Canon 仍保留模型原始自然语言。 */
+function panelUserName(value: string): string {
+  return value.trim().replace(/玩家/gu, '<user>');
 }
 
 export function serializeButterflyArchive(input: {
@@ -57,27 +62,4 @@ export function serializeButterflyArchive(input: {
     `| 历史演变 | ${effect.historicalEvolution} |`,
     `| 历史关键词 | ${effect.historicalKeywords.join('、')} |`,
   ].join('\n');
-}
-
-export function butterflyArchiveKeywords(input: {
-  anchors: ButterflyArchiveAnchors;
-  historicalKeywords: string[];
-}): string[] {
-  const values = new Set<string>();
-  for (const time of [input.anchors.ruinEntry.time, input.anchors.ruinExit.time]) {
-    const match = time.match(/(\d{1,6})年(?:\D+?(\d{1,2})月)?/u);
-    if (!match) continue;
-    values.add(`${match[1]}年`);
-    if (match[2]) values.add(`${match[1]}年${match[2]}月`);
-  }
-  for (const location of [
-    input.anchors.ruinEntry.location,
-    input.anchors.ruinExit.location,
-  ]) {
-    location.split(/[-—]/u).map(value => value.trim()).filter(value =>
-      value.length >= 2 && value.length <= 24
-    ).forEach(value => values.add(value));
-  }
-  input.historicalKeywords.forEach(value => values.add(value.trim()));
-  return [...values].filter(Boolean).slice(0, 20);
 }

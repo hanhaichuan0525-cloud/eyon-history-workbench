@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+z.config({ jitless: true });
+
 export const GenealogyEraSchema = z.enum([
   '创世纪元',
   '神明纪元',
@@ -38,11 +40,18 @@ export const GenealogyNodeSchema = z.strictObject({
   lifeLevel: z.string(),
   relationToFocus: z.string().min(1),
   summary: z.string().min(1),
+  profile: z.strictObject({
+    personality: z.string().min(1),
+    lifeExperience: z.string().min(1),
+  }).default({
+    personality: '性格资料不详。',
+    lifeExperience: '经历资料不详。',
+  }),
   sourceRefs: z.array(z.string().min(1)),
   historyRefs: z.array(z.strictObject({
     biographyId: z.string().min(1),
     stageId: z.string().min(1),
-  })),
+  })).default([]).catch([]),
 });
 
 export const GenealogyRelationTypeSchema = z.enum([
@@ -81,6 +90,7 @@ export const GenealogyResultSchema = z.strictObject({
   depth: z.strictObject({
     ancestors: z.number().int().min(1).max(8),
     descendants: z.number().int().min(0).max(6),
+    maxPerGeneration: z.number().int().min(1).max(7).default(4),
   }),
   nodes: z.array(GenealogyNodeSchema).min(1),
   edges: z.array(GenealogyEdgeSchema),
@@ -95,7 +105,8 @@ export const GenealogyResultSchema = z.strictObject({
     generatedNodesHaveProvenance: z.boolean(),
     allNodesHaveLifeDates: z.boolean(),
     allNodesHaveBasicProfiles: z.boolean(),
-    onlyMvuNodesCanInjectToRuin: z.boolean(),
+    // Legacy compatibility marker, no longer an authorization decision.
+    onlyMvuNodesCanInjectToRuin: z.boolean().optional().default(false),
     noConflictNarrative: z.boolean(),
   }),
 });
@@ -118,6 +129,7 @@ export const GenealogyGenerationInputSchema = z.strictObject({
   depth: z.strictObject({
     ancestors: z.number().int().min(1).max(8),
     descendants: z.number().int().min(0).max(6),
+    maxPerGeneration: z.number().int().min(1).max(7).default(4),
   }),
 });
 

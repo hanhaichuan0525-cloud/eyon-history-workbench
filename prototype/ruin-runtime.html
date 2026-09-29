@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>伊雍墟境生成 · 正式构建预览</title>
+  <style>
+    html { color-scheme: dark; background: #050809; }
+    body { margin: 0; padding: 18px; }
+    [data-eyon-ruin-workbench] { width: min(1600px, 100%); margin: 0 auto; }
+    @media (max-width: 700px) { body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <main data-eyon-ruin-workbench data-theme="dark"></main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const previewRoot = document.querySelector('[data-eyon-ruin-workbench]');
+    if (params.get('theme') === 'light') {
+      previewRoot.dataset.theme = 'light';
+      document.documentElement.style.colorScheme = 'light';
+      document.documentElement.style.background = '#f6f5f1';
+    }
+
+    const sourceId = 'worldbook:布劳尔旧堡';
+    const makeNode = (id, kind, day, title, summary, location) => {
+      const anomaly = kind === 'anomaly';
+      return {
+        id,
+        kind,
+        time: {
+          year: 145,
+          month: 5,
+          day,
+          hour: anomaly ? 23 : null,
+          minute: anomaly ? 15 : null,
+          label: `复兴纪元145年5月${day}日${anomaly ? ' 23:15' : ''}`,
+        },
+        location,
+        title,
+        summary,
+        cause: '旧有的继承安排无法消化新的供给压力。',
+        causalMechanism: '掌握名册的人能够改变物资、婚盟与见证记录的分配顺序。',
+        participants: ['伊芙琳·霜枝', '南部支院档案官'],
+        interests: [{
+          actor: '南部支院档案官',
+          wants: '保住名册解释权',
+          fears: '替换行为被公开',
+        }],
+        materialConditions: ['圣液配额有限', '封蜡由少数人保管'],
+        opposition: '夜川旁系拒绝承认未经见证的新名册。',
+        visibleTrace: anomaly
+          ? '两份互相冲突的配额名册同时留在忏悔室，封蜡日期相差三日。'
+          : '旧档案留下了可核对的封蜡与抄写痕迹。',
+        intervention: anomaly ? '在名册被封存前揭露或替换关键页。' : '',
+        possibleBranches: anomaly ? [
+          { condition: '公开证据', consequence: '支院被迫重新议定配额' },
+          { condition: '秘密替换', consequence: '继承顺序在暗处改变' },
+        ] : [],
+        enterable: anomaly,
+        inference: true,
+        sourceRefs: [sourceId],
+      };
+    };
+
+    const nodeSeeds = [
+      ['origin', 2, '圣液配额缩减', '南部支院开始争夺有限的圣液配额，旧有供给秩序出现裂口。', '南部支院议事厅'],
+      ['process', 12, '霜枝派系结盟', '伊芙琳以秘密婚约换取毒沼商路与炼金材料。', '白圣林南部商路'],
+      ['anomaly', 20, '配额名册被替换', '忏悔室出现两份相互冲突的名册，这是可进入的历史切口。', '南部支院忏悔室'],
+      ['result', 31, '夜川支系断裂', '失踪事件改变继承序列，并在数十年后固化为新的家族秩序。', '夜川家族旧宅'],
+    ];
+    const makeCandidate = (number, periodType, title) => ({
+      id: `ruin-${number}`,
+      candidateKey: `candidate-${number}`,
+      title,
+      periodType,
+      span: {
+        start: { year: 145, month: 5, day: 2 },
+        end: { year: 180, month: 12, day: 31 },
+        label: '复兴纪元145年5月—180年冬',
+      },
+      premise: '一份配额名册让地方秩序偏离原有轨迹。',
+      summary: '快乐教会南部支院的圣液配额从宗教供给逐步变成派系交易筹码。',
+      historyProse: '伊芙琳·霜枝以秘密婚约换取毒沼商路和炼金材料，一名负责重新誊写配额名册的抄写员却同时保留了两份互相冲突的记录。被替换的姓氏把快乐教会、夜川旁系与一场数十年后的继承断裂拴在了一起。',
+      fusion: {
+        normalOrder: '各支院按旧名册领取圣液。',
+        latentFault: '名册解释权长期被少数档案官垄断。',
+        pressuredActors: ['伊芙琳·霜枝', '夜川旁系'],
+        bridge: {
+          type: 'institution',
+          name: '圣液配额名册',
+          explanation: '名册同时决定供给、婚盟承认与继承资格。',
+        },
+        triggerImpact: '替换页让原有的继承顺序失去凭证。',
+        forcedDecision: '档案官必须公开证据或继续掩盖。',
+        irreversibleTurn: '新名册被盖上正式封蜡。',
+        historicalResult: '婚盟、名册与失踪案在三十五年内持续改变宗族继承。',
+      },
+      shift: {
+        from: number === 1 ? 'stable' : 'transition',
+        to: periodType,
+        explanation: '制度仍在运行，但解释权已经转移。',
+      },
+      nodes: nodeSeeds.map(([kind, day, nodeTitle, summary, nodeLocation], index) =>
+        makeNode(`node-${number}-${index}`, kind, day, nodeTitle, summary, nodeLocation)),
+      cast: [{
+        name: '伊芙琳·霜枝',
+        kind: 'person',
+        identity: '南部支院派系领袖',
+        role: '推动配额重排',
+        desire: '取得独立的圣液供给权',
+        constraint: '必须让替换名册通过公开见证',
+        sourceRefs: [sourceId],
+        inference: false,
+      }],
+      selectedCharacterUsage: [],
+      historicalTexture: {
+        dailyLife: ['修女按名册领取圣液与灯油'],
+        institutions: ['婚盟见证与档案封存'],
+        materialCulture: ['封蜡、羊皮纸与手抄副本'],
+        socialDivisions: ['档案官、修会派系与宗族旁支'],
+      },
+      sourceRefs: [sourceId],
+      biographyUsage: [],
+      inferenceNotes: ['缺失姓名按职业与时代背景推断。'],
+      qualityChecks: {
+        threeMaterialsIntegrated: true,
+        causalChainComplete: true,
+        anomalyEnterable: true,
+        timelineConsistent: true,
+        distinctFromOtherCandidates: true,
+        supplementaryDirectionFulfilled: true,
+        selectedCharactersReconciled: true,
+        clicheDependence: false,
+      },
+    });
+
+    const input = {
+      era: '复兴纪元',
+      start: { year: 145, month: 5, day: 1 },
+      end: { year: 180, month: 12, day: 31 },
+      location: '翡翠之心·快乐教会南部支院',
+      supplementaryDirection: '寻找快乐教会与夜川家族第一次产生隐秘联系的历史节点。',
+      selectedCharacters: [{
+        mvuId: '伊芙琳·霜枝',
+        name: '伊芙琳·霜枝',
+        source: 'genealogy',
+        identities: ['快乐教会高阶修女'],
+        race: '人类',
+        professions: ['修女', '炼金术士'],
+        relations: ['霜枝旁系'],
+        lifespan: '复兴纪元128年—173年',
+        contextSummary: '通过宗族谱系加入的历史参与人物。',
+      }],
+      wave: { level: 'ripple', candidateCount: 3 },
+      materials: Array.from({ length: 3 }, (_, index) => ({
+        candidateKey: `candidate-${index + 1}`,
+        periodType: ['stable', 'transition', 'turbulent'][index],
+        background: '宗教供给制度正在维持地方秩序',
+        conflict: '配额解释权与宗族继承发生冲突',
+        trigger: '一份被替换的名册暴露制度裂缝',
+      })),
+    };
+    const makeRecord = draft => {
+      const candidates = [
+        ['stable', '南部支院的圣液账本'],
+        ['transition', '霜枝怀悔录'],
+        ['turbulent', '夜川旧宅失踪案'],
+        ['stable', '白圣林封蜡秘录'],
+        ['transition', '毒沼商路的旧约'],
+      ].slice(0, draft.wave.candidateCount)
+        .map(([period, title], index) => makeCandidate(index + 1, period, title));
+      return ({
+      key: `preview::ruin::${Date.now()}`,
+      namespace: { characterKey: '伊雍', chatId: 'preview' },
+      requestId: `preview-${Date.now()}`,
+      triggerMessageId: 12,
+      triggerTextHash: 'preview',
+      triggerSwipeId: null,
+      sourceHash: 'preview',
+      input: structuredClone(draft),
+      result: {
+        schema: 'eyon.ruin.candidates.v2',
+        requestId: `preview-${Date.now()}`,
+        era: draft.era,
+        location: draft.location,
+        wave: draft.wave,
+        candidates,
+      },
+      expandedCandidateIds: candidates.map(candidate => candidate.id),
+      candidateStates: Object.fromEntries(candidates.map(candidate => [candidate.id, {
+        status: 'ready', attempt: 1, generationEpoch: 1, updatedAt: Date.now(),
+      }])),
+      createdAt: Date.now(),
+    });
+    };
+
+    let records = [makeRecord(input)];
+    const settings = {
+      schemaVersion: 1,
+      generation: {
+        genealogy: { mode: 'follow_tavern' },
+        ruin: { mode: 'follow_tavern' },
+        biography: { mode: 'follow_tavern' },
+        butterfly: { mode: 'follow_tavern' },
+      },
+      ruinDraft: structuredClone(input),
+      genealogyDepth: { ancestors: 4, descendants: 3 },
+    };
+    window.EyonHistoryWorkbench = {
+      version: '0.10.0-preview',
+      getSettings: () => settings,
+      updateSettings: patch => Object.assign(settings, patch),
+      setGenerationSettings: () => settings,
+      applyGenerationSettingsToAll: () => settings,
+      setRuinDraft: draft => {
+        settings.ruinDraft = structuredClone(draft);
+        return settings;
+      },
+      getRuinRuntimeSnapshot: async () => ({
+        flowState: 'idle',
+        runId: '',
+        realityTime: '复兴纪元488年3月',
+        realityLocation: '琉璃塔信报社',
+        ruinTime: '',
+        ruinLocation: '',
+        ruinTasks: [],
+      }),
+      listGenealogyCharacters: async () => [],
+      listCharacterWorldbookEntries: async () => [],
+      setCharacterWorldbookEntryEnabled: async () => undefined,
+      setCharacterWorldbookEntriesEnabled: async () => undefined,
+      listGenealogies: async () => [],
+      listRuinCharacterReferences: async () => structuredClone(input.selectedCharacters),
+      listRuinBiographyReferences: async () => [],
+      removeRuinCharacterReference: async () => undefined,
+      removeRuinBiographyReference: async () => undefined,
+      listRuins: async () => structuredClone(records),
+      listBiographies: async () => [],
+      listButterflies: async () => [],
+      generateGenealogy: async () => undefined,
+      fetchCustomApiModels: async () => [],
+      deleteButterfly: async () => undefined,
+      inspectCurrentData: async () => ({}),
+      exportCurrentData: async () => '{}',
+      clearGenerationCache: async () => undefined,
+      clearErrorLog: async () => undefined,
+      generateRuin: async draft => {
+        window.dispatchEvent(new CustomEvent('eyon-history-workbench:status', {
+          detail: { status: 'generating_candidates', detail: '伊雍正在编织历史岔路' },
+        }));
+        await new Promise(resolve => setTimeout(resolve, 700));
+        const record = makeRecord(draft);
+        records = [record, ...records];
+        window.dispatchEvent(new CustomEvent('eyon-history-workbench:status', {
+          detail: { status: 'ready', detail: '候选墟境已经完成' },
+        }));
+        return structuredClone(record);
+      },
+      enterRuin: async () => {
+        window.dispatchEvent(new CustomEvent('eyon-history-workbench:status', {
+          detail: { status: 'ready', detail: '特异点已写入下一条玩家输入' },
+        }));
+      },
+      getRuinTaskReview: async () => null,
+      generateRuinTaskDraft: async () => undefined,
+      updateRuinTaskDraft: async () => undefined,
+      confirmRuinTaskDraft: async () => undefined,
+      returnRuin: async () => undefined,
+      retryButterfly: async () => undefined,
+      dispose() {},
+    };
+  </script>
+  <script type="module" src="../dist/ruin.js"></script>
+</body>
+</html>

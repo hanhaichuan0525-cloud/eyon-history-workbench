@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>伊雍传记书库 · 正式构建预览</title>
+  <style>
+    html { color-scheme: dark; background: #050809; }
+    body { margin: 0; padding: 18px; }
+    [data-eyon-biography-workbench] { width: min(1600px, 100%); margin: 0 auto; }
+    @media (max-width: 700px) { body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <main data-eyon-biography-workbench data-theme="dark"></main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const previewRoot = document.querySelector('[data-eyon-biography-workbench]');
+    if (params.get('theme') === 'light') {
+      previewRoot.dataset.theme = 'light';
+      document.documentElement.style.colorScheme = 'light';
+      document.documentElement.style.background = '#f6f5f1';
+    }
+
+    const passage = (title, content) => ({
+      title, content, sourceRefs: ['当前聊天正文', '命定系统世界书'], inference: false,
+    });
+    const transition = bridge => ({
+      inheritance: '',
+      unresolvedTension: '',
+      newPressure: '',
+      bridge,
+      transitionEvent: '',
+      changedMeaning: '',
+    });
+    const stage = (id, type, title, span, content, bridge = '') => ({
+      id, type, title, span, diceMaterial: '历史材料',
+      content, transitionFromPrevious: transition(bridge),
+      people: [], factions: [], objects: [], locations: [],
+      sourceRefs: ['王庭史料'], biographyUsage: [], inference: false,
+    });
+    const biography = ({
+      id, name, direction, span, origin, status, summary, stages,
+    }) => ({
+      schema: 'eyon.biography.v1',
+      requestId: id,
+      playerDirective: {
+        raw: `对${name}进行寻根溯源`,
+        interpretedTarget: name,
+        hardTimeScope: span,
+        primaryDirection: direction,
+        secondaryInterests: [],
+        reconciliation: '以现有正文与世界书为事实边界。',
+      },
+      target: { type: 'person', name, aliases: [], sourceRefs: ['MVU人物'] },
+      span: {
+        mode: 'calendar',
+        start: { year: 430, month: null, day: null, age: null },
+        end: { year: 488, month: null, day: null, age: null },
+        label: span,
+      },
+      origin: passage('起源', origin),
+      stages,
+      status: passage('现状', status),
+      summary,
+      indexes: {
+        people: [name, '夜见哉川'],
+        factions: ['虚嗣王庭'],
+        objects: [],
+        locations: ['白圣林', '金谷城'],
+        themes: [direction],
+        potentialRuinLinks: ['封存档案'],
+      },
+      rootTrace: summary,
+      qualityChecks: {
+        playerDirectionFulfilled: true,
+        hardTimeScopeRespected: true,
+        worldbookConsistent: true,
+        stageTransitionsCoherent: true,
+        diceIntegratedWithoutHijacking: true,
+        existingBiographiesUsedResponsibly: true,
+        rootTraceMatchesStructuredData: true,
+      },
+    });
+    const now = Date.now();
+    const records = [
+      {
+        key: 'preview::biography::evelyn',
+        namespace: { characterKey: '伊雍', chatId: 'preview' },
+        biographyId: 'evelyn',
+        requestId: 'evelyn',
+        triggerMessageId: 8,
+        assistantMessageId: 9,
+        sourceHash: 'evelyn',
+        status: 'committed',
+        revision: 1,
+        createdAt: now - 4000,
+        updatedAt: now - 4000,
+        biography: biography({
+          id: 'evelyn',
+          name: '伊雍',
+          direction: '影蛇王庭的禁忌索引与私人历史',
+          span: '第一卷至未归档终章',
+          origin: '伊雍的名字最初并不属于一位可以被完整记述的人。她从王庭散落的禁忌索引、被删改的契约页与见证者口述中逐渐显形。',
+          status: '她仍以虚嗣王庭的引路者身份活动，但许多档案只在特定命令与关系成立时向夜见哉川开放。',
+          summary: '伊雍的来路并非一条被完整保存的血脉，而是一组在王庭档案与个人沉默之间彼此抵牾的记录。',
+          stages: [
+            stage('e1', 'stable', '无名期', '创世纪元末期', '王庭最早的蛇纹目录中只有一枚没有署名的黑色印记。'),
+            stage('e2', 'transition', '授名期', '神明纪元中期', '伊雍第一次以可辨识的名字出现在契约旁注中。', '一个索引从工具变成了能够判断史料价值的见证者。'),
+            stage('e3', 'turbulent', '禁库动荡', '混乱纪元', '数批相互冲突的王庭档案在战乱中被她重新编排。'),
+            stage('e4', 'stable', '王庭期', '英雄纪元', '她开始以稳定身份管理传记、节点与历史回声。'),
+            stage('e5', 'transition', '契约续章', '复兴纪元', '与夜见哉川的命定契约使部分封闭史料重新进入可阅读状态。'),
+          ],
+        }),
+      },
+      {
+        key: 'preview::biography::frost',
+        namespace: { characterKey: '伊雍', chatId: 'preview' },
+        biographyId: 'frost',
+        requestId: 'frost',
+        triggerMessageId: 14,
+        assistantMessageId: 15,
+        sourceHash: 'frost',
+        status: 'committed',
+        revision: 1,
+        createdAt: now - 3000,
+        updatedAt: now - 3000,
+        biography: biography({
+          id: 'frost',
+          name: '霜枝',
+          direction: '两份互不相容的供述与快乐教会的封存档案',
+          span: '复兴纪元145—168年',
+          origin: '霜枝出生于白圣林边缘一个不再被主脉承认的旁系。她最早记住的并非母亲的脸，而是祭礼长桌下垂落的银铃。',
+          status: '霜枝如今仍被多方档案以不同身份记录。她本人对南部支院的旧礼保持沉默。',
+          summary: '霜枝的传记由宗族名册、教会档案与个人沉默共同构成，差异本身正是可追溯的历史入口。',
+          stages: [
+            stage('f1', 'stable', '起源', '复兴纪元145—151年', '南部支院以有限配额维持旧礼，霜枝的幼年被严格藏在旁系名册中。'),
+            stage('f2', 'transition', '稳定期', '复兴纪元152—156年', '她以抄写员身份第一次接触配额名册。', '一份看似例行的抄录工作把她带到两套互相矛盾的记录之间。'),
+            stage('f3', 'turbulent', '过渡期', '复兴纪元157—160年', '教会内部的供给争议转化为对人名和血脉的删改。'),
+            stage('f4', 'stable', '整编期', '复兴纪元161—164年', '霜枝暂时获得整理旧档的权限。'),
+            stage('f5', 'transition', '封存期', '复兴纪元165—168年', '两份供述被分别封入不同库房，留下无法互证的终局。'),
+          ],
+        }),
+      },
+      {
+        key: 'preview::biography::violeta',
+        namespace: { characterKey: '伊雍', chatId: 'preview' },
+        biographyId: 'violeta',
+        requestId: 'violeta',
+        triggerMessageId: 20,
+        assistantMessageId: 21,
+        sourceHash: 'violeta',
+        status: 'committed',
+        revision: 1,
+        createdAt: now - 2000,
+        updatedAt: now - 2000,
+        biography: biography({
+          id: 'violeta',
+          name: '维奥莱塔',
+          direction: '二十四岁至二十八岁的猎艳史',
+          span: '复兴纪元462—466年',
+          origin: '加冕之前，维奥莱塔曾在边境军镇度过一段很少进入正史的岁月。',
+          status: '她如今以铁血女皇之名统御帝国，私人书信却仍保留着那四年间的暗号。',
+          summary: '一段被国家叙事压在页脚的私人历史，揭示了权力、欲望与责任如何同时塑造她。',
+          stages: [
+            stage('v1', 'stable', '军镇初识', '复兴纪元462年', '她以隐姓身份进入边境军镇。'),
+            stage('v2', 'transition', '冬宴', '复兴纪元463年', '一次冬宴让她结识了并不属于帝国宫廷的情人。'),
+            stage('v3', 'turbulent', '密信风波', '复兴纪元464年', '私信被卷入军镇继承权争端。'),
+            stage('v4', 'stable', '短暂同盟', '复兴纪元465年', '两人以政治同盟遮掩私人关系。'),
+            stage('v5', 'transition', '加冕前夜', '复兴纪元466年', '她选择帝国，也保存了最后一封没有寄出的信。'),
+          ],
+        }),
+      },
+      {
+        key: 'preview::biography::brauer',
+        namespace: { characterKey: '伊雍', chatId: 'preview' },
+        biographyId: 'brauer',
+        requestId: 'brauer',
+        triggerMessageId: 24,
+        assistantMessageId: 25,
+        sourceHash: 'brauer',
+        status: 'committed',
+        revision: 1,
+        createdAt: now - 1000,
+        updatedAt: now - 1000,
+        biography: biography({
+          id: 'brauer',
+          name: '布劳尔家族',
+          direction: '领地、债务与失踪档案的源流',
+          span: '复兴纪元180—488年',
+          origin: '布劳尔家族的第一份领地证明只剩下被火烧过的下半页。',
+          status: '当代家族仍居于金谷城近郊，但旧债与缺失的海贸凭证持续影响领地。',
+          summary: '家族史并非稳定谱系，而是由领地证明、债务关系与几次档案失踪拼成的政治记忆。',
+          stages: [
+            stage('b1', 'stable', '立领', '复兴纪元180—230年', '家族在边境屯垦中获得最初领地。'),
+            stage('b2', 'transition', '转向农业', '复兴纪元231—310年', '海贸凭证遗失后，家族转而经营内陆农业。'),
+            stage('b3', 'turbulent', '债务扩张', '复兴纪元311—380年', '数代继承人以债务维系领地规模。'),
+            stage('b4', 'stable', '文书重整', '复兴纪元381—450年', '旧档被重新编号，但关键页仍然缺失。'),
+            stage('b5', 'transition', '现世余波', '复兴纪元451—488年', '历史缺口开始以现实地貌和家族关系的方式显形。'),
+          ],
+        }),
+      },
+    ];
+
+    const settings = {
+      schemaVersion: 1,
+      generation: {
+        genealogy: { mode: 'follow_tavern' },
+        ruin: { mode: 'follow_tavern' },
+        biography: { mode: 'follow_tavern' },
+        butterfly: { mode: 'follow_tavern' },
+      },
+      ruinDraft: null,
+      genealogyDepth: { ancestors: 4, descendants: 3 },
+    };
+    window.EyonHistoryWorkbench = {
+      version: '0.10.0-preview',
+      getSettings: () => settings,
+      getRuinRuntimeSnapshot: () => null,
+      updateSettings: patch => Object.assign(settings, patch),
+      setGenerationSettings: () => settings,
+      applyGenerationSettingsToAll: () => settings,
+      setRuinDraft: () => settings,
+      listGenealogyCharacters: async () => [],
+      listCharacterWorldbookEntries: async () => [],
+      setCharacterWorldbookEntryEnabled: async () => undefined,
+      setCharacterWorldbookEntriesEnabled: async () => undefined,
+      generateGenealogy: async () => { throw new Error('preview only'); },
+      listGenealogies: async () => [],
+      listRuinCharacterReferences: async () => [],
+      removeRuinCharacterReference: async () => [],
+      toggleGenealogyNodeRuinReference: async () => [],
+      generateRuin: async () => { throw new Error('preview only'); },
+      listRuins: async () => [],
+      listBiographies: async () => structuredClone(records),
+      deleteBiography: async recordKey => {
+        const index = records.findIndex(record => record.key === recordKey);
+        if (index < 0) return false;
+        records.splice(index, 1);
+        return true;
+      },
+      listRuinBiographyReferences: async () => [],
+      toggleBiographyRuinReference: async () => [],
+      listButterflies: async () => [],
+      deleteButterfly: async () => false,
+      fetchCustomApiModels: async () => [],
+      inspectCurrentData: async () => ({}),
+      exportCurrentData: async () => ({}),
+      clearGenerationCache: async () => undefined,
+      clearErrorLog: async () => undefined,
+      enterRuin: async () => undefined,
+      getRuinTaskReview: async () => null,
+      generateRuinTaskDraft: async () => null,
+      updateRuinTaskDraft: async () => null,
+      confirmRuinTaskDraft: async () => null,
+      returnRuin: async () => undefined,
+      retryButterfly: async () => undefined,
+      dispose() {},
+    };
+  </script>
+  <script type="module" src="../dist/biography.js?v=internal138-single-page-3"></script>
+</body>
+</html>

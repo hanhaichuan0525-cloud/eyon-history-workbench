@@ -4,7 +4,11 @@ module.exports = {
   mode: 'production',
   entry: {
     index: path.resolve(__dirname, 'src/entry.ts'),
-    'character-viewer': path.resolve(__dirname, 'src/ui/characterViewerPage.ts'),
+    genealogy: path.resolve(__dirname, 'src/ui/genealogyPage.ts'),
+    ruin: path.resolve(__dirname, 'src/ui/ruinPage.ts'),
+    biography: path.resolve(__dirname, 'src/ui/biographyPage.ts'),
+    timeline: path.resolve(__dirname, 'src/ui/timelinePage.ts'),
+    workbench: path.resolve(__dirname, 'src/ui/workbenchPage.ts'),
   },
   target: ['web', 'es2022'],
   experiments: {
@@ -40,6 +44,10 @@ module.exports = {
       {
         resourceQuery: /raw/,
         type: 'asset/source',
+      },
+      {
+        test: /eyon-companion-prototype-v5\.png$/,
+        type: 'asset/inline',
       },
     ],
   },

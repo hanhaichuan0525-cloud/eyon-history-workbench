@@ -73,4 +73,14 @@ export class IndexedDbBiographyRepository implements BiographyRepository {
     await transactionComplete(transaction);
     return records.map(({ namespaceKey: _namespaceKey, ...record }) => record);
   }
+
+  async delete(key: string): Promise<boolean> {
+    const database = await historyDatabase();
+    const transaction = database.transaction(BIOGRAPHY_STORE, 'readwrite');
+    const store = transaction.objectStore(BIOGRAPHY_STORE);
+    const existing = await requestResult(store.get(key));
+    if (existing) store.delete(key);
+    await transactionComplete(transaction);
+    return Boolean(existing);
+  }
 }

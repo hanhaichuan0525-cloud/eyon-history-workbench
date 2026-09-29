@@ -1,0 +1,644 @@
+:host {
+  display: block;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+.genealogy-app {
+  --bg: var(--archive-bg, #1a1720);
+  --surface: var(--archive-surface, #322b39);
+  --surface-2: var(--archive-surface-soft, #2d2734);
+  --surface-3: var(--archive-surface-raised, #393140);
+  --ink: #f1eee5;
+  --muted: #a7afab;
+  --faint: var(--archive-faint, #807884);
+  --gold: var(--archive-gold, #b49c78);
+  --gold-2: var(--archive-gold-2, #c6b08e);
+  --line: var(--archive-line, rgba(205, 194, 211, .15));
+  --line-strong: var(--archive-line-strong, rgba(205, 194, 211, .28));
+  --teal: #52b8ad;
+  --teal-2: #75d1c7;
+  --teal-line: rgba(82, 184, 173, .55);
+  --danger: #c96b70;
+  --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+  --sans: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  position: relative;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 14% 17%, rgba(212, 186, 117, .23) 0 1px, transparent 2px),
+    radial-gradient(circle at 68% 11%, rgba(117, 209, 199, .16) 0 1px, transparent 2px),
+    radial-gradient(circle at 88% 39%, rgba(212, 186, 117, .17) 0 1px, transparent 2px),
+    radial-gradient(ellipse at 46% 18%, rgba(82, 184, 173, .055), transparent 42%),
+    radial-gradient(ellipse at 72% 76%, rgba(197, 164, 92, .045), transparent 38%),
+    var(--bg);
+  color: var(--ink);
+  font: 400 13px/1.6 var(--sans);
+}
+
+.genealogy-app[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1a1720;
+  --surface: #28222e;
+  --surface-2: #322b39;
+  --surface-3: #393140;
+  --ink: #ece7ee;
+  --muted: #aaa1ae;
+  --faint: #807884;
+  --gold: #b49c78;
+  --gold-2: #c6b08e;
+  --line: rgba(205, 194, 211, .15);
+  --line-strong: rgba(205, 194, 211, .28);
+}
+
+.genealogy-app[data-theme="light"] {
+  color-scheme: light;
+  --bg: var(--archive-bg, #ded8dd);
+  --surface: var(--archive-surface, #f5f1f2);
+  --surface-2: var(--archive-surface-raised, #faf7f8);
+  --surface-3: var(--archive-surface-soft, #ebe5e8);
+  --ink: #202522;
+  --muted: #59625d;
+  --faint: var(--archive-faint, #8d848f);
+  --gold: var(--archive-gold, #9b825f);
+  --gold-2: var(--archive-gold-2, #745f45);
+  --line: var(--archive-line, rgba(58, 48, 62, .14));
+  --line-strong: var(--archive-line-strong, rgba(58, 48, 62, .25));
+  --teal: #337da9;
+  --teal-2: #245f83;
+  --teal-line: rgba(51, 125, 169, .5);
+  background:
+    radial-gradient(circle at 14% 17%, rgba(118, 87, 31, .18) 0 1px, transparent 2px),
+    radial-gradient(circle at 68% 11%, rgba(36, 95, 131, .14) 0 1px, transparent 2px),
+    radial-gradient(circle at 88% 39%, rgba(118, 87, 31, .14) 0 1px, transparent 2px),
+    radial-gradient(ellipse at 46% 18%, rgba(51, 125, 169, .055), transparent 42%),
+    radial-gradient(ellipse at 72% 76%, rgba(155, 120, 51, .05), transparent 38%),
+    var(--bg);
+}
+
+.genealogy-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.focus-person,
+.kinship-shell {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.focus-person {
+  display: grid;
+  gap: 13px;
+  padding: 15px;
+}
+
+.focus-heading {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.large-avatar {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--gold-2);
+  font: 700 24px/1 var(--serif);
+}
+
+.focus-heading span,
+.focus-detail > span {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.focus-heading h2 {
+  margin: 4px 0 0;
+  color: var(--gold-2);
+  font: 700 17px/1.3 var(--serif);
+  overflow-wrap: anywhere;
+}
+
+.field {
+  display: block;
+}
+
+.field > strong {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 34px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--ink);
+  outline: none;
+}
+
+.field select:focus-visible {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 2px rgba(82, 184, 173, .15);
+}
+
+.character-brief,
+.focus-detail {
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.character-brief dl,
+.focus-detail dl {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 6px 8px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.character-brief dt,
+.focus-detail dt {
+  color: var(--faint);
+}
+
+.character-brief dd,
+.focus-detail dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.stepper {
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.stepper button {
+  height: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--gold-2);
+  cursor: pointer;
+}
+
+.stepper button:hover:not(:disabled) {
+  background: rgba(197, 164, 92, .08);
+}
+
+.stepper strong {
+  text-align: center;
+  font-size: 12px;
+}
+
+.primary-button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--teal-line);
+  border-radius: 9px;
+  background: rgba(82, 184, 173, .1);
+  color: var(--teal-2);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: rgba(82, 184, 173, .16);
+}
+
+button:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.focus-detail > strong {
+  display: block;
+  margin: 5px 0 10px;
+  color: var(--gold-2);
+  font: 700 14px/1.4 var(--serif);
+  overflow-wrap: anywhere;
+}
+
+.error-message {
+  margin: 0;
+  padding: 9px 10px;
+  border-left: 2px solid var(--danger);
+  background: rgba(201, 107, 112, .08);
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.kinship-shell {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kinship-toolbar {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.kinship-toolbar > div:first-child {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kinship-toolbar > div:first-child::before {
+  content: "";
+  width: 20px;
+  height: 1px;
+  flex: 0 0 auto;
+  background: var(--gold);
+}
+
+.kinship-toolbar strong {
+  color: var(--gold-2);
+  font: 700 14px/1.3 var(--serif);
+}
+
+.kinship-toolbar span {
+  margin-left: 9px;
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.icon-button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled) {
+  border-color: var(--teal-line);
+  color: var(--teal-2);
+}
+
+.kinship-scroll {
+  min-height: 520px;
+  max-height: 680px;
+  overflow: auto;
+  scrollbar-color: var(--line-strong) var(--surface-2);
+}
+
+.kinship-stage {
+  position: relative;
+}
+
+.kinship-board {
+  position: relative;
+  transform-origin: left top;
+  background:
+    radial-gradient(circle at 8% 16%, rgba(212, 186, 117, .16) 0 1px, transparent 2px),
+    radial-gradient(circle at 38% 8%, rgba(82, 184, 173, .13) 0 1px, transparent 2px),
+    radial-gradient(circle at 79% 23%, rgba(212, 186, 117, .14) 0 1px, transparent 2px),
+    radial-gradient(circle at 91% 76%, rgba(82, 184, 173, .12) 0 1px, transparent 2px),
+    radial-gradient(ellipse at 50% 20%, rgba(82, 184, 173, .05), transparent 38%),
+    radial-gradient(ellipse at 24% 79%, rgba(197, 164, 92, .04), transparent 36%),
+    var(--surface);
+}
+
+.kinship-board svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.kinship-board path {
+  fill: none;
+  stroke: rgba(197, 164, 92, .5);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.kinship-board path.kin-edge-family {
+  stroke: rgba(197, 164, 92, .62);
+}
+
+.generation-mark {
+  position: absolute;
+  left: 4px;
+  width: 44px;
+  min-height: 78px;
+  display: grid;
+  place-items: center;
+  padding: 6px 4px;
+  border-left: 2px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 2px;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  z-index: 2;
+}
+
+.kin-node {
+  position: absolute;
+  width: 156px;
+  min-height: 78px;
+  padding: 10px 13px;
+  transform: translateX(-50%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .24);
+}
+
+.genealogy-app[data-theme="light"] .kin-node {
+  box-shadow: 0 6px 16px rgba(39, 35, 28, .1);
+}
+
+.kin-node:hover {
+  border-color: var(--line-strong);
+}
+
+.kin-node.active {
+  border-color: var(--teal);
+  box-shadow:
+    inset 0 0 0 1px rgba(82, 184, 173, .18),
+    0 8px 18px rgba(0, 0, 0, .28);
+}
+
+.kin-node small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.kin-node strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--ink);
+  font: 700 13px/1.3 var(--serif);
+  overflow-wrap: anywhere;
+}
+
+.kin-node em {
+  display: block;
+  margin-top: 5px;
+  color: var(--teal-2);
+  font: normal 10px/1.3 var(--sans);
+}
+
+.kin-node.ruin-reference {
+  border-color: var(--teal-line);
+}
+
+.ruin-reference-mark {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  padding: 2px 5px;
+  border: 1px solid var(--teal-line);
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--teal-2);
+  font: normal 9px/1.2 var(--sans);
+}
+
+.context-menu-shade {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+}
+
+.genealogy-context-menu {
+  position: fixed;
+  z-index: 40;
+  width: 226px;
+  padding: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface-2);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .38);
+}
+
+.genealogy-context-menu small {
+  display: block;
+  padding: 5px 8px 7px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.genealogy-context-menu button {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.genealogy-context-menu button:hover {
+  background: rgba(82, 184, 173, .12);
+  color: var(--teal-2);
+}
+
+.empty-state {
+  min-height: 470px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  padding: 30px;
+  text-align: center;
+}
+
+.empty-state > span {
+  color: var(--gold);
+  font-size: 32px;
+}
+
+.empty-state strong {
+  margin-top: 12px;
+  color: var(--gold-2);
+  font: 700 16px/1.4 var(--serif);
+}
+
+.empty-state p {
+  max-width: 420px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.working-state {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 20;
+  width: min(330px, calc(100vw - 36px));
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface-2);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .35);
+}
+
+.working-mark {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--teal);
+  border-radius: 50%;
+  color: var(--teal);
+  font: 700 11px/1 var(--serif);
+}
+
+.working-state.active .working-mark {
+  border-color: transparent;
+}
+
+.working-state.active .working-mark::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--teal);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: turn 1s linear infinite;
+}
+
+.working-state strong {
+  color: var(--gold-2);
+  font: 700 12px/1.3 var(--serif);
+}
+
+.working-state p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.working-state.failed {
+  border-color: rgba(201, 107, 112, .5);
+}
+
+@keyframes turn {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 900px) {
+  .genealogy-layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .genealogy-app {
+    padding: 10px;
+  }
+
+  .genealogy-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .focus-person {
+    gap: 11px;
+    padding: 13px;
+  }
+
+  .focus-heading {
+    grid-template-columns: 50px minmax(0, 1fr);
+  }
+
+  .large-avatar {
+    width: 50px;
+    height: 50px;
+    font-size: 21px;
+  }
+
+  .focus-heading h2 {
+    font-size: 16px;
+  }
+
+  .character-brief dl,
+  .focus-detail dl {
+    grid-template-columns: 42px minmax(0, 1fr);
+    font-size: 12px;
+  }
+
+  .kinship-toolbar {
+    align-items: flex-start;
+  }
+
+  .kinship-toolbar span {
+    display: block;
+    margin: 3px 0 0;
+  }
+
+  .kinship-scroll,
+  .empty-state {
+    min-height: 480px;
+  }
+}

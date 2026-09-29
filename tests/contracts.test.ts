@@ -28,7 +28,7 @@ test('RuinTrace 使用美化正则约定的固定字段顺序', () => {
       title: '旧影的回音',
       periodType: '过渡期',
       span: { label: '复兴纪元145年5月—180年冬' },
-      historyProse: '一段经过校验的历史史稿。',
+      historyProse: '玩家保留了一段经过校验的历史史稿。',
       shift: '稳定期 → 过渡期',
     },
     { time: { label: '复兴纪元145年5月20日 23:15' } },
@@ -41,7 +41,7 @@ test('RuinTrace 使用美化正则约定的固定字段顺序', () => {
       'Title:: 旧影的回音',
       'Type:: 过渡期',
       'Span:: 复兴纪元145年5月—180年冬',
-      'History:: 一段经过校验的历史史稿。',
+      'History:: <user>保留了一段经过校验的历史史稿。',
       'Shift:: 稳定期 → 过渡期',
       'NodeTime:: 复兴纪元145年5月20日 23:15',
       '[/RuinTrace]',
@@ -73,5 +73,7 @@ test('蝴蝶效应面板只序列化已校验结果', () => {
 
   assert.match(output, /^<butterfly_panel>/u);
   assert.match(output, /\[可感知证据\|麦田消失；税册改写\]/u);
+  assert.match(output, /\[墟境行动记录\|<user>截留水文残卷。\]/u);
+  assert.doesNotMatch(output, /玩家/u);
   assert.match(output, /\[历史关键词\|水文残卷、锈水镇\]/u);
 });

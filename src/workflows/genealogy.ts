@@ -5,6 +5,7 @@ import type { WorkbenchNamespace } from '../core/namespace.ts';
 import { namespaceKey } from '../core/namespace.ts';
 import {
   buildGenealogyApiPrompt,
+  buildGenealogyRepairPrompt,
   type GenealogyRuleSet,
 } from '../prompts/genealogy.ts';
 import {
@@ -16,7 +17,16 @@ import {
   type GenealogyRecord,
   type GenealogyRepository,
 } from '../storage/genealogies.ts';
-import { parseAndValidateGenealogy } from '../validators/genealogy.ts';
+import {
+  GenealogyValidationError,
+  parseAndValidateGenealogy,
+} from '../validators/genealogy.ts';
+import {
+  buildArtifactCanonBindingsSafely,
+  genealogyBindingUnits,
+} from '../core/artifactCanonBinding.ts';
+import { buildGenealogyEvidenceRoster, captureGenealogyLocalEvidence } from '../core/genealogyEvidence.ts';
+import type { CanonRepository } from '../storage/canon.ts';
 
 export interface GenealogyRequestIdentity {
   namespace: WorkbenchNamespace;
@@ -34,6 +44,7 @@ export interface GenealogyWorkflowDependencies {
   createRequestId(): string;
   now(): number;
   assertCurrent(identity: GenealogyRequestIdentity): Promise<void>;
+  canonRepository?: CanonRepository;
 }
 
 export class GenealogyWorkflow {
@@ -81,13 +92,56 @@ export class GenealogyWorkflow {
       rules: this.dependencies.rules,
     });
     const rawResult = await this.dependencies.generator.generate('genealogy', prompt);
-    const result = parseAndValidateGenealogy(rawResult, {
-      requestId,
-      input,
-      context,
-    });
+    const validationWarnings: string[] = [];
+    const onWarning = (warning: string) => { if (validationWarnings.length < 64) validationWarnings.push(warning); };
+    let result;
+    try {
+      result = parseAndValidateGenealogy(rawResult, {
+        onWarning,
+        requestId,
+        input,
+        context,
+        directive: command.raw || `宗族谱系 ${input.focusCharacter.name}`,
+      });
+    } catch (error) {
+      if (!isRepairableGenealogyError(error)) throw error;
+      const repairPrompt = buildGenealogyRepairPrompt({
+        validationError: summarizeValidationError(error),
+        requestId,
+        directive: command.raw || `宗族谱系 ${input.focusCharacter.name}`,
+        generationInput: input,
+        context,
+        rules: this.dependencies.rules,
+      });
+      const repairedResult = await this.dependencies.generator.generate(
+        'genealogy',
+        repairPrompt,
+      );
+      result = parseAndValidateGenealogy(repairedResult, {
+        onWarning,
+        requestId,
+        input,
+        context,
+        directive: command.raw || `宗族谱系 ${input.focusCharacter.name}`,
+      });
+    }
 
     await this.dependencies.assertCurrent(identity);
+    const createdAt = this.dependencies.now();
+    const canonBindings = buildArtifactCanonBindingsSafely({
+      artifactType: 'genealogy',
+      artifactId: requestId,
+      view: context.evidenceBundle.canonResolvedView,
+      branch: await loadCanonBranchSafely(
+        this.dependencies.canonRepository,
+        identity.namespace,
+      ),
+      units: genealogyBindingUnits(
+        result,
+        buildGenealogyEvidenceRoster(input, context),
+      ),
+      createdAt,
+    });
     const record: GenealogyRecord = {
       key: genealogyRecordKey(identity.namespace, requestId),
       namespace: identity.namespace,
@@ -98,13 +152,52 @@ export class GenealogyWorkflow {
       sourceHash: context.sourceHash,
       input,
       result,
-      createdAt: this.dependencies.now(),
+      localEvidence: captureGenealogyLocalEvidence(result, context),
+      ...(validationWarnings.length ? { validationWarnings } : {}),
+      ...(canonBindings.length > 0 ? { canonBindings } : {}),
+      createdAt,
     };
     await this.dependencies.repository.save(record);
     return record;
   }
 }
 
+async function loadCanonBranchSafely(
+  repository: CanonRepository | undefined,
+  namespace: WorkbenchNamespace,
+) {
+  if (!repository) return undefined;
+  try {
+    return await repository.getBranch(namespace);
+  } catch {
+    return undefined;
+  }
+}
+
+function isRepairableGenealogyError(
+  error: unknown,
+): error is GenealogyValidationError {
+  if (!(error instanceof GenealogyValidationError)) return false;
+  return [
+    'JSON_PARSE_FAILED',
+    'SCHEMA_INVALID',
+    'CONTEXT_ECHO',
+    'REQUEST_MISMATCH',
+    'FOCUS_MISMATCH',
+    'DEPTH_MISMATCH',
+    'PROFILE_REQUIRED',
+    'CHRONOLOGY_INVALID',
+  ].includes(error.code);
+}
+
 function normalize(value: string): string {
   return value.normalize('NFKC').replace(/\s+/gu, '').trim();
+}
+
+function summarizeValidationError(error: GenealogyValidationError): string {
+  if (error.code === 'CONTEXT_ECHO') return `${error.code}: ${error.message}`;
+  if (['PROFILE_REQUIRED', 'CHRONOLOGY_INVALID'].includes(error.code)) {
+    return `${error.code}: ${error.message}`;
+  }
+  return `${error.code}: 上一次结果不符合 eyon.genealogy.v2 的固定结构`;
 }

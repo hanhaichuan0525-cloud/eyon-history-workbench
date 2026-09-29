@@ -20,12 +20,17 @@ export function serializeRuinTrace(
 ): string {
   return [
     '[RuinTrace]',
-    `Title:: ${candidate.title.trim()}`,
-    `Type:: ${candidate.periodType.trim()}`,
-    `Span:: ${candidate.span.label.trim()}`,
-    `History:: ${candidate.historyProse.trim()}`,
-    `Shift:: ${candidate.shift.trim()}`,
-    `NodeTime:: ${node.time.label.trim()}`,
+    `Title:: ${panelUserName(candidate.title)}`,
+    `Type:: ${panelUserName(candidate.periodType)}`,
+    `Span:: ${panelUserName(candidate.span.label)}`,
+    `History:: ${panelUserName(candidate.historyProse)}`,
+    `Shift:: ${panelUserName(candidate.shift)}`,
+    `NodeTime:: ${panelUserName(node.time.label)}`,
     '[/RuinTrace]',
   ].join('\n');
+}
+
+/** 可见面板由酒馆渲染，使用宏而非泛称，让宿主展开当前玩家姓名。 */
+function panelUserName(value: string): string {
+  return value.trim().replace(/玩家/gu, '<user>');
 }

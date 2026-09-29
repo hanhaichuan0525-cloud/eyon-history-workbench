@@ -1,12 +1,14 @@
 const DATABASE_NAME = 'eyon-history-system';
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 8;
 
 export const BIOGRAPHY_STORE = 'biographies';
 export const RUIN_STORE = 'ruinCandidates';
 export const GENEALOGY_STORE = 'genealogies';
 export const BUTTERFLY_STORE = 'butterflyRecords';
 export const PENDING_SETTLEMENT_STORE = 'pendingSettlements';
-export const CHARACTER_VISIBILITY_STORE = 'characterVisibility';
+export const RUIN_REFERENCE_STORE = 'ruinCharacterReferences';
+export const CANON_BRANCH_STORE = 'canonBranches';
+export const CANON_MEMORY_TOMBSTONE_STORE = 'canonMemoryTombstones';
 
 let databasePromise: Promise<IDBDatabase> | null = null;
 
@@ -40,8 +42,20 @@ export function historyDatabase(): Promise<IDBDatabase> {
           store.createIndex('requestId', 'request.requestId', { unique: true });
         }
       }
-      if (!database.objectStoreNames.contains(CHARACTER_VISIBILITY_STORE)) {
-        database.createObjectStore(CHARACTER_VISIBILITY_STORE, { keyPath: 'key' });
+      if (!database.objectStoreNames.contains(RUIN_REFERENCE_STORE)) {
+        const store = database.createObjectStore(RUIN_REFERENCE_STORE, {
+          keyPath: 'key',
+        });
+        store.createIndex('namespace', 'namespaceKey', { unique: true });
+      }
+      if (!database.objectStoreNames.contains(CANON_BRANCH_STORE)) {
+        const store = database.createObjectStore(CANON_BRANCH_STORE, { keyPath: 'branchId' });
+        store.createIndex('namespace', 'namespaceKey', { unique: true });
+      }
+      if (!database.objectStoreNames.contains(CANON_MEMORY_TOMBSTONE_STORE)) {
+        const store = database.createObjectStore(CANON_MEMORY_TOMBSTONE_STORE, { keyPath: 'key' });
+        store.createIndex('namespace', 'namespaceKey', { unique: false });
+        store.createIndex('runId', 'runId', { unique: false });
       }
     };
     request.onsuccess = () => {

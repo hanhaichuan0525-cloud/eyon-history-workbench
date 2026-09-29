@@ -1,24 +1,61 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  WORKBENCH_DATA_CHANGED_EVENT,
   WORKBENCH_GLOBAL,
   WORKBENCH_READY_EVENT,
+  WORKBENCH_RUIN_REFERENCES_EVENT,
   WORKBENCH_STATUS_EVENT,
   type EyonHistoryWorkbenchFacade,
 } from '../src/runtime/facade.ts';
 import { WorkbenchUiClient } from '../src/ui/workbenchClient.ts';
 
+const EMPTY_GENERATION = {
+  apiurl: '',
+  key: '',
+  model: '',
+  source: 'openai' as const,
+  maxTokens: 4096,
+  temperature: 0.8,
+};
+
 function makeFacade(): EyonHistoryWorkbenchFacade {
   const settings = {
     schemaVersion: 1 as const,
     generation: {
-      genealogy: { mode: 'follow_tavern' as const },
-      ruin: { mode: 'follow_tavern' as const },
-      biography: { mode: 'follow_tavern' as const },
-      butterfly: { mode: 'follow_tavern' as const },
+      genealogy: { ...EMPTY_GENERATION },
+      ruin: { ...EMPTY_GENERATION },
+      biography: { ...EMPTY_GENERATION },
+      butterfly: { ...EMPTY_GENERATION },
     },
     ruinDraft: null,
-    genealogyDepth: { ancestors: 4, descendants: 3 },
+    genealogyDepth: { ancestors: 4, descendants: 3, maxPerGeneration: 4 },
+    appearance: {
+      mode: 'dark' as const,
+      accent: 'jade' as const,
+      text: 'neutral' as const,
+    },
+    ruinPreferences: {
+      candidateCount: 3,
+    },
+    retrieval: {
+      biographyEnabled: false,
+      worldbookScope: 'eyon' as const,
+      mergeAliases: true,
+      worldbookEntryExclusions: {},
+    },
+    retries: {
+      genealogy: 2,
+      ruin: 3,
+      biography: 2,
+      butterfly: 2,
+    },
+    customApiTimeoutMs: 600000,
+    deepseekStructured: false,
+    storyClock: null,
+    baselineWorldTime: null,
+    baselineWorldTimes: {},
+    errorLog: [],
   };
   return {
     version: 'test',
@@ -27,55 +64,221 @@ function makeFacade(): EyonHistoryWorkbenchFacade {
     setGenerationSettings: () => settings,
     applyGenerationSettingsToAll: () => settings,
     setRuinDraft: () => settings,
+    listRetrievalShadowObservations: () => [],
+    listPromptDiagnostics: () => [],
+    listCanonResolvedViews: () => [],
+    inspectCurrentArtifactCanonBindings: async () => ({
+      schema: 'eyon.canon.artifact-binding-inspection.v1',
+      counts: {
+        artifacts: 0,
+        boundArtifacts: 0,
+        unboundArtifacts: 0,
+        bindings: 0,
+        bindingMissing: 0,
+      },
+      artifacts: [],
+      bindings: [],
+      failures: [],
+    }),
+    inspectCurrentArtifactCanonAssessments: async () => null,
+    inspectCurrentArtifactCanonConsumption: async () => ({
+      schema: 'eyon.canon.artifact-consumption-inspection.v1',
+      branch: {
+        branchId: 'canon:test', headRevision: 0, updatedAt: 0,
+        revisions: 0, active: 0, reverted: 0, orphaned: 0,
+      },
+      changes: [],
+      assessment: {
+        schema: 'eyon.canon.artifact-assessment-inspection.v1',
+        comparedView: { branchId: 'canon:test', viewId: 'canon-current:test', resolvedRevision: 0 },
+        counts: {
+          artifacts: 0, assessments: 0, returnedAssessments: 0, omittedAssessments: 0,
+          assessable: 0, unbound: 0, bindingMissing: 0, current: 0,
+          partiallyStale: 0, stale: 0, orphaned: 0, uncertain: 0, failures: 0,
+        },
+        assessments: [], failures: [],
+      },
+      decisions: [],
+      causalPreview: {
+        schema: 'eyon.canon.causal-preview.v1',
+        branchId: 'canon:test',
+        headRevision: 0,
+        status: 'no-conflict',
+        modelCalls: 0,
+        counts: {
+          activeOperations: 0, recordedBases: 0, supportUnits: 0, opaqueOperations: 0,
+          conflictRoots: 0, brokenSupports: 0, survivingSupports: 0, affectedOperations: 0,
+        },
+        conflictRoots: [], supports: [], affectedOperations: [], stopPoints: [], warnings: [],
+      },
+      causalRebase: {
+        schema: 'eyon.canon.causal-rebase-projection.v1',
+        branchId: 'canon:test', headRevision: 0, status: 'projected', modelCalls: 0,
+        operationStates: [], supportStates: [], warnings: [],
+      },
+      counts: { available: 0, availableWithWarning: 0, excluded: 0, manualReview: 0 },
+    }),
+    getRuinRuntimeSnapshot: async () => ({
+      flowState: 'idle',
+      runId: '',
+      realityTime: '现实时间',
+      realityLocation: '现实地点',
+      ruinTime: '',
+      ruinLocation: '',
+    }),
+    listGenealogyCharacters: async () => [],
+    listCharacterWorldbookEntries: async () => [],
+    setCharacterWorldbookEntryEnabled: async () => [],
+    setCharacterWorldbookEntriesEnabled: async () => [],
     generateGenealogy: async () => { throw new Error('not used'); },
     listGenealogies: async () => [],
+    listRuinCharacterReferences: async () => [],
+    toggleGenealogyNodeRuinReference: async () => [],
+    removeRuinCharacterReference: async () => [],
+    fetchCustomApiModels: async () => [],
     generateRuin: async () => { throw new Error('not used'); },
     listRuins: async () => [],
     listBiographies: async () => [],
+    deleteBiography: async () => true,
+    listRuinBiographyReferences: async () => [],
+    toggleBiographyRuinReference: async () => [],
+    removeRuinBiographyReference: async () => [],
     listButterflies: async () => [],
-    getCharacterCatalog: async () => ({
-      characters: [],
-      groups: [],
-      hiddenCount: 0,
-      totalCount: 0,
+    listButterflyPending: async () => [],
+    deleteButterfly: async () => true,
+    retireButterflyMirrors: async () => ({ worldbooks: [], removedEntries: 0, globals: [] }),
+    inspectCanonMemory: () => ({ snapshot: null, failure: '' }),
+    refreshCanonMemory: async () => ({
+      schema: 'eyon.canon.memory-snapshot.v2',
+      branchId: 'canon:test',
+      headRevision: 0,
+      computedAt: 0,
+      trigger: 'manual',
+      counts: { total: 0, resident: 0, triggered: 0, unmatched: 0, filtered: 0 },
+      injectedText: '',
+      entries: [],
+      continuity: { anchorCount: 0, relationCount: 0, omittedCount: 0, warnings: [], injectedText: '' },
+      tombstoneCount: 0,
     }),
-    hideCharacter: async () => ({
-      characters: [],
-      groups: [],
-      hiddenCount: 0,
-      totalCount: 0,
+    inspectCurrentCanon: async () => ({
+      schema: 'eyon.canon.inspection.v1',
+      namespace: { characterKey: 'character', chatId: 'chat' },
+      checkedAt: '2026-08-24T00:00:00.000Z',
+      branch: {
+        schema: 'eyon.canon.branch.v1',
+        branchId: 'canon:test',
+        characterKey: 'character',
+        chatId: 'chat',
+        headRevision: 0,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      revisions: [],
+      actions: [],
+      deltas: [],
+      receipts: [],
+      counts: { revisions: 0, actions: 0, deltas: 0, receipts: 0 },
+      revisionStatuses: { active: 0, reverted: 0, orphaned: 0 },
+      deltaStatuses: {
+        active: 0,
+        'partially-active': 0,
+        superseded: 0,
+        orphaned: 0,
+        reverted: 0,
+      },
+      issues: [],
+      healthy: true,
     }),
-    syncCharacters: async () => ({
-      characters: [],
-      groups: [],
-      hiddenCount: 0,
-      totalCount: 0,
+    cancelTask: async () => undefined,
+    inspectCurrentData: async () => ({
+      namespace: { characterKey: 'character', chatId: 'chat' },
+      checkedAt: '2026-07-29T00:00:00.000Z',
+      counts: {
+        biographies: 0,
+        genealogies: 0,
+        ruins: 0,
+        butterflies: 0,
+        pendingButterflies: 0,
+        canonMemoryTombstones: 0,
+        ruinReferences: 0,
+      },
+      issues: [],
+      healthy: true,
     }),
-    createCharacterGroup: async () => ({
-      characters: [],
-      groups: [],
-      hiddenCount: 0,
-      totalCount: 0,
+    exportCurrentData: async () => ({
+      format: 'eyon-history-workbench-backup',
+      schemaVersion: 1,
+      workbenchVersion: 'test',
+      exportedAt: '2026-07-29T00:00:00.000Z',
+      namespace: { characterKey: 'character', chatId: 'chat' },
+      settings,
+      data: {
+        biographies: [],
+        genealogies: [],
+        ruins: [],
+        butterflies: [],
+        pendingButterflies: [],
+        canonMemoryTombstones: [],
+        ruinReferences: [],
+      },
     }),
-    renameCharacterGroup: async () => ({
-      characters: [],
-      groups: [],
-      hiddenCount: 0,
-      totalCount: 0,
+    clearGenerationCache: async () => ({
+      ruinDraftCleared: true,
+      ruinReferencesCleared: 0,
+      genealogiesCleared: 0,
+      ruinsCleared: 0,
+      butterflyPendingCleared: 0,
     }),
-    deleteCharacterGroup: async () => ({
-      characters: [],
-      groups: [],
-      hiddenCount: 0,
-      totalCount: 0,
+    clearErrorLog: () => settings,
+    getRuinPresenceDiagnostics: () => [],
+    enterRuin: async () => ({
+      recordKey: 'record-1',
+      candidateId: 'candidate-1',
+      nodeId: 'node-anomaly',
+      messageId: 9,
+      playerText: '我踏入这处历史特异点。',
+      contractText: '【历史工作台·单楼进入契约】',
     }),
-    moveCharacterToGroup: async () => ({
-      characters: [],
-      groups: [],
-      hiddenCount: 0,
-      totalCount: 0,
+    getRuinTaskReview: async () => null,
+    generateRuinTaskDraft: async request => ({
+      phase: 'review',
+      runId: 'run-1',
+      direction: request.direction,
+      interpretation: request.interpretation,
+      scale: request.scale,
+      task: {
+        title: '核验潮痕', mode: '个人', difficulty: 'D', status: '进行中',
+        attention: '中', progress: '刚刚建立', detail: '核验潮痕的来源。',
+        objective: '取得两处可比对的潮痕。', reward: '100 FP',
+      },
     }),
-    enterRuin: async () => undefined,
+    updateRuinTaskDraft: patch => ({
+      phase: 'review', runId: 'run-1', direction: '核验潮痕',
+      interpretation: '原意锁定', scale: '即时互动',
+      task: {
+        title: patch.title ?? '核验潮痕', mode: '个人', difficulty: 'D', status: '进行中',
+        attention: '中', progress: '刚刚建立', detail: patch.detail ?? '核验潮痕的来源。',
+        objective: patch.objective ?? '取得两处可比对的潮痕。', reward: '100 FP',
+      },
+    }),
+    confirmRuinTaskDraft: async () => ({
+      phase: 'staged',
+      runId: 'run-1',
+      direction: '核验潮痕',
+      interpretation: '原意锁定',
+      scale: '即时互动',
+      task: {
+        title: '核验潮痕',
+        mode: '个人',
+        difficulty: 'D',
+        status: '进行中',
+        attention: '中',
+        progress: '刚刚建立',
+        detail: '核验潮痕的来源。',
+        objective: '取得两处可比对的潮痕。',
+        reward: '100 FP；425Z 圣羽币；潮痕拓片',
+      },
+    }),
     returnRuin: async () => undefined,
     retryButterfly: async () => undefined,
     dispose() {},
@@ -90,37 +293,39 @@ test('UI客户端只通过公开门面读取当前命名空间快照', async () 
   assert.deepEqual(await client.readSnapshot(), {
     version: 'test',
     settings: facade.getSettings(),
+    runtime: {
+      flowState: 'idle',
+      runId: '',
+      realityTime: '现实时间',
+      realityLocation: '现实地点',
+      ruinTime: '',
+      ruinLocation: '',
+    },
     biographies: [],
     genealogies: [],
     ruins: [],
     butterflies: [],
-    characterCatalog: {
-      characters: [],
-      groups: [],
-      hiddenCount: 0,
-      totalCount: 0,
-    },
   });
 });
 
-test('UI客户端将人物隐藏与同步严格转交给公开门面', async () => {
-  const calls: string[] = [];
+test('UI客户端通过公开门面执行资料管理操作', async () => {
   const facade = makeFacade();
-  facade.hideCharacter = async id => {
-    calls.push(`hide:${id}`);
-    return { characters: [], groups: [], hiddenCount: 1, totalCount: 1 };
-  };
-  facade.syncCharacters = async () => {
-    calls.push('sync');
-    return { characters: [], groups: [], hiddenCount: 0, totalCount: 1 };
-  };
   const client = new WorkbenchUiClient(
     { [WORKBENCH_GLOBAL]: facade },
     new EventTarget(),
   );
-  assert.equal((await client.hideCharacter('维奥莱塔')).hiddenCount, 1);
-  assert.equal((await client.syncCharacters()).hiddenCount, 0);
-  assert.deepEqual(calls, ['hide:维奥莱塔', 'sync']);
+  assert.equal((await client.inspectCurrentData()).healthy, true);
+  assert.equal(
+    (await client.exportCurrentData()).format,
+    'eyon-history-workbench-backup',
+  );
+  assert.deepEqual(await client.clearGenerationCache(), {
+    ruinDraftCleared: true,
+    ruinReferencesCleared: 0,
+    genealogiesCleared: 0,
+    ruinsCleared: 0,
+    butterflyPendingCleared: 0,
+  });
 });
 
 test('UI客户端订阅并释放工作台状态与就绪事件', () => {
@@ -145,39 +350,58 @@ test('UI客户端订阅并释放工作台状态与就绪事件', () => {
   assert.deepEqual(ready, ['test']);
 });
 
-test('UI client forwards local character group operations', async () => {
-  const calls: string[] = [];
+test('UI客户端订阅跨模块资料变化事件', () => {
+  const events = new EventTarget();
+  const client = new WorkbenchUiClient({}, events);
+  const received: string[] = [];
+  const off = client.onDataChanged(detail => {
+    received.push(`${detail.reason}:${detail.views.join(',')}`);
+  });
+  events.dispatchEvent(new CustomEvent(WORKBENCH_DATA_CHANGED_EVENT, {
+    detail: { reason: 'ruin-references', views: ['genealogy', 'ruin'] },
+  }));
+  off();
+  events.dispatchEvent(new CustomEvent(WORKBENCH_DATA_CHANGED_EVENT, {
+    detail: { reason: 'cache-cleared', views: ['settings'] },
+  }));
+  assert.deepEqual(received, ['ruin-references:genealogy,ruin']);
+});
+
+test('UI客户端写操作在界面窗口广播资料变化并即时同步墟境人物', async () => {
+  const events = new EventTarget();
   const facade = makeFacade();
-  facade.createCharacterGroup = async name => {
-    calls.push(`create:${name}`);
-    return { characters: [], groups: [], hiddenCount: 0, totalCount: 0 };
+  const reference = {
+    mvuId: 'genealogy:record:node',
+    name: '伊芙琳',
+    source: 'genealogy' as const,
+    identities: ['姑母'],
+    race: '人类',
+    lifespan: '复兴纪元120年—复兴纪元181年',
+    professions: ['书记官'],
+    relations: ['谱系中心人物的姑母'],
+    contextSummary: '保存旧档案的人。',
+    referenceId: 'genealogy:record:node',
   };
-  facade.renameCharacterGroup = async (id, name) => {
-    calls.push(`rename:${id}:${name}`);
-    return { characters: [], groups: [], hiddenCount: 0, totalCount: 0 };
-  };
-  facade.moveCharacterToGroup = async (characterId, groupId) => {
-    calls.push(`move:${characterId}:${groupId ?? 'none'}`);
-    return { characters: [], groups: [], hiddenCount: 0, totalCount: 0 };
-  };
-  facade.deleteCharacterGroup = async id => {
-    calls.push(`delete:${id}`);
-    return { characters: [], groups: [], hiddenCount: 0, totalCount: 0 };
-  };
+  facade.toggleGenealogyNodeRuinReference = async () => [reference];
   const client = new WorkbenchUiClient(
     { [WORKBENCH_GLOBAL]: facade },
-    new EventTarget(),
+    events,
   );
-  await client.createCharacterGroup('重点溯源');
-  await client.renameCharacterGroup('group-1', '墟境关联');
-  await client.moveCharacterToGroup('维奥莱塔', 'group-1');
-  await client.moveCharacterToGroup('维奥莱塔', null);
-  await client.deleteCharacterGroup('group-1');
-  assert.deepEqual(calls, [
-    'create:重点溯源',
-    'rename:group-1:墟境关联',
-    'move:维奥莱塔:group-1',
-    'move:维奥莱塔:none',
-    'delete:group-1',
-  ]);
+  const referenceEvents: string[][] = [];
+  const dataEvents: string[] = [];
+  events.addEventListener(WORKBENCH_RUIN_REFERENCES_EVENT, event => {
+    referenceEvents.push((event as CustomEvent<typeof reference[]>).detail.map(
+      item => item.name,
+    ));
+  });
+  events.addEventListener(WORKBENCH_DATA_CHANGED_EVENT, event => {
+    const detail = (event as CustomEvent<{ reason: string }>).detail;
+    dataEvents.push(detail.reason);
+  });
+
+  await client.toggleGenealogyNodeRuinReference('record', 'node');
+  await client.clearGenerationCache();
+
+  assert.deepEqual(referenceEvents, [['伊芙琳'], []]);
+  assert.deepEqual(dataEvents, ['ruin-references', 'cache-cleared']);
 });

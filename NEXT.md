@@ -1,0 +1,451 @@
+# NEXT · 伊雍历史工作台
+
+> **0.10.0 公开稳定版候选（2026-09-29）**：P1—P4、G-08、G-09 与 G-01 主路径已完成并有自动化及累计真机证据；G-07 已实现且自动化通过，但专项真机复验仍保留。G-01B 与特殊宗族双轨身份模型明确移入后续版本，不属于 0.10.0 承诺。发布口径见 [`docs/RELEASE_STATUS.md`](docs/RELEASE_STATUS.md)。
+
+> 权威索引：[`docs/00-项目蓝图权威索引.md`](docs/00-项目蓝图权威索引.md)
+> 当前主蓝图：[`docs/02-交叉检索、人物事实与Canon版本蓝图.md`](docs/02-交叉检索、人物事实与Canon版本蓝图.md)
+> **P3-0 冻结合同 / P3-A+B+C 已验收 / P3-D 已收口**：[`docs/04-P3确定因果冲突与局部重基线蓝图.md`](docs/04-P3确定因果冲突与局部重基线蓝图.md)
+> **P4-0 冻结合同 / P4-A2 internal.105 定点真机通过；当前时间原点补丁仍待独立验收**：[`docs/05-P4跨产物连续性蓝图.md`](docs/05-P4跨产物连续性蓝图.md)
+> **P4-A2 internal.105 重测与验收记录**：[`docs/P4-A2-internal105-重测.md`](docs/P4-A2-internal105-重测.md)
+> **P4-B 六项实施与验收合同（internal.107 v6，DRIVER ACCEPTED）**：[`docs/P4-B实施合同与验收.md`](docs/P4-B实施合同与验收.md)
+> **P4-C 非结构化裁判修订（internal.112，DRIVER ACCEPTED）**：[`docs/P4-C实施合同与验收.md`](docs/P4-C实施合同与验收.md)
+> **P4-C2 史料疑云叙事（internal.116，DRIVER CLOSED WITH KNOWN LIMITATION）**：[`docs/P4-C2史料疑云与冲突成因叙事合同.md`](docs/P4-C2史料疑云与冲突成因叙事合同.md)
+> **P4-D 增量缓存 / P4-E 文档收口（internal.117 内测检查点）**：[`docs/P4-D-E实施与收口.md`](docs/P4-D-E实施与收口.md)
+> **G-08 普通正文传记冲突感知（DRIVER ACCEPTED）**：[`docs/G-08普通正文传记冲突感知合同.md`](docs/G-08普通正文传记冲突感知合同.md)
+> **G-09 删档后正史记忆残片（internal.118，DRIVER ACCEPTED）**：[`docs/G-09删档后正史记忆残片合同.md`](docs/G-09删档后正史记忆残片合同.md)
+> **G-01 墟境四阶段与地点写回（DRIVER ACCEPTED）**：[`docs/G-01墟境四阶段与地点写回合同.md`](docs/G-01墟境四阶段与地点写回合同.md)
+> **internal.124 触发楼锁 / 四阶段选中色（PACKAGED / DRIVER-PENDING）**：普通下一楼不再误报复用传记；高潮去除永久特色，只高亮当前点选节点
+> **internal.127 伊雍像素伴生体 / 可拖动任务气泡（PACKAGED / DRIVER-PENDING）**：旧圆球与独立悬浮框已替换；全身拖动、位置恢复、多模块动作与传记分段进度已接入实际脚本
+> **王庭档案院单一视觉源（internal.131 PACKAGED / DRIVER-PENDING）**：网页默认入口与酒馆整合包都加载同一份正式 `workbench.js`；外层固定、正文单滚动，打开与切换模块归零滚动；网页可直接目检正式传记封面、纸纹与章节，并以入口、版本和 bundle 查询戳交叉校验阻断旧界面回流
+> **墟境任务卡与世界书币制同源（internal.135 PACKAGED / DRIVER-PENDING）**：任务模型只生成内容与道具；脚本在每次新草案时读取当前绑定世界书的经济价格指南，按墟境地点、个人/团队、D—S 难度及即时/短程/阶段规模确定明确数值与币名；世界书改币名后新任务自动跟随，旧封缄任务保持原值。正文使用请求专属占位符，脚本在生成完成后原子替换为固定 CSS 的 RPG 任务卡，重抽逐字复用；无法唯一解析币制时明确拒绝，不再回退“当地通货”
+> **遣返正式事件链（internal.136 PACKAGED / DRIVER-PENDING）**：任务确认由玩家亲自发送，委托人与终态卡显示收口；遣返不再只依赖输入框 DOM，而在酒馆确认玩家楼的 `MESSAGE_SENT` 事件启动唯一准备事务，并由生成前钩子等待同一结果；旧宿主继续兼容兜底
+> **玩家楼发送时序与姓名显示（internal.137 PACKAGED / DRIVER-PENDING）**：程序化玩家楼经唯一楼核验后先精确清空旧输入，再确认元数据并 `/trigger`；工作台蝴蝶档案把 `<user>` 实时展开为当前酒馆玩家名，底层仍保存通用宏
+> **P3-A internal.94 真机验收记录**：[`docs/P3-A真机验收清单-20260919.md`](docs/P3-A真机验收清单-20260919.md)
+> **P3-B internal.95 真机验收记录（R1—R4 已通过）**：[`docs/P3-B真机验收清单-20260919.md`](docs/P3-B真机验收清单-20260919.md)
+> **P3-C internal.96 真机验收记录（R5—R7 已通过）**：[`docs/P3-C真机验收清单-20260920.md`](docs/P3-C真机验收清单-20260920.md)
+> **P1-1 真机验收记录（交接 Codex/GPT 必读，2026-08-30 三剧本全绿）**：[`docs/P1-1真机验收记录-交接文档-20260830.md`](docs/P1-1真机验收记录-交接文档-20260830.md)
+> **P2-B/P2-C 真机验收记录（2026-09-17 收口，合并验收通过）**：[`docs/P2-BC真机验收记录-交接文档-20260903.md`](docs/P2-BC真机验收记录-交接文档-20260903.md)
+> **internal.90 真机验收记录（当前累计基线）**：[`docs/internal90真机验收记录-20260917.md`](docs/internal90真机验收记录-20260917.md)
+> **internal.87+88 历史复验清单（已由 internal.90 累计验收收口）**：[`docs/internal87-88真机复验清单-交接文档-20260917.md`](docs/internal87-88真机复验清单-交接文档-20260917.md)
+> **本批交接文档（给 GPT/Codex/后续 DSH 会话）**：[`docs/交接文档-GPT-internal86-88与6步AB-20260917.md`](docs/交接文档-GPT-internal86-88与6步AB-20260917.md)
+> 当前阶段：P1—P4、G-01、G-08、G-09 已完成工程与累计真机收口；G-07 的 S 句柄迁移已经实现并通过自动化，尚待专项真机。G-01B 与特殊宗族双轨身份模型保留为后续版本。
+> 下一道门：**完成 0.10.0 发布审计、稳定包与校验清单，并在公开 Release 后按 `docs/INSTALL.md` 做一次最短冒烟测试。后续功能从 G-01B、特殊宗族双轨身份和 G-07 专项真机中另行排期。**
+> 发行判断：`0.10.0 stable candidate / P1—P4 complete / G-01+G-08+G-09 driver-accepted / G-07 implemented+automated+driver-pending`
+> runtimePersistentBlueprintBudget：0
+> 完整历史：[docs/archive/NEXT-历史全量快照-2026-08-23.md](docs/archive/NEXT-历史全量快照-2026-08-23.md)
+
+## 1. 当前已经具备
+
+### 统一检索
+
+- 四模块正式使用统一 Active 检索；旧 legacy 结果不得混入模型正式输入。
+- 当前绑定范围内开启、非空、未排除的世界书条目进入 EnabledWorldbookCorpus，并获得覆盖状态。
+- SourceSnapshot、WorldKnowledgeCatalog、双向关系、EvidencePassage、EvidenceBundle、EventFrame、CastManifest 已有首版。
+- 计划、修复和扩写应消费同一 Bundle；公开回执不保存世界书正文副本。
+- Qualified Evidence v1 第一阶段已实现：逐 passage 标注时间、地理、事件阶段、实体职责、版本资格和允许/禁止用途。
+- **语义编译层已撤销（internal.71）**：SemanticEvidenceCompiler/View 类型仅作历史数据兼容，活动入口无引用、构建产物不含编译器；显式纪元时不再调用任何语义模型。替代为 internal.72 共证门纯确定性纪律（下方）。
+- 固定词法、名称后缀和整来源共现只提供候选，不再直接产生 passage 硬资格；日期/流程噪声不再充当锚点；点名短生涯人物的自动时间范围是可行包络，不再随机锁死出生后数年。
+- Citation Contract v2 已冻结并实施：EvidenceBundle 统一拥有 P/F/E/S 任务短句柄；传记、谱系、墟境、蝴蝶的模型边界与解析器共用同一注册表，内部稳定主键只由脚本解析与保存。
+- 输出归一化在唯一边界逐项保全后再严格校验（无害多余字段/近义枚举不整批回退，坏子项单独丢弃并留回执）；骰表/基调与世界知识查询分流；长复合事件锚可召回精确相关的无纪元来源。
+- internal.72 检索共证门：括号「(类别/品质)」标注不再拆成实体别名/搜索词（catalog.ts 与 index.ts 同款净化）；rankDirect 强词（≥3 字或索引实体）独证、2 字非实体弱词必须共证；`matchedEntities` 收编到查询片段集合。实体资格=索引实体集合（真实数据 2 字实体 81→10 纯专名）；「品质」「装备」字段实体保留为合理锚（「史诗品质装备」需求照常召回）。
+
+### 人物事实与时间
+
+- P0-A `CharacterCanonFacts / PersonCanonView / TaskAnchorAttachment` 已接入四模块共享检索链。
+- 长人物条目可读取后部经历；人物事实带稳定 factId、来源 snapshot 和 source span。
+- 普通历史事件日期不再误当人物出生年。
+- 人物自动时间窗、阶段年龄和未出生/已故硬门已有首版。
+- P0-C 不再把世界书或 fact 排列伪装成既定时间线；明确日期/时序/前提进入 CanonEventRelation，空白允许有据解释。
+- reported/contested 与客观事实分开；传记和墟境可记录 hypothesis、使用事实、关键假设与替代解释。
+- 谱系证据名册是权威事实锁，不再是准入白名单：已知人物/亲缘不可改写；资料空白可按上限补全父系、母系亲属，统一标为 generated、无来源、非 MVU、非 Canon。
+
+### Canon 版本骨架
+
+- P0-B `CanonBranch / CanonRevisionRecord / InterventionAction / InterventionDelta / CanonResolutionReceipt` 已落库。
+- 分支按聊天隔离，修订 append-only。
+- 删除最新遣返楼可回父 revision；删除较早 revision 时，后继效果降为 orphaned，不能继续伪装 active。
+- P1-1 `resolveCanon(branch, revision, queryScope)` 已成为普通生成的唯一当前视图入口：只应用当前分支/revision 内可追溯、已验证、作用域重叠的 delta；坏 delta/operation 局部跳过并留下回执。
+- 传记、谱系、墟境、蝴蝶在统一 Active Retrieval 边界读取同一 CanonRepository；当前事实、版本化 lifespan/关系/事件、CanonPassageView 与 Qualified Evidence 使用同一 viewId/revision/queryScopeHash。
+- 混合 passage 只遮蔽失效事实 span；无法安全切分时使用当前 fact capsule，旧原文只保留为只读历史，不交给普通正文二选一。
+- `listCanonResolvedViews()` 提供有界只读诊断，不保存世界书或 prompt 正文。
+
+### 内容与交互
+
+- 蝴蝶效应已有历史演变、承接者、传播载体、代价/反转和现世证物合同。
+- 墟境固定为：批量提纲 → 自动扩写全部 3—5 份史稿 → 玩家阅读比较 → 选择候选和节点 → 进入。
+- `enterRuin` 不再扩写候选；切换候选和进入动作不产生模型请求。
+- 非 ready 候选禁止进入；失败候选可单项重试。
+
+## 2. 最近自动化与包证据
+
+- **程序化玩家楼发送时序 + 工作台玩家名展开（2026-09-29，internal.137，PACKAGED / DRIVER PENDING）**：工作台建立玩家楼后先核验楼层角色、正文与预期 ID，再按精确原文匹配清空宿主输入框，随后确认业务元数据并调用 `/trigger`；若建楼失败则输入保留，若玩家已输入下一句则不覆盖。蝴蝶档案显示层实时读取当前 SillyTavern `name1` 并展开 `<user>`，底层记录、Canon 与注入文本仍保存通用宏。全量 **720/720**、定向 **37/37**、typecheck、三份正则、production build、六份 bundle 语法与 manifest 哈希 **6/6** 通过；仅保留既有 bundle 体积警告。内测包 **1,532,164 bytes**，SHA-256 `3D23ACEA462C954C1D4D1BC22CF44830DF444047811525D743C7A0F79D31B691`；internal.136 原包已原样归档于 `release/archive/0.10.0-internal.136-v1/`，SHA-256 `C3ED1AA96E813EC069AA8963DF7AAAA53851DE57CA9624BAF000726C999B06A2`。真实 SillyTavern 尚待驾驶员验收。
+
+- **墟境任务交互收口 + 遣返正式事件链（2026-09-29，internal.136，PACKAGED / DRIVER PENDING）**：任务建立卡委托人固定为伊雍；确认草案只把“确认墟境任务：名称”写入输入框，由玩家亲自发送；任务终态追加同源结果卡。遣返新增 `MESSAGE_SENT` 权威入口，严格读取事件携带的玩家楼 ID，只对可见 user 楼且解析为 `ruin.return` 的正文启动准备；生成前钩子等待同一 Promise，避免两个入口重复冻结或重复生成。普通消息不会触发；宿主缺少事件或程序化路径未派发时仍由 `GENERATION_AFTER_COMMANDS` 兜底。全量 **715/715**、定向 **154/154**、typecheck、三份正则、production build、六份 bundle 语法与 manifest 哈希 **6/6** 通过；仅保留既有 bundle 体积警告。内测包 **1,530,900 bytes**，SHA-256 `C3ED1AA96E813EC069AA8963DF7AAAA53851DE57CA9624BAF000726C999B06A2`；internal.135 原包已原样归档于 `release/archive/0.10.0-internal.135-v1/`，SHA-256 `A741C186893C7010CEAA32AEA713783E7E227EC069D1D825F94E507396D930E0`。真实 SillyTavern 尚待驾驶员验收。
+
+- **墟境任务卡与世界书币制同源（2026-09-29，internal.135，PACKAGED / DRIVER PENDING）**：新增只读经济指南解析器，从当前绑定且启用的世界书条目识别地点所属势力、实体币名及个人/团队 D—S 奖励范围；即时互动、短程目标、阶段任务按固定区间位置取整为明确“数值Z + 币名”。模型不再生成货币字段；币制不唯一、地点无法归属或奖励档缺失时直接给出可定位错误，不使用“当地通货”兜底。任务正文改用请求专属占位符，生成完成后由脚本原子替换为 HTML 转义、响应式、无外部资源的固定 RPG 任务卡；确认楼与重抽继续复用同一封缄记录。使用真实角色卡世界书样本验证“梵尼亚/神迹群山/圣纹工坊 + 个人D级即时互动”解析为 `425Z 圣羽币`，改名夹具会让新草案跟随为 `羽冠币`，旧任务不变。全量 **711/711**、墟境任务专项 **9/9**、typecheck、三份正则、production build 与六份 bundle/manifest 哈希通过；仅保留既有 bundle 体积警告。内测包 **1,518,434 bytes**，SHA-256 `A741C186893C7010CEAA32AEA713783E7E227EC069D1D825F94E507396D930E0`；internal.134 原包已原样归档于 `release/archive/0.10.0-internal.134-v1/`，SHA-256 `23E0AD1C6417AF2B52DE7F2878163CA6870984EA33BA83DBDFCEDFB1685D7EE0`。尚未安装或完成真实酒馆驾驶员验收。
+
+- **墟境任务奖励三件套（2026-09-29，internal.134，PACKAGED / DRIVER PENDING）**：任务奖励固定由难度FP、世界内货币和一件墟境相关道具构成；通用G占位与EXP从 API schema、提示、确定性物化、核心规则和测试中退出。货币优先沿用已有币制，无据时仅写少量当地通货；道具必须来自本次地点、人物、事件或物质环境，轻量任务只给纪念物、日用品或小型线索物。新增旧G/EXP结构和通用G占位拒绝回归；全量 **709/709**、专项 **20/20**、typecheck、三份正则、production build 与六份 bundle/manifest 哈希通过，仅保留既有体积警告。内测包 **1,512,110 bytes**，SHA-256 `23E0AD1C6417AF2B52DE7F2878163CA6870984EA33BA83DBDFCEDFB1685D7EE0`；internal.133 原包已原样归档于 `release/archive/0.10.0-internal.133-v1/`，SHA-256 `C55EBF9358AFC571E94CC282856651C3464B38904965DD9BA6D49E977A03A5A7`。尚未安装或完成真实酒馆驾驶员验收。
+
+- **墟境任务草案审定与重抽封缄（2026-09-29，internal.133，PACKAGED / DRIVER PENDING）**：已进入墟境后，玩家可先选“原意锁定/情境补全/自由演绎”和“即时互动/短程目标/阶段任务”，由独立 API 生成不入聊天的草案；工作台允许修订名称、详情和目标，确认后才创建玩家楼并把完整任务、哈希和轮次上下文写入该楼元数据。普通生成、助手重抽与 swipe 都重新武装同一份封缄文本，不重新请求任务 API；删除助手楼不会解锁，只有删除确认玩家楼才恢复草案编辑。可见 `<task_info>` 使用单冒号六字段格式，轻量任务允许仅有 FP；活动任务锁、终态续建与 MVU 正常更新路径保持不变。伊雍核心规则和脚本交接规则已同步。全量 **708/708**、专项 **19/19**、typecheck、三份正则、production build 与六份 bundle/manifest 哈希通过；构建仅保留既有体积警告。内测包 **1,511,540 bytes**，SHA-256 `C55EBF9358AFC571E94CC282856651C3464B38904965DD9BA6D49E977A03A5A7`；internal.132 原包已原样归档于 `release/archive/0.10.0-internal.132-v1/`，SHA-256 `107A5C8832B64C9A2A8A7F776BF01BD04B38DC3F8C2F275D3C8055174C87DD3F`。尚未安装或完成真实酒馆驾驶员验收。
+
+- **墟境任务模块（2026-09-29，internal.132，PACKAGED / DRIVER PENDING）**：进入墟境本身不会自动建任务；仅在 `exploring/anchored` 状态下于既有墟境页显示任务区。玩家填写具体干预方向后，独立 API 只返回严格 `eyon.ruin-task.v1` JSON，脚本确定性映射既有 MVU `stat_data.任务列表` 字段与 D—S 难度 FP，不直接写变量；随后发送一条可见玩家请求，并以一次性私密契约约束紧邻普通正文自然引出任务、输出唯一 `<task_info>` 并通过正常 MVU 更新写入。活动任务以 `[墟境任务·个人|团队]` 前缀识别，同一墟境只允许一个未结束任务；`已完成/失败/放弃/终止/已结算/可结算` 后重新开放拟定入口。聊天、轮次、触发楼或 swipe 变化会拒绝迟到提交。新增 5 项任务链专项与界面条件断言；全量 **707/707**、typecheck、三份正则一致性与 production build 通过，仅保留既有 bundle 体积警告。内测包 **1,493,014 bytes**，SHA-256 `107A5C8832B64C9A2A8A7F776BF01BD04B38DC3F8C2F275D3C8055174C87DD3F`；六份生产 bundle 与 manifest 哈希一致，包内版本、稳定脚本 ID、`eyon.ruin-task.v1`、任务建立/落地文案和历史任务选择器标记均已反查。internal.131 原包已原样归档至 `release/archive/0.10.0-internal.131-v1/`，**1,469,884 bytes**，SHA-256 `31EF6FCDC522252077110E4FF9051A94741E585960A877BC05C591916600DCAD`。尚未安装、调用真实 API 或完成驾驶员验收。
+
+- **网页 / 酒馆像素级同源入口收口（2026-09-28，internal.131，PACKAGED / DRIVER PENDING）**：`prototype/index.html` 默认跳转正式 `workbench-runtime.html`，只有 `?legacy-design=1` 才保留旧手写视觉稿；运行时预览直接加载与内测包相同的 `dist/workbench.js`，并提供传记夹具及 mode/accent/text 主题参数，可目检正式封面、纸张纹理、章节与浅深主题。传记封面使用纯 CSS 菱纹和双线压框，封面露底与展开页统一取同一纸张色变量，内页纹理只做低对比叠加。酒馆 overlay 改为不可滚动的固定视口，工作台使用固定侧栏/顶栏与唯一正文滚动区，打开或切换模块时归零滚动，避免旧滚动位置造成顶部缺失和侧栏裁切。出包器新增默认入口、生产预览标记、清单版本与 bundle 查询戳交叉校验。自动化、类型检查、正则、构建、包哈希与浏览器目检证据见本轮交付；真实 SillyTavern 导入仍待驾驶员验收。
+
+- **网页预览与正式包完全同源（2026-09-28，internal.130，PACKAGED / DRIVER PENDING）**：网页日常入口改为直接加载生产 `workbench.js`，旧静态视觉稿只作为带参数的参考档案；正式壳层补齐皇家书写院纹章、SVG 导航、三格模块摘要账册与传记藏书架，五模块主题状态同步进入内部根节点。内测打包固定为生产构建、六份 manifest 哈希同步、版本与视觉标记校验、嵌入同一份工作台产物，缺少新版标记会拒绝出包。包含 internal.129 的传记同年跨月年份修复。全量 699/699、typecheck、三份正则、六份 bundle 语法、manifest 哈希、包内版本/视觉标记和正式入口浏览器目检通过；包 1,468,365 bytes，SHA-256 `D5B4859BA741BECB9AA18ECD3A10ACB80FCB177462DC7F34D4C266E10403321D`。internal.129 原包归档于 `release/archive/0.10.0-internal.129-v1/`，SHA-256 `A5401602BBC70D71919D59B77CF652057E3896A778643DF17BCE7716D339E6F1`。真实 SillyTavern 安装、宽屏/窄屏和宿主主题组合仍待驾驶员验收。
+
+- **王庭档案院正式迁移 + 传记阶段年份收口（2026-09-28，internal.129，PACKAGED / DRIVER PENDING）**：正式工作台五模块与公共外壳改用同源紫灰、旧金和低饱和宝石色，统一 9/15/21px 三级圆角、模块眉题、面包屑、空状态与浅深主题；不增加图片、字体或远程资源。传记日历跨度允许压缩重复终点字段，但不得省略共同纪元与年份；同年跨月显示为“复兴纪元482年1月 - 12月”，并新增从计划到最终 Biography 的回归测试。全量 699/699、typecheck、三份正则、六份 bundle 语法与 manifest 哈希、包内版本和正式外壳标记均通过；本地浏览器已复验历史、墟境、传记与设置正式界面。包 1,457,998 bytes，SHA-256 `A5401602BBC70D71919D59B77CF652057E3896A778643DF17BCE7716D339E6F1`；internal.128 原包已归档，SHA-256 `A74E4F5E8B39886138905D79A1D0B9497FF4A6B8D0791FEFA996659CA8E5CD8F`。未修改业务 schema、Canon、检索、模型提示、存储或生成调用；真实酒馆安装仍待驾驶员复验。
+
+- **伊雍像素伴生体 / 可拖动任务气泡（2026-09-28，internal.127，PACKAGED / DRIVER PENDING）**：旧“伊”圆球与独立悬浮框被同一宿主级伊雍伴生体替换；10 组四帧动作覆盖空闲、传记、谱系、墟境地图/传送门、蝴蝶效应、系统处理、成功与报错。动作采用一次连贯引入后末段微循环，同阶段进度更新不重播。气泡平时隐藏，仅在任务状态需要时贴附显示。伊雍本体通过 pointer capture、4px 阈值和点击抑制实现拖动，坐标持久化并在重载与窗口变形时夹回视口。测试 loader 删除第二个独立 launcher，改由伴生体事件打开工作台。传记显示总段数、当前段落范围和标题，首次请求不再出现“第 1 次尝试”；其余模块统一使用具象阶段标题。未改变生成合同、Canon、检索、schema、存储或模型调用数。全量 696/696、伴生体专项与墟境专项 119/119、typecheck、三份正则契约、生产 build、六份 manifest 哈希及包内新旧标记检查通过；构建仅保留既有 bundle 体积警告。包 1,440,650 bytes，SHA-256 `AB3E0664650FE8479970A6819689AAB6005837FD4F9F8FEA7AD9C14879798ADA`。真实酒馆中的拖动、动效节奏与窄屏气泡仍待驾驶员复验。
+
+- **传记触发楼锁 + 墟境四阶段选中色（2026-09-27，internal.124，PACKAGED / DRIVER PENDING）**：普通生成与类型不明的助手续写只认当前最末玩家楼，不再跨过已完成的助手楼误复用传记；明确 `regenerate/swipe` 仍可复用紧邻玩家楼的已提交传记。下一楼正文保持不重复传记，只消除误提示和误开窗。墟境缘起、经过、高潮、结果未选时统一基础样式，当前点选的卡片与时间圆点才变青，高潮无永久特色。全量 693/693、typecheck、三份正则契约、生产 build、六份 manifest 哈希及包内版本通过；仅既有 bundle 体积警告。包 1,210,155 bytes，SHA-256 `237A3BF6F987AE4C7746B6D63D8B315329045DF33E330A3B65CD182509F63420`；internal.123 原包已按 SHA-256 `C703AB255AD63A0DD277B674AD5A561232F11525863847609EB0DB76DE926E75` 归档。尚未安装、真机、调用远程 API 或正式发布。
+
+- **G-01 墟境四阶段与地点写回（2026-09-27，internal.123，PACKAGED / DRIVER PENDING）**：玩家可进入缘起、经过、高潮、结果任一节点；内部 `anomaly` 键保留以兼容旧 schema 和存档，只把玩家可见名称改为“高潮”。四阶段均具备介入机会和可能分支，结果阶段可改变余波但不能无因抹除前史。玩家生成输入仍可简写地点；新候选节点和入境写回执行角色卡 MVU 4～8 层地点合同，三处地点逐字一致。旧简称节点在完整父级存在时确定性补足，证据不足则拒绝伪造。无新增地点数据库、模型调用或 schema 迁移。专项 124/124、全量 693/693、typecheck、三份正则契约、生产 build、六份 manifest 哈希及包内版本/关键标记通过；仅既有 bundle 体积警告。包 1,210,335 bytes，SHA-256 `C703AB255AD63A0DD277B674AD5A561232F11525863847609EB0DB76DE926E75`；internal.122 原包已按 SHA-256 `1510E7272E615FDF432BF061C50D927CF4143C5C9569D4260CBCBB6909EC59A4` 归档。尚未安装、真机、调用远程 API 或正式发布。
+
+- **G-08 普通正文传记连续性感知 + G-09 删档后正史记忆残片（2026-09-27，internal.118）**：普通正文沿用既有私密提示生命周期，但把 Canon 源 A 与低权传记源 B 分层投递；源 B 只读取当前聊天/分支/revision/P2 有效且相关的锚，最多 3 个独立锚或 1 个完整关系簇，独立 1900 字预算，不暗选冲突正史。删除已形成当前有效 Canon 的蝴蝶档案时，原子保存不含归档全文的紧凑墓碑；后续从当前 action 与 active operation 重建因果，回滚、取代、孤立或失效后退出。无新增普通正文模型调用，不恢复已删面板，不把传记升级为 Canon。全量 687/687、typecheck、三份本地正则契约、生产 build、manifest 校验与包内版本/关键标记通过；包 1,200,755 bytes，SHA-256 `08B67F8A6A7CE7D7B4F5DDB468B360BEBA7CAA07538EFE4FF63C4939E2FF6E05`。G-09 已在 internal.126 真实宿主完成删档保留、紧凑注入与回滚退出，标记 `DRIVER ACCEPTED`；G-08 仍待专项真机。
+
+- **P4-D 增量缓存 / P4-E 文档收口（2026-09-27，internal.117，PACKAGED / DRIVER PENDING）**：新增统一 96 项进程内缓存，只保存可重算的 `ContinuityView` 与 `GenealogyLocalView`；键包含 namespace、branch、revision、query、模块、对象/时间/地点、相关影响窗 anchorSetHash 与 `p4-derived-cache.v1`。连续性影响窗只含查询命中锚及其直接关系成员，无关锚不触发失效；相关锚删除、P2 事实状态、关系、revision、聊天或分支变化必定 miss。缓存值克隆读写，损坏/超限/写失败均冷算；公开有界诊断与独立清理，不触碰持久产物。实现过程中专项回归捕获并修复了同 branchId 跨聊天谱系视图复用风险。IC-01—IC-06 6/6、全量 684/684、typecheck、三份本地正则契约、生产 build、六份 bundle/manifest 哈希及包内版本/缓存标记核对通过；P4-E 已同步收束主蓝图、权威索引与本账本。包 1,195,579 bytes，SHA-256 `D2E6BCACA6B6A4A7B74265A5CEF81C03D3C76619419A95697433094B765DD8C7`；internal.116 已按原 SHA-256 `FA5D4AEA8071178D600022A69EE933750B3950B45EA322F6A6B3207FF4FF76E8` 归档。尚未安装、真机、调用远程 API 或正式发布。
+
+- **P4-C2 较早时间窗独立语义裁决（2026-09-27，internal.116，PACKAGED / DRIVER PENDING）**：internal.115 的 484 年单窗真机结果仍有 3/3 候选在整段复核后用“悬置一年、次年解封、485 年合订”等语义坐实未来，证明结构合法不等于语义合格。新版把较晚锚的具体年份也从较早任务投影中遮蔽，只保留本窗之后存在异说；复核稿结构校验后追加一次仅看截止时间与候选全文的独立 `PASS/BLOCK` 裁决。任何跨截止点的完成、交付、持续、未来日期、官方归档/承认或后见史料成因都 BLOCK，只使该候选进入可重试失败态。控制回执不进入业务 schema 或存储；普通、较晚、跨窗、自动范围及非时间冲突零额外请求。无关键词黑名单、循环 repair、Canon 写入或 G-08/P4-D 扩权。专项 118/118、全量 678/678、typecheck、三份正则契约、生产 build、六份 bundle 语法与 manifest 哈希、包内版本和 4 项关键标记全部通过。包 1,189,829 bytes，SHA-256 `FA5D4AEA8071178D600022A69EE933750B3950B45EA322F6A6B3207FF4FF76E8`；internal.115 原包已按 SHA-256 `8469D21E26569DCB07335B8497B49D6221BFE138954D599CD8CA96BEAB685E1E` 归档为 `release/archive/0.10.0-internal.115-v1/`。
+
+- **P4-C2 较早时间窗未来证据投影与整段复核（2026-09-27，internal.115，PACKAGED / DRIVER PENDING）**：internal.114 第二次 484 年单窗真机结果仍有 3/3 候选通过全知回顾确认 485 年结果，证明自然语言纪律不足以压过同轮输入中的未来答案。新版只在候选完整落于 `time` 冲突较早端时，创建任务级只读投影：保留冲突存在、较晚时间和共同实体，遮蔽较晚记录的具体主张、最终正文与现状摘录；候选结构校验通过后，再执行一次不重投未来证据的整段语义截止复核。复核失败只令该候选可重试，普通、较晚、跨窗和非时间关系零投影、零额外请求。无新增业务字段、存储、Canon 写入、关系类型或关键词审判；未改 P4-C 识别、G-08/P4-D。墟境专项 113/113、全量 677/677、typecheck、三份正则契约、生产 build、六份 bundle 语法与 manifest 哈希、包内版本和 3 项关键标记全部通过。包 1,187,073 bytes，SHA-256 `8469D21E26569DCB07335B8497B49D6221BFE138954D599CD8CA96BEAB685E1E`；internal.114 原包已原样归档为 `release/archive/0.10.0-internal.114-v1/`，1,182,115 bytes，SHA-256 `9F85DFA9882384A8F688372C82EC636A614234C156FE0B73B59458E4BF05A51A`。
+
+- **P4-C2 较早时间窗认知截止线（2026-09-27，internal.114，PACKAGED / DRIVER PENDING）**：internal.113 的 484 年单窗真机测试确认关系召回和疑云成因有效，但 2/3 候选以全知回顾确认了 485 年后来结果。新版要求候选叙事知识严格截止于 `span.end`；之后只能写计划、条件、担忧、未履行约定或不确定可能，演变、史稿、转向和结尾均不得补叙未来结果。提纲、扩写与 DeepSeek 精简恢复同源；没有新增字段、validator、请求、repair、存储或 Canon 权力，也未修改 P4-C 识别、较晚/跨窗职责、G-08/P4-D。专项 119/119、全量 672/672、typecheck、三份正则契约、生产 build、六份 bundle 语法与 manifest 哈希、包内版本和 4 项关键标记均通过。包 1,182,115 bytes，SHA-256 `9F85DFA9882384A8F688372C82EC636A614234C156FE0B73B59458E4BF05A51A`。internal.113 原包已原样归档为 `release/archive/0.10.0-internal.113-v1/`，1,181,782 bytes，SHA-256 `E1404603386B5A646C8A226FC1A8868A801EB647BE16B0A81A325CD3F8CC1F2E`。
+
+- **P4-C2 史料疑云与冲突成因叙事（2026-09-27，internal.113，PACKAGED / DRIVER PENDING）**：只在墟境命中当前 P4-C 关系簇时追加非结构化只读叙事纪律；已有成因优先，无成因时让模型结合人物、制度、媒介、物件、环境与证据自由形成有界局部假说。脚本按候选实际 span 区分较早因果种子、较晚旧说残迹与跨段分歧过程；非时间差异走通用责任，无关/无关系零注入。提纲、扩写与 DeepSeek 精简恢复同源；没有新增 causeType/mysteryType、schema、模型请求、repair、存储或 Canon 写入，也未改 G-08/P4-D。专项 118/118、全量 671/671、typecheck、三份正则契约、生产 build、六份 bundle 语法、manifest 双入口哈希及包内标记均通过。包 1,181,782 bytes，SHA-256 `E1404603386B5A646C8A226FC1A8868A801EB647BE16B0A81A325CD3F8CC1F2E`；internal.112 原包已按 SHA-256 `4C7AB31663612580A75420D0F2838D05A68288C24ED31B6D1E1C6FD8933659A5` 归档。
+
+- **P4-C 驾驶员收口 + P4-C2/G-08 合同冻结（2026-09-27，DOC-ONLY）**：真实导出含 2 篇 committed biography、12 个 current anchor 与 1 个 current relation；唯一关系连接 484 年秋和 485 年 8—11 月的两次“暮潮移交”，为 `parallelView(time)`，`sourceConflict=0`。同源起点因无实质差异被拒绝，其他相似但不同事件均判为 `differentEvent`；驾驶员确认 P4-C 通过。新增 `docs/P4-C2史料疑云与冲突成因叙事合同.md` 与 `docs/G-08普通正文传记冲突感知合同.md`：前者负责墟境，后者负责未来普通正文；两者都只冻结触发、权力、时域、认知与验收，不固定冲突解释类型。本轮未改源码、提示词、schema、存储、构建或安装包。
+
+- **P4-C 非结构化裁判修订（2026-09-27，internal.112，PACKAGED / LATER DRIVER ACCEPTED）**：普通传记正文 schema/prompt/workflow 删除 `continuityClaim`、`continuityRelations`、`continuityEventVerdicts`，最终 occurs 事件锚改由脚本根据冻结事件、段落时间和已校验实体索引建立；只有存在候选事件对的正文批次才运行一次独立中文短行裁判，失败或无法确认均不影响正文。关系种类、作用域和落库仍由脚本掌握；不改其他模块或 P4-D。专项 101/101、全量 667/667、typecheck、三份正则、生产 build、六份 bundle 语法与哈希均通过。包 1,175,382 bytes，SHA-256 `4C7AB31663612580A75420D0F2838D05A68288C24ED31B6D1E1C6FD8933659A5`；internal.111 原包按原 SHA-256 `8E6812CD4FB6B3CFEF95E5390A46F0A4CB0211750B2023FE7DE7DC822268B2F1` 归档。真实验收见上一条驾驶员收口记录。
+
+- **P4-C 聚焦裁决合并修复（2026-09-27，internal.111，PACKAGED / DRIVER PENDING）**：真机导出证明事件对虽进入最后一次定点复核，但当模型保持正文逐字不变、只补 `continuityEventVerdicts` 时，工作流仍按“正文没有变化”丢弃整份聚焦结果。新版把正文替换门槛与事件裁决合并拆开：裁决按 `passageId` 独立接纳，并为每个投递对记录 accepted/rejected/missing 诊断；不新增模型调用、不恢复词段自动判同、不改墟境或普通正文。精确回归与全量 667/667、typecheck、三份正则、生产 build、六份 bundle 语法与哈希均通过。包 1,177,574 bytes，SHA-256 `8E6812CD4FB6B3CFEF95E5390A46F0A4CB0211750B2023FE7DE7DC822268B2F1`；internal.110 原包按原 SHA-256 `677DB97A6F5E0A1E5AFC15D8159088B78484C626FAC88172BF2FDBA21D9984A6` 归档。
+
+- **P4-C 语义事件对裁决（2026-09-26，internal.110，PACKAGED / DRIVER PENDING）**：internal.109 真机证明词段兜底会把两次河床行动误连，却漏掉两次“暮潮移交”。新版删除确切年份/词段自动建关系：脚本只宽松召回最多 6 组事件对，传记既有全文复核在同一次请求中判断 `sameEvent/differentEvent/uncertain`，仅 `sameEvent` 经脚本校验后落库，关系种类由双边来源自动确定。语义裁决是可选小回执，缺失/畸形/不确定均零关系 fail-open；不新增模型调用、不迁移旧稿、不进入 P4-D。真实错配回归、针对性 101/101、全量 667/667、typecheck、三份正则契约与生产 build 通过；六份 bundle 哈希全匹配。包 1,176,777 bytes，SHA-256 `677DB97A6F5E0A1E5AFC15D8159088B78484C626FAC88172BF2FDBA21D9984A6`；internal.109 原包已按 SHA-256 `4999A2687569B1AB8468B5EC6444B29BC843A62CBC1580779E2CF1DCC66E5C7D` 归档。
+
+- **P4-C 同事件关系漏报修复（2026-09-26，internal.109，PACKAGED / DRIVER PENDING）**：真实导出确认两篇《暮潮手札》传记与 11 个当前锚均已保存，但 484/485 年“暮潮移交”没有产生关系或诊断；根因是模型漏交可选候选，而非存档丢失。新版保留模型语义候选，并增加严格、零调用的 time 维度兜底：仅在同聊天/分支/revision、不同传记、同事件语义、至少两名共同参与者、同地点、同物品或更多共同参与者且时间锚不同的情况下建立 `parallelView`；双方存在不同有效来源时可建立 `sourceConflict`。同年换写法、只有同物品或证据不足不报关系。聚焦 27/27、相关联合 61/61、全量 665/665、typecheck、三份正则与生产 build 通过。包 1,176,090 bytes，SHA-256 `4999A2687569B1AB8468B5EC6444B29BC843A62CBC1580779E2CF1DCC66E5C7D`；internal.108 原包已归档。旧传记不迁移回填，真实重测需保留第一篇、删除并重生成第二篇。未进入 P4-D。
+
+- **P4-C 第一版（2026-09-26，internal.108，PACKAGED / DRIVER PENDING）**：在新提交传记既有整篇语义复核中增加完全可选、失败即忽略的短句柄关系候选；脚本只在同聊天/分支/revision、双成员均为 P2 current 且共享精确事件或实体依据时建立 `parallelView/sourceConflict` 低权记录，来源冲突还要求双方有效来源及至少两个不同来源身份。后续传记与墟境每簇最多读取两个视图，并与普通连续性锚共享 6 锚/1600 字预算；谱系、蝴蝶、P3、普通聊天与 Canon 均不消费，不选赢家。删除、revision 前进与回滚均由当前投影确定性退出/恢复；坏候选、坏句柄、旧存档和损坏关系字段只局部忽略。工作台与导出新增只读诊断。P4-C 聚焦 24/24、全量 662/662、typecheck、三份正则、生产 build 与组件打包通过。包 1,173,772 bytes，SHA-256 `569899E47E5678C79A71A7E38A84BC6C004F0C2ABDAE15020CA0DBFA1FBBA648`；internal.107 v6 已按原哈希归档。未进入 P4-D，等待真实酒馆验收。
+
+- **P4-B 驾驶员收口与 P4-C 合同冻结（2026-09-26，DOC-ONLY）**：驾驶员确认谱系人物“铃羽·哈姆斯沃思”能够进入墟境参考人物；在多身份对齐、完整短稿容错与中转占位错误重试修复后，三份墟境史稿均成功生成，P4-B internal.107 v6 在本次真实酒馆边界内 `DRIVER ACCEPTED`。最终包 1,158,997 bytes，SHA-256 `40e5d4aa5e862df1d1c0b0fcdbb776aebe0b88b73fffdfcef711f58fb1ffa1a9`，自动化 655/655。已新增并冻结 `docs/P4-C实施合同与验收.md`：只管理同分支、同 revision、低权可撤销的 `parallelView/sourceConflict` 关系；不自动选赢家、不新增模型调用、每簇普通消费最多两个视图，并共享现有 6 锚/1600 字预算。此轮未改源码、提示词、schema、存储、构建或安装包，也未进入 P4-D。
+
+- **P4-B 事实锁与原创补全修订（2026-09-26，internal.107，PACKAGED / DRIVER PENDING）**：谱系名册由硬白名单改为权威事实锁；已知人名、亲缘、生卒保持不可改写，资料空白可在玩家上限内补父母及父系、母系部分亲属。脚本统一把原创节点/边标为 generated，清空来源、MVU 与 Canon 依赖并重写稳定局部 ID；重复、超限、断连、冲突边和原创错年只局部裁剪或降为年代待考；“亲属关系”总字段会按父亲/母亲/妹妹等关系词拆开，不再塞进单一 relative 槽。没有新增模型必填字段，未改传记/墟境/蝴蝶提示词或普通正文，未进入 P4-C/D。聚焦 34/34、全量 650/650、typecheck、三份正则与生产 build 通过。包 1,151,228 bytes，SHA-256 `342483401432091d687b93930577d2e397da1e1030827f2209c1247d1052a683`；internal.106 原包按原哈希归档。真实酒馆验收待驾驶员完成。
+
+- **P4-B 六项第一版（2026-09-26，internal.106，PACKAGED / DRIVER PENDING）**：逐节点/边构造当前 Canon 的只读局部视图；共享来源与显式墟境引用统一使用该视图，回滚恢复选择；现存权威生卒校准结构日期，缺证据则未知；坏来源逐项丢弃并仅从精确名册恢复；非 MVU 合法人物可参考；同版已提交传记附注接入谱系，真实 historyRefs 由脚本建立并重验，来源消失不经旧短传残留。移除未使用二次选源函数，增加局部状态界面与导出原因；不新增模型调用，不反写 Canon/MVU，不改普通正文，不进入 P4-C/D。专项 GB 测试 16/16；打包重跑全量 647/647、typecheck、三份正则与生产 build 通过。包 1,144,864 bytes，SHA-256 `c153985b28dbcd7b82dc015abc0c9b541040702c3a84739c25b926ac3c1b4da0`；六份 manifest 哈希、组件格式、JS 语法与内嵌两份 bundle 逐字一致校验通过，旧 internal.105 包按原哈希归档。仅既有 bundle 体积警告；未安装/发布，真实酒馆清单与完整回执见 `docs/P4-B实施合同与验收.md`。
+
+- **当前时间原点权威补丁（2026-09-23，internal.102，DRIVER PENDING）**：封死“事件现场裸年龄 → 来源标题被认作人物 → 反推伪出生年”的污染路径；世界书/MVU 明确出生、建立、成立、建造、落成字段可形成原点，普通叙事不猜；Canon 当前 revision 替换出生时间后同步重算 personTimeline 并清除旧 ageBased 元数据，回滚恢复父 revision；蝴蝶明确干涉可产生 `birth_time / established_time / created_time`；四模块收到有界只读当前原点自然语言块；蝴蝶现实/进入/离开时空锚进入本地记忆与工作台。全量 **625/625**、typecheck、三份正则契约、生产 build、六份 manifest 哈希与安装包关键标记反向校验通过，仅既有 bundle 体积警告。候选包 1,118,873 bytes，SHA-256 `10D1ABBA6B05AF69CD987D69C8A1297202322901B9028B12B366B1F5A880F334`；internal.101 原包已归档为 `release/archive/0.10.0-internal.101-v1/`，原 SHA-256 `6B9469E6780F2E011CCE4BCA73E82B16091A687C6DB6EC267CE1254F06176E7D`。未进入 P4-B/C/D，谱系尚未成为生成时间原点生产者。
+
+- **P4-A internal.98 第一版（2026-09-22，DRIVER PENDING）**：仅从新 committed biography 已校验的 origin/stage/status 主事件槽派生 `eventUsage=occurs` 低权连续性锚，不扫描正文、不增加模型字段/调用；锚绑定既有 ArtifactCanonBinding，并按同聊天、同分支、同 revision 与 P2 Canon `current` 双门筛选。后续传记规划/扩写和墟境提纲/扩写只收到相关 C 短句柄自然语言视图，零 fallback、最多 6 条/1600 字；旧存档不回填，删除来源传记即退出未来视图，坏锚与评估故障局部跳过。未进入 P4-B/C/D。专项 6/6、全量 613/613、typecheck、三份正则契约与生产 build 通过（仅既有 bundle 体积警告）；候选包 1,107,843 bytes，SHA-256 `66341F59113E0F9B170CCEAB454DEB5725018AEAEFCDBEB020E75E0D727A71FA`。
+- **P4-A2 最终正文关键连续性附注（2026-09-23，internal.103，DRIVER PENDING）**：真机病历证明主事件摘要无法保住成稿才明确的“486年秋沉睡之眼焚毁且未修复”，会让后作提前年份或无依据复活。现复用既有整篇语义复核，每个 occurs 段最多回报一条可选 `continuityClaim`；仅最终正文明确写出的建立/毁坏/归属/物品状态/唯一赠予/关系边界可进入，同一 eventId 只占一个投递槽并优先 final-prose，事件槽仍作失败 fallback。新锚可选保留具名物件索引，书名同时提供去书名号检索形态，旧锚缺字段保持兼容。字段畸形、复核失败、后置正文改写全部静默弃锚，不报错、不 repair、不新增模型调用；不回填旧稿、不入 Canon/P3、不进入 P4-B/C/D。专项 97/97、全量回归、typecheck、三份正则契约与生产 build 均通过（仅既有 bundle 体积警告）。候选包 1,125,511 bytes，SHA-256 `963A06003E3F2AFDC61F33C50699441144E5B0202D0A171340BFEE002DFFBBD1`，连续两次打包一致，六份 manifest 哈希与三个包内标记反向校验通过；同版本旧包归档至 `release/archive/0.10.0-internal.103-pre-p4a2-v1/`。等待真机验收。
+- **P4-0 总合同冻结（2026-09-22，DOC-ONLY）**：新增 `docs/05-P4跨产物连续性蓝图.md`，明确 P4 只处理同分支、同 revision 下已提交生成产物之间的低权连续性；生成锚不等于 Canon，不扫描正文、不新增模型调用、不增加模型必填字段，缺锚/坏锚/旧存档全部 fail-open。P4-A—D 必须独立实施和验收；当前仅冻结合同，未修改源码、提示词、schema、存储、构建或安装包。下一道门只允许 P4-A First Usable。
+- **internal.97 模型仿写蝴蝶面板防误归档真机验收（2026-09-22，DRIVER ACCEPTED）**：驾驶员确认模型仿写面板被清理且没有生成正式日志或 revision；正式遣返面板仍能正常结算并只归档一次。全量自动回归 607/607；候选包 1,097,590 bytes，SHA-256 `35C83C24D44041E10B471FDA47D7B87CCAC7EE1A66A369252CBB25A95E3797A6`。该修复属于 P3 后的独立运行时收口，不表示 P4 已实施。
+- **P3-C internal.96 真机验收与 P3-D 收口（2026-09-20，DRIVER ACCEPTED）**：`P3C-R5.json` 证明确定性对照 `no-conflict / modelCalls=0`，R1/R2/R5 保持活动；`P3C-R6.json` 证明本轮新生断链 operation 可进入 consideredOperationRefs，整轮只 `modelCalls=1 / repairCalls=0`，不兼容 proposal 只产生 1 个 dropped，direct 救援行动与 R5 无关事实均不受影响，遣返正常完成；`P3C-R7-rollback.json` 证明删除 R6 遣返助手楼后 head 回到 R5，R6 revision 与六项 operation 全部 reverted，R1 监禁状态恢复 active，R5 三项事实继续 active，当前预演恢复 `no-conflict / modelCalls=0`。R6 reconcile receipt 仅作为 `canonRevision=6` 历史审计保留，不参与当前投影。驾驶员确认 P3-C 通过；P3-D 已同步蓝图、验收记录、权威索引与 NEXT，未修改源码、提示词、检索或普通生成正文，未进入 P4。
+- **P3-C 第一版源码、自动化与候选包（2026-09-20，internal.96，真机可达性修正）**：新增唯一模型入口 `reconcileCanonIntervention()`；只有 P3-B 已定位到非 direct 的局部 orphaned/uncertain 前沿、该前沿明确依赖本轮替换事实且本轮存在可用新 operation 与真实来源时才运行，其余路径严格零调用。准入前沿同时覆盖“此前 active、被本轮改坏的旧结果”和“本轮刚生成、预演时已 orphaned/uncertain 的 supported 新结果”；后者在稳定 deltaId 分配后才解析为真实 operationRef，提交层再次保护 direct 行动根、拒绝自支撑与无支撑 current target，避免放宽成全局重写。模型只见 O/N/R 短句柄与有界局部上下文；坏句柄、越界替换、无效来源逐项丢弃；整体 JSON 无效最多一次 repair；生成失败仍提交确定安全子集并把局部标为 uncertain，不截断遣返。proposal 与当前 intervention 原子提交，回滚同步失效。工作台/导出新增“局部因果协调”回执。P3-C 专项 6/6、P3/P2/Canon 联合 122/122、全量 597/597、typecheck、三份正则契约与生产 build 全部通过（仅既有 bundle 体积警告；一次紧邻联合套件的高负载全量运行触发既有冷索引性能预算波动，干净重跑全绿）。候选包 1,091,836 bytes，SHA-256 `6089B90CE1922BD57BBB1F4F9FD25AC0E2AE2E954EC484492080ACA456526855`，连续两次打包哈希一致；同版本打包前候选已归档为 `0.10.0-internal.96-v1`。未修改四模块提示词、统一检索或普通生成正文，未进入 P4。当前为 `IMPLEMENTED / AUTOMATED / PACKAGED / DRIVER ACCEPTED`。
+
+- **P3-B 第一版源码、自动化、打包与真机收口（2026-09-19—20，internal.95 / R1—R4）**：新增纯确定性 operation 级因果重基线，commit/rollback 均在内存候选 branch 上重算后原子发布；同 support 内 AND、同结果多 support 间 OR，direct 根锚不被下游反向判废，循环/缺引用局部 uncertain，512 active operation / 1024 active support 有界停止。`resolveCanon`、P2 assessment/consumption 与 Canon Memory 统一消费 active 安全子集；中间 revision 回滚不再把所有后继按顺序连坐 orphan；旧 revision 不会被未来同 fact 恢复者或未来替代 support 倒灌，大量已回滚历史也不计入活动上限。设置页与导出新增“确定性局部重基线”真实状态区，`modelCalls=0`。P3-B 专项 18/18、重基线与孤儿清扫联合 23/23、全量 589/589、typecheck、三份正则契约、生产 build 通过（仅既有体积警告）。候选包 1,073,536 bytes，SHA-256 `BCBCB0235600D4B24F21AC1A926DBD1896C5659A170E543641BC289BA935166C`，连续两次打包哈希一致；internal.94 已归档。真机 R1—R4 进一步确认无依赖后继不连坐、局部失效不扩成整批报废、删除冲突遣返楼后 R1/R2 与 4 条支撑自动恢复，P2 current=36 且无 stale/orphaned/uncertain/failure；驾驶员确认 `DRIVER ACCEPTED`。未修改四模块提示词、检索或普通生成正文。
+
+- **P3-A internal.94 真机验收收口（2026-09-19）**：最终包版本 `0.10.0-internal.94`，1,061,210 bytes，SHA-256 `0B8E06F1E2EC04D335B6F13B46EFC2063A781501E3515119CAD67FEC04FA1127`；全量 571/571、typecheck、三份正则契约、生产 build 与包校验通过。真机导出 `eyon-canon-status-r6-20260919.json` 显示 branch headRevision=6、active=2、reverted=4、orphaned=0；R6 以 `replace + originalFactIds` 唯一承接 R2 的 `玲山|custody_status|world`，P3-A 只读预演返回 `conflict-preview`、1 个 conflict root、1 个 `would-be-superseded`、`modelCalls=0`、warnings=[]，同时没有自动改写 revision/delta/正文。R3—R5 的错误平行 assert 均已回滚，不参与当前历史；5 项 manualReview 仅来自旧版/已回滚蝴蝶产物的 `unbound` / `binding-missing`，与当前冲突无关。驾驶员已确认 **P3-A ACCEPTED**；P3-B/P3-C/P4 未进入。internal.93 已归档至 `release/archive/0.10.0-internal.93-v1/酒馆助手脚本-伊雍历史工作台-内测.json`，原 SHA-256 为 `430B1A075000EAABBFBFC0262C240EFA1C427BF95605312038BC1AAB597E458D`。
+
+- **P3-A internal.93 当前分支状态承接修复与候选包门（2026-09-19，历史候选）**：真机 R4 证明 internal.92 的简称/全名唯一承接规则有效，但旧状态索引只来自本次任务检索的窄 Canon 视图；R2 仍在当前分支生效却未被 R4 选中时，旧 `custody_status` 对脚本不可见，R4 仍会错误 `assert`。修复在蝴蝶冻结阶段以现有 `resolveCanon` 和分支作用域投影当前分支仍有效的干预状态，仅把 `factId / subjectEntityId / predicate` 合并进脚本内部状态索引，不进入提示词、不增加模型调用；异常、歧义或无唯一命中继续静默降级。新增 R2 被任务检索遗漏而 R4 仍 `replace + originalFactIds` 的同形回归。全量 571/571、typecheck、三份正则契约与生产 build 通过（仅既有 bundle 体积警告）。internal.93 候选包 1,060,870 bytes，SHA-256 `430B1A075000EAABBFBFC0262C240EFA1C427BF95605312038BC1AAB597E458D`；internal.92 原包已按原哈希归档。未修改提示词、普通正文、检索选源、`resolveCanon`、P3-B/P3-C/P4；该候选后由 internal.94 / R6 完成真机验收。
+
+- **P3-A internal.92 稳定实体承接修复与候选包门（2026-09-19）**：真机 R2/R3 暴露同一人物简称“玲山”与全名“玲山·哈姆斯沃思”被拆成两个 generated entity，导致后次 `custody_status` 未 replace 前次事实、冲突预演误报 no-conflict。修复仅在正式目录链接失败后，以当前活动 Canon、同一状态谓词和唯一确定的简称/全名包含关系复用旧 generated entity；歧义/无命中继续原有降级，不模糊猜测、不报错、不调用模型。未修改提示词、检索、普通正文、`resolveCanon` 或 P2 生效规则。定向 41/41、全量 570/570、typecheck、正则契约与生产 build 通过（仅既有 bundle 体积警告）。internal.92 候选包 1,060,511 bytes，SHA-256 `CC0ACD518F1E4D63A9DAA36BBDED2FF8FF05CB83B4D6A23A2837426E7E355C9C`；internal.91 原包已按原哈希归档。P3-B/P3-C/P4 未进入，等待最短真机回归。
+
+- **internal.90 累计真机验收（2026-09-17）**：驾驶员报告全部测试完成且无错误；`eyon-canon-status-r1-20260917.json` 显示同一 branch 正常推进至 revision 1，delta/action 均 active、`verified=true`、5 项 operation 落库，37 项产物评估中 36 项 current、0 failure；`eyon-canon-memory-r1-20260917.json` 显示 1 条 resident 简报成功进入可注入记忆。此前截断的 `worldbook:...v4.` sourceRef 未再阻断遣返，证明字段级坏引用局部丢弃生效，`chat:` 玩家行动硬门仍保留。累计包 1,048,950 bytes，SHA-256 `92141CC02036878C8699B0E815B2040A16A364D7DCDEAEB16BC0D5102B9E7853`；详见 `docs/internal90真机验收记录-20260917.md`。P3/P4 仍未实施。
+
+- **internal.80 文档短收口（2026-08-31）**：正文 RootTrace 与工作台书库共用传记展示身份；同一人物不同范围可显示不同书名，副标题不再复读玩家指令，旧记录按对象与跨度兼容回退。全量 447/447、传记专项 50/50、`pnpm typecheck`、三份本地美化正则契约、生产 build 与 package 通过；内测包 964,983 字节，SHA-256 `fc6a4330e910333c6741b9faeab25bb075a1ee2adf7fab79026960565419974b`。驾驶员已在真实酒馆确认验收成功。该验收只确认传记展示身份与 internal.80 包，不补造不存在的蝴蝶普通聊天注入证据。
+- **internal.81 · P2-A 第一版（2026-08-31）**：主蓝图 8.1—8.4/H2 的 `ArtifactCanonBinding` 已进入源码：四模块按局部单位在既有校验后采集依赖，绑定内嵌于现有产物仓库，旧产物保持 `unbound`，单单位失败降级为有界 `binding-missing`，公开门面提供只读诊断。AB-01—AB-08、typecheck、455 项全量回归、正则校验和构建均通过；内测包 973,435 字节，SHA-256 `749c0be4930026096e35095efd5e508969a572b61932a6a442397dcad7ddb6c1`，已按同哈希归档。
+- **P2-A 真机只读验收完成（2026-09-01）**：驾驶员生成新传记与新墟境并确认正文未被绑定层截断；最终导出 `eyon-internal81-artifact-bindings-1788177950898.json` 显示 2 个产物全部 `bound`、45 条局部绑定、`bindingMissing=0`、`failures=[]`，传记按 origin/stage/status、墟境按 candidate/history/node 保存独立绑定。当前仓库没有可供真机复测的旧产物，因此 AB-06 的 `unbound` 兼容只记自动化证据，不伪造真机样本。P2-A 标记 **ACCEPTED（当前可测试边界）**。
+- **P2-B 第一版源码与自动化门（2026-09-01）**：按主蓝图 8.5—8.7/H3 实施 `ArtifactCanonAssessment` 纯确定性局部评估、同分支紧凑 Canon 目标投影和有界只读 `inspectCurrentArtifactCanonAssessments()` 诊断。AS-01—AS-10 共 11 项专项测试、typecheck、生产 build 与 477 项全量回归通过；没有修改四模块 prompt、模型调用、Citation Contract、检索排序、生成正文或既有产物 schema，也未打包。P2-C 的过滤、角标、比较和修复仍未进入。
+- **P2-B 真机验收延期（2026-09-01）**：真实宿主当前无法向驾驶员展示可核验的蝴蝶 Canon 变化日志，变化也尚未进入后续正文，因此无法诚实完成“无关 revision 仍 current、相关事实只局部失效、回滚后恢复 current”三场真机验收。P2-B 保持 `IMPLEMENTED / AUTOMATED / DRIVER DEFERRED`，不标记 accepted；旧正文未改写与无额外模型请求继续由自动化证明，真机因果链待 P2-C 的冻结范围内只读观察出口补齐后复验。
+- **P2-C 第一版源码与自动化门（2026-09-01）**：新增当前 head 的紧凑投影、`ArtifactCanonConsumptionDecision`、只读 `inspectCurrentArtifactCanonConsumption()` 与设置页“Canon 局部状态”展示/导出。消费规则为 current 可用、partially-stale 警告保留、stale/orphaned 只阻止局部自动复用、uncertain/unbound/binding-missing 只待人工判断。PC-01—PC-10、typecheck、生产 build 与 487 项全量回归通过；未修改四模块 prompt、模型调用、生成正文或旧产物，未打包。普通聊天蝴蝶/传记记忆注入仍未实现。
+
+- internal.78 P1-1：RC-01—RC-07 12/12（含既有 P0-B 夹具）、全量 430/430、`pnpm typecheck`、`pnpm build` 通过；构建 manifest 的 `dist/index.js` SHA-256 为 `7e871bed7ce8ce86d553ee5a63ce5cb03bd4c244a6039fb66885873b5b4baf8b`。本轮未打包、未安装、未进行真实酒馆验收。
+
+- P0-A/P0-B 实施时：全量 360/360，`pnpm typecheck` 通过。
+- 谱系基础与蝴蝶内容实施后：全量 363/363，`pnpm typecheck` 通过。
+- Qualified Evidence v1 第一阶段：全量 368/368，typecheck/build 通过。
+- 墟境史稿先审后选：墟境 75/75、运行时与 UI 37/37、全量 369/369，typecheck/build 通过。
+- P0-C 证据解释与部分顺序：全量 385/385、`pnpm typecheck`、`pnpm build` 通过；新增重复 Canon 事件拦截、替代解释放行与谱系 repair 同源夹具。
+- P0-D 无向量语义证据编译：定向 63/63、全量 391/391、`pnpm typecheck`、`pnpm build` 通过；新增全目录轻量可见、passage-local 防投射、模型绑定/关系降级、缓存、一次补检上限、四模块共享与诊断夹具。
+- P0-D 证据引用边界根修：全量 395/395、墟境 81/81、`pnpm typecheck`、`pnpm build` 通过；共享 TaskCitationRegistry 已落地，墟境只向模型暴露 P/F/S 短句柄，旧 snapshot/source/passage alias 校验分支已删除，引用句柄错误不再整批重写史稿。
+- Citation Contract v2 统一收口：全量 398/398、`pnpm typecheck`、`pnpm build` 通过；四模块共用 P/F/E/S 注册表与解析器，空表语义、跨阶段编号稳定和墟境坏句柄降级均有回归夹具。
+- P0-D 稳定化：全量 401/401、`pnpm typecheck` 通过；新增语义 schema 漂移逐项保全、查询噪声过滤、短生涯可行包络与无人物短窗口夹具。构建与包哈希见本轮安装文档。
+- 墟境单次语义编译收口：专项 89/89、全量 402/402、`pnpm typecheck` 通过；3/4/5 候选及同任务重试复用持久化 frozenContext，候选模型产物不能反向触发召回。
+- 四模块单次编译与本地补证根修：全量 405/405、`pnpm typecheck` 通过；新增语义误拒绝不删证据、长复合事件锚召回、骰表/风格不污染检索查询回归夹具。
+- internal.72 检索共证门（同形词语义污染防护）：全量 406/406、`pnpm typecheck`、`pnpm build` 通过；真实世界书 343 条「英雄史诗」从 2133 分污染降为 0 入选；新增 8 项共证门测试（污染拦截/需求保持/专名回归/长词子串/2 字实体资格/聊天不扩污/提取层净化）。配套 `scripts/worldbook-pollution-scan.mjs`。
+- internal.73 传记引用强制通道（forced-reference）：全量 409/409、`pnpm typecheck`、`pnpm build` 通过；工作台「引用传记」选中来源经 `forcedSourceLogicalIds` 强制入选（同池同门、时间资格门仍生效），新增 3 项测试（选中未命中入选 / 未选中无旁门 / 纪元不符被拦）。性能预算门在机器负载回落复跑稳定（单条隔离 387ms）。
+- internal.74 Codex 迭代包：全量 413/413（+4）、`pnpm typecheck`、`pnpm build` 通过；新增 `territorialFragments`（工作台地点范围 → 疆域引用串、去通用词，经 territorialReferences 进共享检索门，R-05 机制接入墟境地点输入）；contracts/cast/prompts/validators 收口对齐；tests/ruin.test.ts 新增 4 项覆盖。
+- 真机故障（internal.74 导入后，2026-08-27）：`Ruin candidate 1 does not structurally fulfill the player task`（TASK_ALIGNMENT_FAILED）——taskInterpretation/taskFit 硬校验收口过紧（mustServe 逐字匹配 + 贡献者三向一致性 + repair 无缺口指引），符合 Codex 反思「把软判断升级成硬门」的症状。
+- internal.75 理解层收敛形态（故障修复，已打包）：taskInterpretation 只留最小硬锁（sourceText 逐字防偷换 + materialRole=support-only 防覆盖 + 主体/锚/mode 存在性）；候选级 taskFit 降为软记录（撤销 servedRequirements 逐字、贡献者三向、群像人数硬校验）；prompt 契约同步软自述语义；TASK_ALIGNMENT_FAILED 错误路径删除；群像测试改造 + 新增 2 条硬锁回归，全量 415/415、typecheck 通过。蓝图 docs/01 §15 新增「理解层收敛形态」条款。
+- internal.76 结构化语义减法包（Codex，已打包）：墟境移除 taskInterpretation/taskFit/mustServe 等模型自述字段与硬门——prompt 明确「Do not output … taskInterpretation or taskFit」，完整保留玩家原句（sourceText）作为唯一主轴，理解由候选正文体现；传记移除四轴（subjectAnchor/changeAxis/meaningCarrier/dramaticQuestion）、派生指令、模型自评与模糊自然语言判重，扩写持续携带玩家原句且只复用本轮冻结证据；删除传记篇章上限设置；保留 Citation Contract v2、时间、身份、来源与确定性事件冲突硬校验。全量 415/415（与 75 持平）、针对性 182/182、typecheck 通过；包内确认 taskInterpretation 仅剩「禁止输出」句。
+- internal.76 覆盖包（当代人物防错位引导）：真机回归——MVU 当代人物汀瓦尔·贾维（审判官/帝国猎犬）被英雄纪元 93 年候选以本名采用；根因：非主角的 MVU 当代人物无任何防护（主角有 PROTAGONIST_ANCHOR、世界书同名有双源适配），而 76 移除理解回执后模型失去「先声明任务再选人」的自我约束步骤。修复：prompt 选角段加软引导（非硬门）——「检索可能带回当代人物，历史候选不得以本名采用；角色契合时创作同职同构的古代原型，或仅在世界书明确记载同名历史人物时使用本名」；蓝图 §15 新增「六、当代人物防错位引导」；全量 415/415、typecheck 通过，internal.76 已同版本覆盖打包（924,139 字节）。
+- internal.76 二轮覆盖（原创人物与造名规范）：真机回归——模型把「古代原型」字面执行为「为当代人及其家族/称号制造历史前身」（贾维·先驱者、帝国猎犬雏形）。修复：防错位引导措辞改为「invent an original person of that era」并明示不得为当代人/家族名/称号安排历史前身；墟境补入造名与反回声规范（新人物须有时代/地域/种族风味的独立记忆点名字，禁止通名/批发/借用 MVU 人名）与墟境创作基准（时代可信、人物独立鲜明、因果与翻转、结尾余韵、历史就是历史当代就是当代）；蓝图 §15 六二轮修正；全量 415/415、typecheck 通过，internal.76 二轮覆盖打包（925,120 字节）。
+- internal.76 三轮覆盖（认知脚手架回归）：真机「跳跃」病历——76 全删 taskInterpretation/taskFit 后模型失去「先写主题→定规模→选人→候选认领」的思考台阶（self-scaffolding），出现主题漂移/选角随手/候选松散。落定形态「75 的桩子 + 76 的自由心」：恢复输出 taskInterpretation（sourceText 逐字/primarySubject/eventAnchor/castDemand(mode·minimum·requiredKinds·selectionRule)/mustServe/materialRole）与候选级 taskFit（soft self-record），脚本只查 sourceText 防偷换、materialRole=support-only 与字段存在性——不逐字/不查数量/不查三向，TASK_ALIGNMENT_FAILED 不回潮；与创作基准、防错位引导、造名规范并存；蓝图 §15 新增「七、认知脚手架回归」；全量 415/415、typecheck 通过，internal.76 三轮覆盖打包（926,355 字节）。
+- internal.77 收尾包 + 传记全文参考（已打包）：①当代/DLC 角色资格降级（prompt 防错位覆盖 DLC；mvu passage 渲染「当代参考·不得采用」/「已选参与人物」标签）；②卡名/条目标题引导（Source titles are script labels，黄昏之歌防线）；③候选重名 warning（castNameWarnings，跨候选同名异身份提示，不 repair）；④传记全文参考（选中传记 biographyFullReference：原文≤8000 + 【事件时间线】明确纪年按绝对年排序去重、无纪年不出行；未选中 digest 升级 v2.1 带 timeline；每块总结=首尾保留策略）；人物不错位=当代标注+生卒锚，时间不错位=时间线+personTimeline。全量 420/420（+5）、typecheck 通过；蓝图 §15 八。
+- **检索机制驻留基线声明（收尾承诺）**：自 internal.77 起，检索/引用/时间线机制进入「稳定驻留」——不再为单点症状追加专名补丁或语义门；后续只受理「真机出戏」级别的整类问题（§15 五：格式正确但历史变笨为最高优先级信号）。以下事项列入搁置清单（不再主动实施）：向量/embedding 评估、语义编译层任何形式回归、taskFit 逐字/数量/三向校验、史诗感词类召回调优、逐字验收替代真实游玩、无限迭代。
+- **P0 阶段性冻结（2026-08-28）**：internal.77 是 P1-1 的唯一接续基线；package、manifest、runtime facade 与构建产物必须同为 `0.10.0-internal.77`。冻结不是 accepted，不允许原位追加单例检索补丁；解除冻结必须由跨任务整类阻断、数据损坏、安全问题或 P1 消费合同缺陷触发，并产生新版本。
+- internal.77 覆盖（中文数字纪年提取）：真机（传记全文参考首测）——金雨/铃羽被选事件传记 476 年 vs 墟境候选 479 年（年龄 15 vs 18）「时间不错位」失守；根因：extractBiographyTimeline 年份正则只匹配阿拉伯数字，而传记通篇中文纪年（四七六年）→ 时间线为空 → 模型无事件年份锚。修复：新增 chineseYearToNumber（纯位拼接 + 位权双模式确定性转换，非法组合返回 null，不推断），时间线正则覆盖中文数字；全量 421/421（+2）、typecheck 通过，同版本覆盖打包 internal.77（929,319 字节，行为特征已验证）。
+- internal.77 二轮覆盖（物件时间带，装备防漂移）：病历——候选把圣纹压制环写为 480 年判决扣环，传记 476 段已出现（成因：扣环是段内状态句无纪年锚→不进事件时间线；digest 首尾 180/220 窗口盖不到段中部；模型把装备当可搬的戏剧道具）。修复（**零新门、零新报错路径**）：digest v2.2 顶层新增 objectBands（各段物件×段跨度显式行，纯确定性、不猜年份、无物件段不出行）；biographyFullReference 追加【物件时间带】节（与事件时间线并列）；prompt 加软引导「物件属于其首次出现的时间带，不得在更晚候选中重新引入为新获，除非来源描述更替/易主」。全量 422/422（+2）、typecheck 通过，同版本覆盖打包 internal.77（930,147 字节）。
+- internal.77 三轮覆盖（报错可操作化 + 物件语境摘录）：A) 真机病历——「Ruin node IDs must be unique」重复多次失败循环（repair 提示无结构指引，模型反复重生成同样错误）：报错改为带候选标题与重复节点 ID（n1–n4 建议），节点 ID 唯一校验提前到大纲端（早拦 + outline repair 闭环），大纲修复提示补充结构指引（节点 ID 唯一/时间单调/参与者来自 cast）。B) 真机病历——候选把圣纹压制环「赠送」妹妹，与传记 476 扣环、488 仍在戴矛盾（模型只见物件名单、不见语境）：objectBands 升级为「名单 + 原文语境句（正文首见句 ≤72 字原样摘录，不解释语义）+ 现状段『现状（延续）』语境行」；prompt 软引导「物件原主与功能遵循原文语境，转赠需来源描述或自洽」。全量 424/424（+2）、typecheck 通过，零新门零新报错路径，同版本覆盖打包 internal.77（931,674 字节）。
+- internal.77 四轮覆盖（既定事件关键地点名一致性软引导）：真机病历——候选把铃羽去处由「无尽地城」结尾换写成「泣空遗迹」（世界书两处真实地点：泣空遗迹=翼族封印蚀界残痕的 13 座空岛遗迹群；无尽地城=战后建成的封印异神巨城；篇内两名同指 + 既定事件地点漂移）。修复：一句软引导（既定事件的关键地点名保持与参考一致，不得并入/替换为语义相近地点；同一篇不得用两个名字指同一目的地）——无提取规则、不压制替代解释；「关键地点锚点注入」增强经评估放弃（信息重复治不了本病例 + 地点提取规则=词面化回潮 + 压制 P0-C 替代解释空间）。全量 424/424、typecheck 通过，零新门零新报错路径，同版本覆盖打包 internal.77（932,148 字节）。
+- internal.77 P0 基线短收口（2026-08-28）：`package.json`、manifest、runtime facade、`dist/index.js` 与同版本内测 JSON 已统一为 `0.10.0-internal.77`；全量 424/424、typecheck、生产 build 通过；manifest 六个构建产物 SHA-256 全部匹配；`src/prompts/*` 本轮前后哈希 5/5 不变。P1-1 仅冻结合同和 RC-01—RC-07，未实施 resolver、未改检索提示词；内测包只做同版本重建，不构成新版本或 accepted release。
+- internal.79 传记篇内连续性 + Canon 解析层落地（Codex 包，已打包）：①传记多段扩写只接收「静默物件状态」（由既有 objects 与原文语境确定性生成——不传播前文摘要/剧情钩子，不强制物件登场；自然复用时保持来源/归属/去向/状态；与反回声/造名协同）；②不恢复 transitionFromPrevious/threadSummary；③人物年龄改由脚本按段跨度计算（覆盖 origin/stages/status），并修正规划提示词中错误年龄加法公式；④P1-1 的 RC-01—RC-07 从冷冻合同落地为实现（canonResolver 26KB + canonViewDiagnostics + entry 接线），新增强分支诊断（P0-B 原子追加/回滚/orphaned 降级/损坏发现不自动修）——未改 Canon 语义、检索、持久化 schema、墟境、API。验证：全量 432/432（+8，canon.test.ts 新增 12 条 RC/P0-B 用例）、typecheck、build 通过；internal.77 已按原 SHA-256 归档。
+- internal.79 覆盖（段内年龄取值规则）：真机病历——79 把年龄改为「脚本注入段内年龄区间 + 禁止心算」后，模型在区间内自由取值（476 段场景写 17 岁，区间 [15,17] 取段末值放段首年；479 段写 19 岁区间中值），77 时代模型自算的事件年年龄反而全对。修复：`assessStagePerson` 两处 guidance 追加「正文写到段内某一年按该年取龄（段首场景用段首年龄，禁止把段末年龄套到段首年份的场景上）」，脚本区间保留作参考、零新门零新报错；全量 432/432、typecheck 通过，同版本覆盖打包 internal.79（951,354 字节）。
+- internal.79 v3 覆盖（传记扩写柔性连续性 + 惰性身份目录，Codex 包，已打包）：新增 `biographyEvidence.ts`（createBiographyEvidenceResolver/selectBiographyEvidence，PASSAGE_EVIDENCE_LIMIT=8）：世界书与 MVU 只作「惰性身份目录」——规划/首稿实际借用具名实体时按标题、显式别名与直接引用精确补齐资料，**不按年代或正文碎词宽泛扩张历史事实集**；首稿漏召回已知实体或复用前段原创人物却改变身份时只局部复核当前一段一次；原创人物查无条目照常保留（开放层）；机构与持续物件用相关原句维持状态，普通地点不触发机械重写；每段仍独立骰表+冻结事件主导，不恢复前情摘要/强制登场链。审计：无黑名单/坏门/语义层回潮（「逐字」命中均为既有合法契约：playerReference 防偷换、sourceRefs Citation v2）；全量 439/439（+7，新增 biography-evidence/stage-person-timeline 测试文件）、typecheck、build 通过，同版本覆盖打包 internal.79（957,229 字节，旧 79-v2 已归档）。
+- internal.79 v4 覆盖（G-07 最小止血：repair 报错文本消毒）：真机病历——同 UID 264039 两次失败：世界书查无此条目（真实 uid 均为小数字），确认是模型拼造的幻觉 ID；三处传记 repair（plan/passage/batch）原样回显 validationError → 模型把错误里的 ID 当合法示例照抄 → 自激循环。修复：`sanitizeRepairErrorText` 在回显前剥离 `worldbook:书名:数字` 形态 legacy ID（替换为 [source-id-hidden]，短句柄/普通文本原样保留）；G-07 根治（契约/渲染/knownSources 迁 S 句柄）留待收口日。全量 441/441（+2）、typecheck 通过，同版本覆盖打包 internal.79（957,345 字节）。
+- internal.79 v5 覆盖（段落字数下限弹性化+指引化）：真机病历——`Passage content has 298 chars, minimum 300`（差 2 字被拒、报错无指引 repair 循环）。根因：79 v3 柔性方向使段落自然偏短，300 一刀切是「防敷衍」软质量代理被硬门化（§15 软判断不得升级成硬门）+ 契约单一真源被 origin/status 校验手写魔法数字 300 违反。修复：契约新增 `softMinPassageChars=260`（260~299 软放行、<260 才拒）；三处校验（stage/passage/origin+status）统一读契约；不足时报错带 `biographyPassageExpansionGuidance` 扩写指引（场景感官锚/人物动作/决定性时刻/物件在场细节，禁补前情摘要、禁新增冲突事实）——repair 一次可自愈。全量 442/442（+1）、typecheck 通过，零新报错路径，同版本覆盖打包 internal.79（957,921 字节）。
+- internal.79 v6 覆盖（传记书架副标题修复）：真机——书架副标题显示成玩家输入原话（「我对伊雍说:对玲山…寻根溯源」）；根因：playerDirective.primaryDirection 在语义减法后由脚本确定性回填为玩家原话（validators L407-414），而 UI 副标题仍消费该「语义字段」；修复：subtitle 改显示 biography.summary（显示不复读），玩家输入方向保留为合法检索键（visibleBiographyItems 索引显式加入 primaryDirection/raw，检索功能不丢）；全量 442/442、typecheck 通过，同版本覆盖打包 internal.79（957,986 字节，仅 workbench bundle 变化）。
+- internal.79 v7 覆盖（智能年龄处理）：千爻病历——MVU 卡「外貌16岁(实际28岁)」被 catalog 取 16 当实际年龄 → 出生年推成 472 → 注入区间按错轨 → 段 3-5 的 5/8/12 全是错轨区间内取值（模型忠实取值非瞎编），段 2 的 13 岁为按正文 460 生自算——两轨并存。修复三件：①catalog 智能提取 `extractRecordedAge`（显式「实际N岁」优先；剔除外貌/心理/生理/视觉/约/大概修饰；歧义不提取→年龄锚空→硬门放行、原文本交模型理解——整类新格式（活了三千年的精灵等）免补丁）②prompt 条款 2.1「年龄基准按人物卡原文理解：以实际年龄为历史在场基准、外貌只是外观描写、长寿命族外貌恒定不幼龄化」③目标出生年回填 `extractTargetBornYear`（起源标题确定性提取→后续段注入 TARGET_AGE_ANCHOR：实际年龄=本段年份−出生年）。全量 444/444（+2）、typecheck 通过，零新门零新报错，同版本覆盖打包 internal.79（959,653 字节）。
+- internal.79 v8 覆盖（PASSAGE_SCHEMA_INVALID 报错可操作化）：真机病历——剧本 3 传记扩写 eventId 空 + eventUsage 非法枚举，报错抛 Zod 原始 issues JSON（模型 repair 看不懂）；修复：`describeBiographyPassageSchemaFailure` 包装为中文修复指引（eventId=本块冻结事件 / eventUsage 五枚举 / sourceRefs 许用句柄），原始 issues 追加尾部供诊断，校验强度不变——「空洞报错家族」传记侧收尾。全量 445/445（+1）、typecheck 通过，同版本覆盖打包 internal.79（960,658 字节）。
+- internal.79 v9 覆盖（传记书签唯一键 BookId，脚本+美化双侧）：真机病历终极定位——两本同名传记（476/478 都叫《千爻》）时书签「点不开」：美化书签 id 用标题（eybi-open-标题）→ 同名共存 = HTML id 冲突 → label for 失效（用户改标题即修复，证明与截断无关）。修复：①脚本 `renderBiographyRootTrace` 头部新增 `BookId:: requestId 尾 8 位`（派生展示键：parse 增加解析、语义比对不参与、旧调用缺省渲染空行兼容）；②用户美化双侧更新（findRegex 增 BookId 可选捕获并整体前移、replaceString 引用顺延 + 书签 id 改「标题-书签键」）——同名传记共存永不冲突。全量 445/445、typecheck 通过，同版本覆盖打包 internal.79（960,803 字节）。
+- **internal.79 v9 真机验收（2026-08-30）**：两本同名《千爻》传记书签并存——**各自能点开、各自展开各自内容**（BookId 书签键生效，「同名书签打架」整类结案）。
+- **P1-1 真机验收完成（2026-08-30）**：三剧本全绿——①死亡缺席/复活（档案级）②事实遮蔽（档案替换法：478 覆盖 476、477 探查=启程前）③同视图+隔离（B 聊天干净、A 恢复如初）；BookId 同名验收通过；交接文档 `docs/P1-1真机验收记录-交接文档-20260830.md` 已置顶 NEXT。严格版（canon delta/蝴蝶链路）等 §6/G-08 修复后再验。
+- internal.81 P2-A ArtifactCanonBinding 第一版（Codex 包，已打包）：传记/墟境/谱系/蝴蝶产物按局部单位记录生成时实际使用的 Canon 视图与事实依赖（绑定内嵌既有产物仓库）；旧产物保持 unbound、采集失败降级 binding-missing 不阻断正文；新增只读 `inspectCurrentArtifactCanonBindings()` 诊断；另含 `currentSceneReference.ts`（当前场景锚仅在指示语存在时生效、显式搬迁校验只拦父级地点冲突）。**未进入 P2-B/P2-C**（不评估 stale/conflicted、不改检索/提示词/生成质量/工作台角标/普通聊天注入）。验证：全量 459/459（Codex 声称 455，实跑 +4）、typecheck、build 通过；AB-01—AB-08 测试在位；internal.79 v9 已按原 SHA-256 归档，internal.81 新包 976,890 字节已生成并反向校验。
+- internal.81 v2 修复包（GPT 收口，已打包）：currentSceneReference 当前场景锚修复（指示语门控/父级地点链约束），current-scene-reference 测试 +1（3/3）、biography-passage 8/8；全量 460/460、typecheck 通过；internal.81 v1 已归档，同版本覆盖打包 internal.81（977,479 字节）。
+- internal.81 v3（GPT 接入当前场景参考到寻根溯源全程，已打包）：传记规划与扩写（单块/批量）注入 CURRENT_SCENE_REFERENCE——玩家指令含「这里/当前」等指示语时，MVU 当前地点链作为传记对象父级地点锚（同名别处不顶替、不跨城搬家、显式搬迁才算冲突），无指示语零注入（普通传记不受影响）；workflows 传递 currentSceneLocation。全量 461/461（+1）、typecheck 通过；internal.81 v2 已归档，同版本覆盖打包 internal.81（981,558 字节）。
+- internal.81 v4（Codex 五条，已打包）：①墟境提纲前传记时间线软复核（防后期人物/器物/仪式/「最终封锁」事件提前；允许合理早期原型但须独立身份）；②P2-A 候选实际引用 evidencePassageIds 映射回传记/世界书来源、仅记对应 candidate-history（不污染兄弟候选/节点）；③传记当代人物年代资格提醒（MVU/当前状态/关系表默认现世——历史段落无明确依据时改用当地原创人物）；④已知人物补召回识别简称（entityNamesMatch 归一化：「伊莲娜」→「伊莲娜·A·梦露」）与运行时标题（「维奥莱塔变量」）；⑤全部辅助复核非致命（失败保留已校验产物，不截断传记/墟境）。全量 462/462（+1）、typecheck 通过；internal.81 v3 已归档，同版本覆盖打包 internal.81（983,804 字节）。
+- internal.81 v5（Codex，2026-09-01）：对象边界与「点名即锚」——①`renderTaskSubjectBoundary` 四模块共用（传记规划/扩写 + 墟境）：玩家原话当完整对象意思（不拆词丢边界）、判断什么维持其为同一对象、**当前 MVU 地点链只证明对象「现在」的位置/占有/使用，过去需要带日期史料**（防以现世占有者反推历史，同时现状段占有者如实落位）；②CURRENT_SCENE_REFERENCE 升级「点名即锚」：玩家直接点名当前地点链末端具名对象（如黄昏花室）即触发场景锚（不再依赖「这里/当前」指示语），父级地点链注入；③fail-open 地点兼容 + 显式外迁识别（仅明确「对象在别地」才判外迁，普通提到外地材料不误伤）。全量 464/464（+2）、typecheck 通过；internal.81 v4 已归档，同版本覆盖打包 internal.81（987,290 字节）。
+- internal.81 v6（Codex，2026-09-01）：当前场景证据快照——`buildCurrentSceneSnapshot`/`renderCurrentSceneSemanticSnapshot`：装配时从最近 12 条聊天抽取与当前场景相关的既定事实句（限 4 条×900 字）连同地点链构成 CURRENT_SCENE_SEMANTIC_SNAPSHOT 注入传记/墟境（context 挂载 currentSceneSnapshot）——「黄昏花室=维奥莱塔寝殿」这类聊天自造设定从「让模型自己找」升级为「递到眼前」；与 v5 对象边界/点名即锚叠加。全量 466/466（+2）、typecheck 通过；internal.81 v5 已归档，同版本覆盖打包 internal.81（989,592 字节）。
+- internal.81 v7（小修订，2026-09-01 15:16）：prompts/biography 提示语微调（diceMaterial 骰材落点口径两处统一、自然语言终点指引措辞）与 biography-plan 测试同步。全量 466/466（持平）、typecheck 通过；internal.81 v6 已归档，同版本覆盖打包 internal.81（991,593 字节）。
+- internal.81 v8（Codex，2026-09-01 20:42）：**P2-B/P2-C 落地**——①`artifactCanonAssessment`（`assessArtifactCanonBindingsSafely` 五态评估：current / partially-stale / stale / orphaned / uncertain——AS-01 同 revision 有效、AS-02 无关 delta 不误判、AS-03/04 单事实退休=partially-stale、全退休=stale、AS-05 上游 orphaned 才判 orphaned、AS-06 缺失项保持 uncertain、AS-07 unbound 不产生五态、AS-08 跨分支不借用、AS-09 回滚恢复 current 不改写绑定、AS-10 sourceRefs 不参与裁决）；②`artifactCanonConsumption`（`decideArtifactCanonConsumption(s)` 按评估决定产物局部消费）+ diagnostics/facade/entry/UI 接线（settingsWorkbench/workbenchClient）。全量 487/487（+21）、typecheck 通过；internal.81 v7 已归档，同版本覆盖打包 internal.81（1,008,341 字节）。
+- internal.81 v9（穿越修复包，2026-09-01 21:53，Codex）：穿越/遣返链路修复——ruinTimeKernel + ruinTurnGuard（回合守卫失败降级时间内核兜底，不截断正文）、tavernButterflyShell/butterflyController（**遣返楼重掷优先复用同一玩家楼记录，不在 idle 后重新读取活动变量**；遣返隐藏提示严格绑定角色/聊天/相邻楼/玩家 swipe）、commands 命令解析收紧、workbenchLifecycle/entry/timelineWorkbench 同步。全量 493/493（+6）、typecheck 通过；internal.81 v8 已归档，同版本覆盖打包 internal.81（1,011,305 字节）。
+- internal.81 v10（穿越机制二轮，2026-09-01 22:18，Codex）：新增 `visibleTurns.isLatestVisibleTurnPair`——「最新可见回合对」守卫接入宿主注入/蝴蝶壳校验/蝴蝶控制器提交：**只有当前楼对确为全聊天最新可见回合时才允许注入与结算**；楼层不在最新可见位置（swipe/删除/翻历史）时拒绝操作——防止隐藏提示写到旧楼、蝴蝶结算落在错误回合。全量 496/496（+3）、typecheck 通过；internal.81 v9 已归档，同版本覆盖打包 internal.81（1,011,699 字节）。
+- internal.81 v11（遣返时序重排，2026-09-02 07:07，Codex）：新流程——①玩家首次输入「遣返」即被接管；②脚本先冻结历史并完成蝴蝶效应**预结算**；③结算结果注入同一条遣返正文（正文模型真正读到历史变化）之后生成；④生成后追加蝴蝶面板并提交世界书与 Canon；⑤传记与遣返提示只服务当前楼，**下一条可见玩家消息清除残留事务**（不重复插入）；⑥隐藏的 MVU/系统楼不误判，但额外可见玩家楼/AI 楼仍阻止错绑。涉及 biographyPreSend（新）/biographyController/workbenchLifecycle/prompts.butterfly/butterflyController/workflows.butterfly/tavernButterflyShell/tavernBiographyShell/entry。全量 499/499（+3）、typecheck 通过；internal.81 v10 已归档，同版本覆盖打包 internal.81（1,014,287 字节）。
+- internal.81 v12（宿主绑定重构，2026-09-02 11:37，Codex）：新增 `runtime/globalBindings.ts`——`waitForGlobalMvu`/`createGlobalDataBindings`/`createGlobalScriptVariableBindings`/`createGlobalEventBridge`：宿主全局数据/脚本变量/事件桥统一绑定层（MVU 就绪等待、数据绑定与事件桥收敛，初始化更稳）；tavernHost 重构为 `TavernDataBindings` 接口（rebindGlobalWorldbooks 等），P2-A 绑定/消费/诊断与 facade/entry/timelineWorkbench/workbenchClient 接线同步。全量 502/502（+3）、typecheck 通过；internal.81 v11 已归档，同版本覆盖打包 internal.81（1,017,851 字节）。
+- internal.81 v13（预结算配对校验，2026-09-02 16:10，Codex）：v11 预结算时序收紧——butterflyController 将预结算**绑定到已建立的玩家楼**（找不到该楼的预结算/预结算不属于该楼均抛错），workflows.butterfly 注释锁定时序（玩家楼建立后、AI 正文生成前）；新增测试：预结算进入同一遣返正文但面板仍由提交阶段追加、遣返楼绑定忽略宿主隐藏系统楼、隐藏系统楼后的可见 AI 楼正确交给结算。全量 504/504（+2）、typecheck 通过；internal.81 v12 已归档，同版本覆盖打包 internal.81（1,017,937 字节）。
+- **internal.81 v14（蝴蝶竞态修复 + Codex 同链路重建，2026-09-03）**：Codex 本轮将蝴蝶链路改为「与传记同链路」——prepareText/prepareBeforeUserTurn **只认遣返命令**（普通消息不再唤醒 pending）；冻结+后台准备成功后才建玩家楼并触发正文；正文渲染后 commitRendered 提交；重掷命中同楼复用冻结结果；onRuinEntered 隔离旧飞行任务且保留快照供重试；失败 pending 可同命令重绑重试；文案改「蝴蝶效应尚未归档，等待重试」（不再谎称遣返完成）。但「隔离旧任务」测试暴露**竞态**：epoch 检查原在 armPending 入口，晚到旧请求会以新 epoch 重新武装旧遣返楼。**本次修复（阿瞳）**：epoch 快照前移到请求起点（prepareText/prepareBeforeUserTurn 开头）贯穿至 armPending（入口即查），晚到请求在重新 prepare 前即被拒。全量 506/506（隔离测试转绿，+1）、typecheck 通过；internal.81 v13 已归档，同版本覆盖打包 internal.81（1,020,219 字节）。
+- **internal.81 v15（蝴蝶请求瘦身，2026-09-03，阿瞳）**：真机病历——蝴蝶单次冻结请求 72,248 字符（线上约 216KB），12 条干预全文×6000 字等全量 6KB 上限来源集齐后逼近 60s 超时线、反复重试导致 **4 分钟级卡死**（其余模块 prompt 小所以快，判定非中转问题）。修复（用户选定方案 1）：`butterflyContext` 全源内容上限 CONTENT_LIMIT **6000→1500**（chat/worldbook/character/genealogy/biography/butterfly 单源截断统一收口），冻结 request JSON 约 72KB→**~18KB（-70%）**，单请求回到 15-30s 区间；旧链路、预结算时序与校验契约不变，零新门零新报错。新增回归测试「冻结体量瘦身」锁定单源 ≤1500 字与 request JSON <40KB（真实 freeze 全链路 stub：host snapshot + sources + active 检索最小成功回执）。全量 507/507（+1）、typecheck 与生产构建通过；internal.81 v14 已归档，同版本覆盖打包 internal.81（1,020,220 字节）。
+- **internal.81 v16（蝴蝶 80-180 隐形硬门契约化 + 旧快照体检，2026-09-03，阿瞳）**：真机病历——同一轮反复失败仍 4 分钟级卡死、v15 瘦身无效；console 证据 `ButterflyValidationError: Ruin action record length is invalid`。**根因**：validator 对 `ruinActionRecord` 手写 80-180 **硬门**，规则文本只写「建议长度」、prompt 从未告知拦截线——模型如实精简（行动少时自然不足 80 字）即被整轮拒收，每次重试都是一次完整慢生成（慢中转下数十秒/次），累计 4 分钟；该门不在任何契约内（违反单一真源）、无容忍窗口、报错无实际长度 = 软指标硬门化误杀，与请求体量无关（v15 因此无效）。**修复**：①长度契约化——`butterflyProseContract` 新增 `BUTTERFLY_ACTION_RECORD_LENGTH_CONTRACT`（target 80-180、**accepted 20-400**；防呆下限 20，空转/敷衍由 schema min(1) + PLAYER_ACTION_UNSOURCED 实质兜底；上限 400 防面板失控），validator 与 `rules/15` 措辞共用同一数值；②prompt 明示拦截线（模型不再盲飞）；③报错带实际长度与区间；④**旧快照体检** `isLegacyFrozenRequest`——复用旧冻结结果前检查任一来源是否超过当前 1500 上限，命中（6000 时代遗留 72K 快照）即删除并走全新冻结，否则 v15 瘦身对历史 pending 永不生效；⑤prepare 失败可见化 `armPendingGuarded`——失败原因写入 pending.failure 并点亮 `butterfly_pending`（此前无声失败：玩家只见「转圈后没反应」）。全量 510/510（+3）、typecheck 与生产构建通过；internal.81 v15 已归档，同版本覆盖打包 internal.81（1,021,850 字节）。
+- **internal.81 v17（蝴蝶提交失败可见化 + 时空页失败条目可重试，2026-09-03，阿瞳）**：真机病历——v16 后正文秒出但显示「蝴蝶效应尚未归档，等待重试（遣返正文已保留）」，且时空页根本没有「重新归档」按钮。**根因**：提交（面板追加/镜像/Canon）失败时 record 停在 `validated`，而 `visibleButterflyArchives` 只显示 committed/mirror_pending/message_committed——失败条目连同按钮一起被过滤掉；提交失败文案也是不带原因的固定句，无法判断卡在哪一步。**修复**：①`visibleButterflyArchives(records, failedRunReasons?)` 纳入「validated + pending.failure」记录（状态标 **待重试**，照常给「重新归档」按钮），失败原因随条目显示在详情顶部；②facade/entry/workbenchClient 新增 `listButterflyPending` 通道供时空页读取失败原因；③commitRendered 失败文案带真实原因。全量 510/510、typecheck 与生产构建通过；internal.81 v16 已归档，同版本覆盖打包 internal.81（1,022,544 字节）。**真机待办：复现后时空页应能看到带原因的失败条目并可点「重新归档」；若原因指向宿主提交侧（面板/镜像/Canon），据此根治。**
+- **internal.81 v18（蝴蝶提交候选收口 + 旧轮残留清理，2026-09-03，阿瞳）**：真机病历——v17 后正文秒出但提交报「渲染的 AI 楼不属于本次遣返请求」且 revision 连涨 8 次；console 取证（`listButterflyPending`）显示同聊天堆了 **5 条历史 pending**，其中 4 条共享同一玩家楼 id（含 6000 字时代 33KB 与 175KB 巨型旧快照），当前轮 `validated` 记录反而排后。**根因**：`commitRendered` 候选匹配只按「玩家楼 id + 最新可见对」，不校验玩家楼实际文本与该 pending 命令文本是否一致——渲染事件每次都劫持到最旧的「遣返」记录（玩家楼实际写「好了，伊雍，遣返吧」对不上）并抛错，真正当前轮永远轮不到。**修复**：①候选精确化——先按最新可见对过滤，再校验 `normalize(玩家楼文本)==normalize(pending.rawCommand)`，同文本多条取 updatedAt 最新，旧轮记录无法再劫持；②新冻结/归档重建前 `pruneStalePending` 清理同聊天其他 runId 的残留 pending（6000/175KB 时代垃圾自动清场，无需手动删）。全量 512/512（+2）、typecheck 与生产构建通过；internal.81 v17 已归档，同版本覆盖打包 internal.81（1,023,127 字节）。
+- **internal.81 v19（缓存清理纳入蝴蝶待结算 + 重试可见反馈，2026-09-03，阿瞳）**：真机病历——「重新归档」点击后无任何悬浮提示（成功/失败都无声），且设置页「清理生成缓存」明确不碰蝴蝶，脏 pending 只能手动一条条删。**修复**：①`clearGenerationCache` 一并清除蝴蝶未归档待结算快照（失败/残留/全部 runId 的 pending；已归档记录不受影响），返回值与设置页确认/结果文案同步（新增 `butterflyPendingCleared` 计数，`views` 加 timeline）；②`butterflyController.retry` 与正文渲染提交同款反馈——成功点亮 `butterfly_ready`，失败把原因写回 pending.failure 并点亮 `butterfly_pending`（带原因）；③entry.`retryButterfly` 成功后 publishDataChanged(timeline) 刷新时空页。全量 513/513（+1）、typecheck 与生产构建通过；internal.81 v18 已归档，同版本覆盖打包 internal.81（1,024,119 字节）。
+- **internal.81 v20（蝴蝶面板 MVU 前置，2026-09-03，阿瞳）**：驾驶员确认面板位置需求——蝴蝶面板与穿越 RuinTrace 同款楼层契约：正文之后、MVU 变量面板（`<UpdateVariable>`）之前，MVU 固定最尾。修复：`tavernHost.appendButterflyPanel` 重写——恰一份且为本请求上次自加的面板时先剥离再按同一规则重插（历史尾置面板在重试时自动归位）；0 份时插到 `<UpdateVariable>` 之前（楼内无 MVU 才文末追加，不丢面板）；恰一份且非本请求的保守原位替换；多份仍拒绝；同请求重复提交幂等。渲染/schema/时序/校验均不动。全量 515/515（+2：MVU 前置插入、尾置自加面板归位且幂等）、typecheck 与生产构建通过；internal.81 v19 已归档，同版本覆盖打包 internal.81（1,024,417 字节）。
+- **internal.81 v21（正文重掷自动补面板 + 删楼回滚自动重新结算，2026-09-03，阿瞳）**：驾驶员确认**删楼重 roll 是玩家常态操作**，系统必须自洽。两处缺口：①正文重掷（regenerate）后新变体楼没有面板——已归档结算不再重入账，但 `workflow.settle` 的 committed 早退分支现会按宿主 v20 规则**补插一次面板**（幂等；失败只降级日志；Canon/镜像不动）；②删楼回滚后同轮重发「遣返」仍复用旧文本 → 档案永远指向已被回滚的 Canon，形成「待人工判断」死结——修复：`workflow.prepare` 对 `canonStatus='reverted'` 的同轮记录**不再复用**，重新生成并用 `updateRecord` 同 key 覆盖新版（旧文本不留底，只存于 Canon 版本历史）；`controller.prepareText` 的已归档重建分支对 reverted 记录跳过（fallthrough 走全新冻结）。**仅 reverted 自动；orphaned（上游连带失效）保持人工判断不擅自改写。** 全量 517/517（+2 并改写 1 条全链断言集）、typecheck 与生产构建通过；internal.81 v20 已归档，同版本覆盖打包 internal.81（1,024,793 字节）。
+- **internal.81 v22（同楼跨 run 版本回滚收口，2026-09-03，阿瞳）**：真机病历——同一栋 AI 楼被多次重结算复用（regenerate/删楼重来保持 message_id），**不同 runId 的 delta 并存 active**（run A 与 run B 同绑楼 52）；旧实现删楼回滚只 retire「最新一条」，旧 run 的 active delta 成为永远无法回滚的**孤儿**，artifact 评估只能悬成 uncertain（状态页 3 条「待人工判断」）。修复：`applyRollback` 改为回滚**该楼（assistantMessageId）的全部 active revision（跨 run）**，head 重算与后继孤儿化语义不变，receipt 记录全部 revertedDeltaIds——删除一栋楼 = 该楼承载的全部蝴蝶/穿越版本进入历史。全量 518/518（+1）、typecheck 与生产构建通过；internal.81 v21 已归档，同版本覆盖打包 internal.81（1,024,827 字节）。**真机已验证（2026-09-03，驾驶员）：导入 v22 后删复用楼 52 → R2（node-2-3-run）与 R6（Ruin-Node-Yuna-001）同一回滚回执全部作废；重走全链路形成 R7 唯一 active，uncertain 归零。**
+- **P2-B/C 真机验收进展（2026-09-03，DSH 新会话）**：剧本见 `docs/P2-BC与v22真机验收清单-交接文档-20260903.md`；记录见 `docs/P2-BC真机验收记录-交接文档-20260903.md`。**场景 1 PASS**（无关 revision R8 与 R7 并存、43 单位全 current）；**场景 2 暴露 F-01**（见下 internal.82）——蝴蝶干涉实体命名空间与史料实体空间脱节，干涉从不进入后续生成视图（P1-1「严格版」第一份真机实证）。场景 3–5 正确暂停，待 internal.82 真机复验后重跑。
+- **internal.82（F-01 蝴蝶干涉实体归并，2026-09-03，阿瞳）**：方案 `docs/F01-蝴蝶干涉实体归并方案-20260903.md`。**根因**：蝴蝶结算 `subjectEntityId` 恒为 `entity:generated:<模型命名>`（workflows/butterfly.ts），与检索侧稳定 catalog 实体 id 分属两个命名空间；`canonResolver.deltaMatchesQuery` 实体维度精确求交恒空 → delta 恒判 outside → `<CANON_CURRENT_VIEW>` 恒为空（此亦解释真机评估恒 43 current / 0 partial）。**修复**：①freeze 时从检索 Bundle（castManifest.entries + personCanonViews）抽取有界（≤200）实体名→id 映射 `linkingIndex`，随 pending 持久化（可选字段，旧记录缺省零迁移）；②结算提交前 `linkCarrier` 保守归并（归一化相等或 ≥2 字双向包含；重名/多候选**不猜**→维持 generated 兜底），cascadeScope 与 operations 同源；console 留痕 mapped/fallback；③测试：linkCarrier 单测 6 项 + settle 集成 2 项（命中稳定实体 factKey 归并 / 旧 pending 全 generated 兼容）。全量 526/526（+8）、typecheck 与生产构建通过；internal.81 v22 已按原 SHA-256 归档，internal.82 新包 1,026,244 字节已生成并反向验证。**真机待办：跑一轮命中稳定实体的干涉 → 导出核对 factKey 不带 `entity:generated` → 复刻 320–350 尤娜窗口生成，候选应体现干涉（不再「尤娜活到 350」）→ 重跑 P2-B/C 场景 1–5。**
+- **internal.82 F-02 覆盖（干涉时空投递，2026-09-03，阿瞳）**：方案 `docs/F02-干涉时空投递-档位2方案-20260903.md`。真机实证：F-01 对原创叙事线（尤娜/黄昏花室，世界书 0 命中、结算检索无 cast → `index=0`）够不着——generated 实体被实体闸一票否决，地点/时间闸轮不到。**修复（受控单向放宽）**：`deltaMatchesQuery` 只对纯 generated 实体豁免实体闸（档案稳定实体保持 P1-1 精确匹配），改走叙事通道（地点 locationOverlaps 或名称 subjectNames×names 任一命中 + 时间不冲突才 inside）；蝴蝶 cascadeScope 补 time（ruinEntry→ruinExit）与 subjectNames；查询侧 scope 补 names；`<CANON_CURRENT_VIEW>` 对 generated 事实附演绎层注记。旧数据自动受益（无 time/names 时地点命中即投递）。canon +5 用例、RC-01~07 无损，全量 531/531、打包 1,027,878 字节（82-v3 已归档）。**真机待办：重走一轮尤娜线干涉 → 生成 320–350 黄昏花室候选应体现干涉；场景 1（金谷 vs 黄昏花室不串）复测。**
+- **internal.82 F-02 v5 覆盖（干涉行动断言注入，2026-09-03，阿瞳）**：真机病历——投递已通（`canon view: applied=2 activeNewFacts=5`）但候选仍写尤娜活着：R7 的死亡描述在 actionRecord，视图只注入 stage 事实卡（主语是"破碎的捕光琉璃/高塔工程"，不点名尤娜）→ 模型把"321 年事故"圆成"失明存活"，不矛盾故不采用。修复：视图新增 `<INTERVENTION_ACTIONS_READ_ONLY>`——把命中干涉的 actionRecord（谁/何时/何地/做了什么）注入并声明"所涉事件确已发生，后续叙事不得与断言矛盾"。**真机已验证（驾驶员，2026-09-03）**：三候选明确体现 R7——「扼喉之蚀」完整重演 321 年 1 月 5 日海因里希扼杀尤娜 + 铅云固化；「铅封的记忆」写成官方定性渎职/瓦拉姆抹除历史（余波链）。**F-02 全链闭环 PASS：干涉 → 地点投递 → 行动断言 → 后续生成体现。**
+- **internal.83（F-03 Canon 孤儿清扫，2026-09-03，阿瞳）**：方案 `docs/F03-孤儿清扫方案-20260903.md`。真机病历——酒馆不支持单删楼层，「删除到第 47 楼」批量截断只给部分消息派发 messageDeleted：绑 52/58 的 revision（R7/R8）收不到事件，成为删不掉的孤儿 active（永远当正史投递）。修复：`runtime/canonOrphanReconcile`——①孤儿判定（绑定楼经宿主明确不存在才判；查询异常跳过，宁漏勿错）；②降序复用 `rollbackByMessageId`（同款语义+审计，降序防同批孤儿被误判 orphaned）；③双入口：每次 messageDeleted 后（X）+ 工作台就绪后（Y）；④存在性探测适配（宿主不可用视为存在防误杀）。测试 +5，全量 536/536、打包 1,030,282 字节（82 系列终包已归档 82-v6）。**真机已验证（r0 导出，2026-09-04）：R7/R8 孤儿被自动回滚，head=0、10 条全历史、manualReview=0，零误杀。**
+- **internal.84（墟境轮次规范化，2026-09-17，阿瞳）**：驾驶员悬项（9/3 提出"『墟境轮次』里面的内容没有规范，每次都不一样"）落地。**根因**：MVU `/墟境系统/运行状态/墟境轮次` 由模型自由发挥——注入规则该字段示例值仅写「本轮唯一新轮次，禁止沿用旧轮次」，而同段其余十个字段都要求逐字复制；而脚本的 runId 恰是读这个字段（`tavernHost` L443/`ruinTimeKernel` L551），导致同一聊天内轮次风格混用（账本并存 `node-2-3-run-4881017064600` 与 `Ruin-Node-Yuna-001`）、轮次隔离与蝴蝶 runId 关联全依赖模型现编。**修复**：①`buildRuinRunId(requestId, nodeId)` 确定性生成统一格式（`Ruin-<nodeId>-<requestId 清洗前 8 位>`，同输入同值/不同轮次不同值/非法字符清洗）；②进入契约新增「本轮轮次标识：…」行；③变量更新规则该字段改用确切值 + 说明句改「逐字复制上方「本轮轮次标识」，禁止自造、改写或沿用旧轮次」——与其余字段同源。内核白名单与契约路径不变，旧轮次值不受影响。测试 +1（确定性单测）+ 契约断言；顺带修复 tests/canon-orphan-reconcile.test.ts 的 `CanonFact` 类型 import 遗漏（9/4 遗留：node --test 不查类型）。全量 537/537、typecheck 与生产构建通过；internal.83 已归档（83-v1），internal.84 新包 1,030,585 字节。**真机已验证（驾驶员，2026-09-17）**：进入第三个墟境后 MVU `墟境轮次` = `Ruin-node-3-e1034379`——与契约「本轮轮次标识」逐字一致、格式统一（`Ruin-<节点>-<轮次码>`），不再出现模型自造句；蝴蝶 runId 将随该轮遣返沿用同一值。
+- **internal.85（蝴蝶内容趣味性契约收口，2026-09-17，阿瞳）**：蓝图 §7 七条逐项核对——**①示踪样文、②写作手法级要求、③短字段具体化、⑥尺度自适应篇幅、⑦角色使用边界** 已在 rules/15 §十一/§十三 与 `prompts/butterfly.ts` `<BUTTERFLY_HISTORICAL_EVOLUTION_STYLE>` 落地（§7.1 诊断基于 8/30 旧文本，已过时）；本次补齐两处缺口：**④文风对齐**（rules §十三 增"与伊雍正史叙述腔调一致：客观、克制、有史料感；不条目式罗列、不抒情玄虚"）、**⑤关键词质量**（rules §十四 新增"关键词质量"段：必须是能区分本条目的专名；禁泛词与抽象名词；同义别名可并列；只用于搜索的词不得加入——§6.5.5 提示词侧；脚本侧泛词表+特异性评分属 §6 注入通道，未做）；另补 rules §十 现世落点具体化句。新增 `tests/butterfly-rules-contract.test.ts`（2 用例）锁定 rules/15 与 prompts 的趣味性要素防漂移（rules 经 `?raw` 嵌入 dist，改文本必须重打包）。全量 539/539（+2）、typecheck 与生产构建通过；internal.84 已归档（84-v1），internal.85 新包 1,031,668 字节已反向验证。**真机待办：跑一轮蝴蝶结算，观察历史演变文风（正史腔调/每段具体动作/一次翻转代价）与关键词是否纯专名（无泛词）。**
+- **internal.86（蓝图 §6 步 A：蝴蝶记忆注入通道，2026-09-17，阿瞳）**：把「当前分支仍有效的改写历史」从**只在生成任务内可见**（`<CANON_CURRENT_VIEW>`）扩为**普通正文可见的独立注入通道**。新增 `src/runtime/canonMemoryChannel.ts`：①有效性判定与 P2-B 评估同源（记录级 + delta 级确定性子集，不依赖检索 Bundle）；②分层注入——常驻（当前有效序列最近 1~2 条）+ 触发式（更早仍有效者按关键词匹配），总预算 2400 字、单条摘要 320 字；③关键词——硬词（有效 operation/cascadeScope 专名，命中 ≥1 即触发）+ 软词（模型 `historicalKeywords`，≥2 或 1 稀有词才触发），泛词停用表 `CANON_MEMORY_STOPWORDS`（§6.5.5 脚本侧兜底随本通道交付）；④ST `setExtensionPrompt`（key `eyon_canon_memory`、in_chat、depth 0、system），块体 `<CANON_MEMORY branch revision>`，含「正文自然体现/禁复述标签/禁恢复 inactive 旧史」框定；⑤刷新时机——生成前（`generationAfterCommands`）/ 切聊天 / AI 楼渲染后（结算即入通道）/ 删楼 / 手动重算，dispose 清空；匹配源=最近 8 楼可见正文 + 玩家当前输入，读取失败降级为空匹配不阻断生成。工作台「数据管理 → 蝴蝶记忆注入」诊断面板（`inspectCanonMemory`/`refreshCanonMemory` + reason `canon-memory-refreshed`）：状态徽章（注入中 N 条 / 未注入）、revision+触发时机+时间戳、计数（总/常驻/触发/未命中/被过滤）、失败行、注入全文折叠、逐条判定（硬/软关键词、命中词、入选原因）、重新计算 / 导出诊断 JSON。测试 +7（`tests/canon-memory.test.ts`：有效性判定、硬词触发、软词阈值、稀有度、失效隔离、预算截断、空串清除）。全量 546/546、typecheck 与生产构建通过；internal.85 已归档（85-v1，原 SHA-256 `A559AB26…`），internal.86 新包 1,043,351 字节、SHA-256 `C38CAC1FA361B81ED34B63319629FA8A0E2AB57AFD3CEC6069B83F0802780EEC`，12 项 marker 反向验证全 HIT。**真机待办：①普通正文自然体现改写后历史；②无关话题零注入（面板显示「未注入」且正文无 `<CANON_MEMORY>` 痕迹）；③D2 使 D1 失效后 D1 不再触发、回滚 D2 后自动恢复；④删楼回退后注入同步收缩。** 步 B（世界书镜像退役）与 §6.5 传记 digest 双源未做。
+  **真机首份证据（2026-09-17，驾驶员导出 `eyon-canon-memory-r12-20260917.json`）**：通道跑通——`trigger=manual`、`injectedText` 855 字符（预算 2400 内）、常驻层正确选中 R12（`resident:recent-effective`）、digest 393 字含「现世落点 + 可核查证物」；`runId=Ruin-node-3-e1034379` 与 internal.84 真机验证的墟境轮次同一值（蝴蝶账本与墟境轮次同源）；模型关键词 7 个全为专名、零泛词（internal.85 的 rules §十四 提示词侧真机生效）。同时暴露两项待改偏差（硬词池长串、模型关键词并入硬词池）与一项设计边界（删档 ≠ 回滚，仍 active 的干涉无简报）——见 §3 G-09/G-10。**口径修正**：因 `RESIDENT_LIMIT=2`，最近 1~2 条恒为常驻注入，故"零注入"应理解为**旧档案不因无关话题被拉入**（面板「未注入」只在无任何有效档案时出现），而非整块不注入。
+  **真机第二·三楼观察（2026-09-17）**：后续两楼把 R12 的改写历史当**既定事实**继续外扩（造出"麦穗盲目者／粮秤行善会／磨坊暗龛／盐水麻绳私刑"等新细节），并命中注入独有词「兄弟会」「铁律」——**信号正面但无法归因**：镜像世界书仍在同步注入同一份完整档案（同样含"秘密兄弟会"），且这两个词已被写进正文、永久留在上下文，作废为判据。**归因实验（待驾驶员执行）**：临时取消挂载 `伊雍-蝴蝶效应锚定-<chatId>`（不删书）后，改考**因果**而非词——问"当年那场神罚最早是怎么起来的"；注入块的起源是"**玩家的厉喝**被醉酒巡夜管事误认为金谷圣灵当场显圣、两个雇工是后果"，而可见正文讲的是"两个雇工私通被撞见→庄园主宣称神罚"（起源不同）；答出前者即证明通道生效。并行路径：酒馆提示词分解里核对取消挂载后 `<CANON_MEMORY>` 是否仍在请求中（直接证据）。
+  **归因修正（2026-09-17，驾驶员补充关键条件）**：该楼实际是在**镜像世界书已取消挂载**的窗口内生出的 ⇒ ST 的世界书注入路径关闭；普通聊天没有其它 canon 注入通道（`<CANON_CURRENT_VIEW>`／`<INTERVENTION_ACTIONS_READ_ONLY>` 只进四个任务，`getButterflySources()` 只供四个任务检索）⇒ 唯一来源是 `<CANON_MEMORY>`；而该楼命中的注入独有词「兄弟会」「铁律」在遣返楼正文、前两楼正文与面板保留行中均不存在（已逐词 diff）。**故 §6 步 A 第 1 问「正文自然体现改写后历史」归因成立、判 PASS**（待两项确认：该窗口内未再点遣返致 `ensureReady()` 自动挂回镜像；面板「现世落点／可感知证据／墟境行动记录」三行不含该两词）。该结果同时构成 **§6 步 B 的准入证据之一**——正文可见性可不依赖镜像；但步 B 仍需 Q3/Q4（删楼回退后注入收缩、档案失效隔离）与镜像退役后的回归复验。**同时注意判据消耗**：「兄弟会」「铁律」已被写进正文、永久留在上下文，后续验证须改用其余注入独有词（厉喝／神圣化／惊动神明／行业契约／装饰艺术／奸淫者／严苛的道德准则）或改考因果（注入块的起源是"玩家的厉喝被误认为圣灵显圣"，可见正文讲的是"两个雇工私通被撞见"）。
+  **真机复验结果（2026-09-17，三项 PASS）**：①**正文自然体现** —— 上述镜像未挂载窗口内的归因成立；②**档案失效隔离** —— `eyon-canon-memory-r0-20260917.json`：删楼回退后 head 12→0、记录 `status:filtered`、`injectedText` 为空、`counts.filtered=1`；③**删楼回退同步收缩** —— 同份导出即证（注入块整块消失、常驻/触发归零），且面板数据源就是该快照。另有"旧史不越界"（需 ≥3 条有效档案同时存在才能观察"未命中"档）记为**当前不可测边界**，与 P2-B/PC-03 同款处理。**结论：建议判 internal.86 = ACCEPTED（当前可测试边界），待驾驶员确认。** 复验同时产出待修项 G-10（关键词口径三处）与 **G-12（F-03 清扫路径不标记蝴蝶记录 `canonStatus`，使 v21"reverted 重新生成"闸在清扫路径下失效）**。
+- **internal.87（修复包：G-10 关键词口径 / G-11 注入框定 / G-12 记录状态对账，2026-09-17，阿瞳）**：真机复验暴露的三处缺口一次修完。**①G-10① 硬词池只留专名形态**：`causalStages[].carrier` 描述句（"第三麦庄巡夜管事及其口述报告"）与整条地点链（"奥古斯提姆帝国-东部金谷城外郊-第三麦庄草料库"）不再入池；地点按层级拆分，拆分实现下沉 `src/core/placeFragments.ts`（与 ruin 疆域引用同源）；新增专名判定（标点／连接结构／长度 >12 剔除，取舍：含"与/和/及"的合法专名一并放弃，宁漏勿错）。**②G-10② 模型 `historicalKeywords` 退回软词池**（不再并入硬词池），恢复 §6.5.1 分层——模型关键词不再"命中即触发"。**③G-10③ 提示词侧** rules/15 §十四 新增"必须写成本文里会真实出现的字面写法"与"禁止描述句与短语堆叠"（脚本侧别名与形态扩展仍属 §6.5.3 未做）。**④G-11 注入框定句加强**：新增"人物关系、事件结局与专名以本简报为准，不得改写其因果"＋"这只是背景设定，不是本回合的行动指令"（病历：简报经正文转述漂移，"私通"→"私奔"、"嵌顿无法分开"→"当场嵌死"）。**⑤G-12 新增 `src/runtime/canonRecordStatus.ts`**：按当前分支状态对账每条蝴蝶记录的 `canonStatus`（幂等、自愈、可附带回滚回执留痕），接入 `messageDeleted` 与 F-03 孤儿清扫两个入口——病历（`eyon-canon-memory-r0-20260917.json`）里删楼回退后 `reasons` 是 `delta-status:reverted` 而非 `record-canon-status:reverted`，证明记录字段未被标记，使 **v21"reverted→重新生成"闸误判为未回滚而复用旧文本**。测试：`canon-memory` +2（专名形态／软硬分层）、新增 `canon-record-status` 4 项、`butterfly-rules-contract` +3 断言。**全量 552/552（+6）**、typecheck 与生产构建通过；internal.86 已归档（86-v1，原 SHA-256 `C38CAC1F…`），internal.87 新包 **1,044,887 bytes**、SHA-256 `6BA9A8DBA8C49844C96D5474E2CAF6CEF5BFBA523D77D0613948E2792D10404E`，marker 反向验证 HIT。**真机待办：①跑一轮新遣返核对关键词是否纯专名且为字面形态；②删楼后重roll 预期重新生成（控制台出现"伊雍正在校订历史余波"）而非复用旧文本；③无关话题下旧档案仍应显示"未命中"。**
+- **internal.88（蓝图 §6 步 B：世界书镜像退役，2026-09-17，阿瞳）**：镜像链路整体退场。**①检索源改由本地记录供给**：新增 `src/runtime/butterflySources.ts`——`loadCurrentButterflySources` 取本地 `ButterflyRecord`（`committed` 且有 `deltaRef`），并**先经 `resolveCanon(branch, headRevision, scope)` 投影**为当前有效片段（§6.2 禁止把记录原稿当候选池）；作用域用"本聊天全部分支 delta 的 `cascadeScope` 并集"构造（每个 delta 用自己的实体/地点/名称自证在界内，只让版本与依赖决定去留），时间闸留空交任务侧检索。**顺带修掉旧行为**：镜像时代以"条目启用"当有效性，已回滚档案照样进候选池。**②删除镜像写入与可见性切换**：`ArchiveAdapter` 从 `mirrorButterflyRecord`/`activateNamespace` 缩为 `retireLegacyMirrors`；`ButterflyWorkflow` 去掉 archive 依赖、不再写 `worldbookName/worldbookUid`、删除 `archiveTitle` 与 `butterflyArchiveKeywords`；`TavernButterflyArchiveAdapter` → `TavernButterflyMirrorRetirement`（只做存量清理：摘掉 `伊雍-蝴蝶效应锚定-*` 的全局绑定 + 删除这些书里 `extra.source=eyon_butterfly_anchor` 的条目，**不删除世界书文件本身**）；`ButterflyController.activateCurrentNamespace` 与 entry 的聊天切换重挂一并删除。**③工作台**「数据管理 → 世界书注入镜像」改为"已退役"说明 + 「清理镜像」按钮（confirm 明示不删世界书文件、不动本地档案与 Canon），facade 新增 `retireButterflyMirrors()`。**④残留防护**：检索语料仍把 `eyon_butterfly_anchor` 条目判 `routed-generated` 排除（清理前也不会回流）。测试：新增 `tests/butterfly-sources.test.ts`（3 项）、host.test 镜像删除用例改为退役清理用例（断言不碰用户世界书）、butterfly.test 4 处移除 archive 依赖。**全量 555/555（51 文件）**、typecheck 与生产构建通过；internal.87 已归档（87-v1），internal.88 新包 **1,043,288 bytes**、SHA-256 `EB44EEE99D56C39B30C94AB4818CC0CB8634FD62B504B6BAC2CE88EF838A2E46`，11 项 marker 反向验证 HIT，`mirrorButterflyRecord` 在包内已消失。**真机待办：①点「清理镜像」确认旧锚定书摘除绑定且条目清空；②跑一次蝴蝶遣返 + 一次传记或墟境生成，确认四模块检索仍有蝴蝶史料、时间线档案与注入面板正常；③确认不再自动挂载新锚定世界书。** 复验清单：`docs/internal87-88真机复验清单-交接文档-20260917.md`。
+  **internal.88 v2（镜像写入面彻底拆除，2026-09-17）**：反查发现 `globalBindings.ts` 的 `createWorldbook`／`createWorldbookEntries`／`updateWorldbookWith` 走 `requireFunction`——**宿主不提供即抛错、整脚本加载失败**，而它们在镜像退役后已无任何调用方；本次一并移除（连同 `TavernDataBindings` 声明），脚本不再要求宿主提供世界书写接口，只保留清理与语料排除所需的世界书读取/绑定接口。**包内反查（v2）**：`createWorldbookEntries`／`updateWorldbookWith`／`createWorldbook`／`mirrorButterflyRecord`／`archiveWorldbookName`／`boundWorldbookNames`／`butterflyArchiveKeywords`／`defaultArchiveStrategy` 全部 GONE；`eyon_butterfly_anchor` 仅剩语料排除与清理谓词两处、`伊雍-蝴蝶效应锚定-` 仅作清理前缀识别、`worldbookName/worldbookUid` 仅为旧记录读取兼容。全量 555/555、typecheck 与构建通过；v1 已归档（`88-v1`，原 SHA-256 `EB44EEE9…`），v2 包 **1,042,976 bytes**、SHA-256 `3B18139ECEDE0FCA4EA8A4A98E6ADF1399614477EDE095F4466D476BB696CE6F`。
+  **internal.88 v3（边界验证 + 复验诊断行，2026-09-17）**：①确认"全部回退、head=0"（驾驶员当前聊天状态）下检索源投影返回空**且不抛错**（`applyRollback` 把 head 重算为最大 active revision，无 active 则 0，故 `resolveCanon(branch,0,scope)` 合法；否则四模块检索会因异常整段降级为空源），并锁定 `partially-active` 不进候选（唯一当前视图只应用 active+verified）——测试 +1；②新增诊断行 `butterfly sources: records=N committed=M effective=K revision=R`，供真机复验第 6 项一眼判定"蝴蝶史料供料是否成立"；无候选时连分支都不读。全量 **556/556**；v2 已归档（`88-v2`，原 SHA-256 `3B18139E…`），**v3 为当前包：1,043,124 bytes、SHA-256 `2ED7B1EBFFB58F18B8BA2D1B4DCC4AB875F5576D2E3F98B1D8B7E317C534402C`**。
+  **internal.87/88 交付前自验补充（2026-09-17，仅测试与文档，包未变）**：①**G-12 覆盖审计**——全仓 `rollbackByMessageId` 调用点共三处：`canonOrphanReconcile`（X/Y 入口，已接对账）、`entry.onMessageDeleted`（已接对账）、`butterfly.settle` 的 needsRebind 路径（回滚后立即重置并重提交记录 Canon 字段，状态自然收敛）⇒ **无漏同步入口**；facade/UI 未暴露任何回滚入口。②**G-12 端到端测试**（`tests/butterfly.test.ts`）：完整走"正常结算 → 清扫回滚（复现漏洞现场：记录仍 `active`）→ 对账标记 `reverted` → `prepare()` 必须重新请求模型"，把 v21 闸的输入与放行一次钉死。③复验清单第 2 项加入**指纹判据**：删楼后导出 JSON 中该条 `reasons` 应为 `record-canon-status:reverted`（旧病历是 `delta-status:reverted`）。全量 **557/557**。
+  **降级路径补测（2026-09-17，仅测试与文档，包未变）**：`retireLegacyMirrors` 的两个宿主相关分支补了测试——①宿主无 `deleteWorldbookEntries`（旧版酒馆助手）时**仍摘全局绑定**、如实报 `removedEntries=0` 且不抛错；②宿主无 `rebindGlobalWorldbooks` 时**条目删除照做**、不抛错；③**单本删除失败不阻断其余**（按本记 `mirror cleanup failed`、条数如实统计、绑定结果不受影响）。复验清单第 5 项据此拆成**必过项**（摘绑定 + 日志行）与**尽力而为项**（条目清空，取决于宿主能力，`removedEntries=0` 不算 FAIL）。全量 **559/559**。
+- **软硬边界契约已固化**（Codex 六条反思 → docs/01 第 15 节项目红线）：责任分配（检索供料/模型理解/校验器只拦明确矛盾）、硬锁清单五类、禁止回潮清单、理解层合同警惕（taskInterpretation 不许膨胀成新语义编译层）、验收视角（「格式正确但历史变笨」为最高优先级故障信号）。
+- **P1 连续状态附录已冻结（文档限定，未实施）**：主蓝图 6.6 将“发生事实、持续状态、状态转移”分层；结构只持有 branch/revision/entityId、作用域、来源、区间与依赖，玩家原句完整交给模型理解。玩家明确要求越狱、获释、复职、治愈、迁徙等变化时，应作为建立在当前 Canon 上的候选转移；除非明确 retcon 并形成 verified delta，不得无声抹除监禁、流放、任职、伤病等前史。CS-01—CS-07 留给 P2/P3 接续验收，不扩张 P1-1 为模型协调器。
+- **internal.77 运行时短验收（2026-08-28）**：真实酒馆中 loader/runtime/instance 同为 `0.10.0-internal.77`；iframe/overlay/launcher/workbench 各一实例；工作台显示运行正常、当前聊天资料已同步，读取 573 条世界书；`inspectCurrentCanon`、`listPromptDiagnostics`、`listRetrievalShadowObservations`、`getRuinRuntimeSnapshot` 均存在；控制台无 warn/error。本轮未触发生成，因此这是 P0 运行时装载与只读诊断短验收，不是 accepted release。
+- 当前 internal.75 检查点包：929,895 bytes，SHA-256 `3d631df3f01abf5bc00643f8f081f5469d1cc6b22cd1f8436d04a2891dabef63`；已归档。internal.76 新包 923,704 bytes 已生成并反向校验。
+- 上述证据不是 P0-A/P0-B、Qualified Evidence 或新墟境链路的真实酒馆驾驶员接受。
+
+## 3. 当前已知缺口
+
+### G-08 · 传记记忆注入（并入蝴蝶 §6 通道，双源）— P1/P2 待办，**步 A（蝴蝶源）已实施**
+
+> **2026-09-27 internal.118 更新**：源 B 已按 [`docs/G-08普通正文传记冲突感知合同.md`](docs/G-08普通正文传记冲突感知合同.md) 实施。相关 P4-C 关系至多成簇投递一组，Canon 源 A 永远优先，人物只在自身认知范围内产生疑惑；解释与反应方式不设固定类型。自动化完成、真实酒馆待验，不计入 P4 完成分母。
+
+> **2026-09-17 更新（internal.86）**：§6 通道**步 A（源 A 蝴蝶）已实施**——`src/runtime/canonMemoryChannel.ts` 落地常驻/触发分层注入、硬软关键词打分、泛词兜底、失效隔离、生成前刷新与空串清除，工作台新增「数据管理 → 蝴蝶记忆注入」诊断面板。**源 B（传记 digest）仍未做**，排期在步 A 真机通过之后（同一通道，仅加第二数据源）。
+
+- 愿景（驾驶员 2026-08-30）：让**传记**像蝴蝶日志一样被普通正文召回——几十楼后本角色出场时自然携带传记经历（时间线/物件/寻亲目标）；蓝图 `人物在场引擎与墟境缺席叙事蓝图.md` §6 新增「6.5 双源扩展」计划批注；
+- 通道规则全部复用蝴蝶 §6（常驻最近 1~2 项有效内容、更早按关键词触发、失效/被覆盖隔离、正文生成前刷新、注入空串清除）；仅新增源 B：传记 digest（本角色最近一篇 digest v2.1 ≈600 字常驻，更早按关键词触发，新版本覆盖时旧 digest 隔离）；
+- 排期：P1-1 三条真机验收（RC-02/06/07）通过之后；不阻塞 P1-1。
+- **当前可验证边界（2026-09-27）**：蝴蝶源 A 已由 internal.86 落地，传记源 B 已由 internal.118 接入同一普通正文生命周期；P2-A 仍只负责既有 action/delta/operation 绑定与只读诊断，G-08 不会把普通正文猜测写回 Canon。
+
+### G-07 · 传记 passage.sourceRefs 迁移 S 句柄 — **IMPLEMENTED / AUTOMATED / DRIVER-PENDING**
+
+- 当前源码审计确认规划与单块/批量扩写提示只允许复制 `TASK_CITATION_CONTRACT_V2.allowedSourceRefs` 中的 S 句柄；Active Evidence 与二次补充来源使用同一任务注册表，模型边界会把 passage、snapshot、source 与 fact 内部主键屏蔽为 P/F/E/S；
+- 规划与正文返回先通过 `TaskCitationRegistry` 把 S 句柄解析回内部 sourceId，再用 `knownSources` 校验；旧存档和旧模型遗留的内部引用只在脚本兼容边界读取，不再作为新提示契约；
+- schema repair 与普通 repair 都明确要求 S 句柄；legacy `worldbook:书名:数字` 错误文本继续由 `sanitizeRepairErrorText` 消毒，避免把内部长 ID 回显给模型形成自激循环；
+- 2026-09-27 聚焦回归 `citations + biography passage/plan/workflow` 共 95/95 通过；旧账本中“仍是 legacy、待迁移”的描述已被本节取代；
+- 仍缺一条专项真实宿主证据：新生成一篇实际引用世界书的传记，再生成相关墟境，确认无 `Passage unknown source reference`、无内部 `worldbook:…:数字` 回显且下游正常召回。完成前不标记 `DRIVER ACCEPTED`。
+
+### G-01A · 可逆状态被误判为绝对缺席 — **internal.120 已收口 / 待真机复验**
+
+internal.119 已将墟境提示合同校正为：
+
+- 未出生、已故：硬时间门；
+- 失踪、失能、囚禁、放逐、异界、除名：受限在场，validator 不作绝对退场硬拦。
+
+实现只修改提示合同与回归夹具：未出生/已故继续由既有 validator 硬拦；可逆或受限状态由模型结合当前有效 Canon 与自然语言证据表现其具体限制。玩家明确提出越狱、获释、回归、复职、治愈、迁徙等变化时，可作为任务候选中的局部转移，但不得抹去前史，候选本身不自动成为 Canon。未新增状态枚举、关键词编译器、存储、模型调用或 validator 硬门。
+
+internal.120 根据真实“玲山出生前墟境”失败完成优先级收口：检索层仍可因玩家点名把玲山列为 required，但候选时段已由人物时间轴坐实在其出生前/死亡后时，硬缺席只在本轮墟境覆盖 required 出场要求。脚本会从 sharedCast、候选 cast 与节点参与者统一剔除该人物，并在 CastManifest 校验时豁免本轮到场；人物身份、世界书与 Canon 不变。正常年代的 required 仍须在场；没有 required 冲突时，模型擅自让未出生/已故人物出场仍会触发 `CHARACTER_ABSENT_WINDOW`。自动化已补真实 CastManifest 冲突夹具，真机待用复兴纪元 450 年场景复验。
+
+internal.121 进一步把工作台勾选与实际演员权力拆开：人物/传记选择区保留并改称“重点参考”，只提高召回与提示注意力；勾选姓名及其人物卡内关系不再自动升级 required，也不再由 validator 塞进 sharedCast、candidate.cast 或节点。补充方向明确要求某人亲自行动时仍建立 required；模型若确实让重点参考人物出场，规范身份与人物时间锚仍照常锁定。实际演员表因此只陈列候选内真实参与者，各分支没有共同演员时保持各自演员，不再复制第一支线演员制造假共享。
+
+internal.122 将谱系节点现有的结构化生卒接入与世界书、MVU、Canon 相同的 `personTimeline`：本轮自动召回史料或演员名册中的已知人物无需手选，也会由脚本按墟境跨度计算明确事件年年龄，并要求提纲、扩写中的职位、权限、独立行动与生命阶段相符；特殊种族和既有社会设定优先。局部历史空白仍允许大胆补充家族惯例与持久制度，只限制无依据的无关世界级改写。工作台同时删除重点参考人物与传记标题下的冗长说明，不新增 schema、存储或模型调用。
+
+### G-01B · 连续状态跨时段投影 — 待办
+
+主蓝图 6.6 已把后续边界扩展为通用连续状态：死亡只是一个确定性终止例，监禁、失踪、流放、任职、关系、伤病、迁徙和持有等变化均应以“发生事实 + 状态区间 + 状态转移”解析。结构不替模型拆解玩家句子；模型可以实现玩家明确提出的新变化，但不得无 verified retcon 抹除前史。internal.119 不实现状态区间推导、跨时段查询或 CS-05—CS-07，只修复模型把受限状态误当作人物不存在的问题。
+
+### G-02 · Qualified Evidence 版本资格是过渡实现
+
+P1 前把未仲裁生成产物标为 `unresolved` 可以防污染；P1 后必须由 CanonResolvedView 唯一决定版本有效性，qualification 只决定叙事用途。
+
+### G-03 · 蝴蝶世界书镜像退役 — **ACCEPTED（internal.90 累计验收）**
+
+internal.88 已删除镜像写入、可见性切换与加载期世界书写接口硬依赖；检索源改由 `runtime/butterflySources.ts` 从本地记录经 `resolveCanon` 投影，`ArchiveAdapter` 只保留存量镜像清理。internal.90 累计真机验收确认：清理后可正常遣返、写入 Canon、生成 `CANON_MEMORY` 并供后续正文使用，且不再自动挂载新锚定世界书。旧机制病历保留在 `docs/交接文档-GPT-internal86-88与6步AB-20260917.md`，不再作为当前操作指引。
+
+### G-12 · F-03 清扫路径不标记蝴蝶记录状态（状态脱节）— internal.86 发现 / **internal.87 已修**
+
+> **修复（internal.87）**：新增 `src/runtime/canonRecordStatus.ts` → 按当前分支状态对账每条记录的 `canonStatus`（幂等自愈，可附带回执留痕），接入 `messageDeleted` 与 F-03 孤儿清扫两入口；`canon-record-status` 4 项测试锁定"清扫路径回滚后记录必须变 `reverted`，v21 闸应放行"。以下为发现时的病历原文。
+
+**真机证据（2026-09-17，`eyon-canon-memory-r0-20260917.json`）**：删楼回退后 head 12→0、记录 `status: filtered`、`injectedText` 为空（回滚与注入收缩均正确），但 `reasons` 是 **`delta-status:reverted`** 而不是 `record-canon-status:reverted` ⇒ 证明**记录的 `canonStatus` 字段没被标记**（仍是旧值 `committed`）。
+
+**根因**：`canonOrphanReconcile.reconcileCanonOrphans()`（F-03 X/Y 入口）只做 `rollbackByMessageId`，**不标记记录**；而 `messageDeleted` 处理器里的标记被 `if (!rollback) return;` 保护——一旦这次回滚不是它执行的（清扫先跑、或删除发生在脚本未加载时由 Y 入口补清），就**整段跳过标记**。
+
+**影响面**：①面板 reason 语义不精确（过滤结果仍正确，因 `assessRecordEffectiveness` 同时检查 delta 状态）；②**功能闸误判**——`workflows/butterfly.ts` L137 `if (existing && existing.canonStatus !== 'reverted') return existing;` 与 `butterflyController.ts` L120 `triggerRecord.canonStatus !== 'reverted'` 是 internal.81 v21「reverted 记录重新生成」的判据；`canonStatus` 停在 `committed` 会让"重新遣返同一楼"**复用旧文本、不重新生成**，即 v21 修复在清扫路径下静默失效（回到"档案永远指向已被回滚的 Canon"死结）。
+
+**修法候选（机制级，待驾驶员批）**：把"标记受影响记录"抽成独立函数并让**两个入口都调用**；标记判据不依赖"本次 receipt"而是**按当前分支状态重算每条记录的 `deltaRef` 状态**（幂等自愈，任何来源的回滚都能跟上）；`messageDeleted` 处理器去掉早退保护。需补测试：清扫路径回滚后记录 `canonStatus` 必须变成 `reverted`，且 `prepare()` 会重新生成而非复用。
+
+### G-04 · 固定词法资格污染局部证据
+
+真实宿主复测曾表明，旧资格链会依赖名称后缀、固定关系/事件正则和 SourceSnapshot 级实体集合，把“同一来源别处出现过某实体”误投射到当前 passage。梵尼亚地理误判只是已观察样本；人物、组织、事件和时代存在同一根因风险。
+
+P0-D 根修已经进入源码：语义编译层已整体撤销（internal.71），检索资格改为纯确定性共证门（internal.72）——固定词法与语义 relevance 只负责候选/阅读建议，不能删除证据；最终强结论必须绑定 passageId/source span 并通过明确时空、版本与 Qualified Evidence 边界。该缺口现在是“自动化已闭合、真实宿主待复测”，不是已被驾驶员接受。
+
+### G-05 · 模型证据引用边界混合内部主键
+
+根因不是某一种 ID 少了兼容，而是模型同时看见多种内部主键并被要求逐字复制。Citation Contract v2 已统一四模块的 P/F/E/S 表、空表语义、跨阶段编号和解析边界；旧 snapshotId/截短 passageId alias 补丁已删除。自动化边界已闭合，剩余工作是真实宿主验证模型是否严格使用实际 allowed 列表，以及墟境丢弃坏句柄后正文是否完整保留。
+
+### G-09 · 档案删除后仍 active 的干涉没有正文简报（删档 ≠ 回滚）— internal.118 已实施 / internal.126 DRIVER ACCEPTED
+
+工作台「时间线 → 删除档案」只删本地 `ButterflyRecord`（**internal.88 起镜像世界书已退役，不再联动**），**正史 revision 不回滚**（按钮确认框已明示"已写入正文和正史的内容不会因此回滚"）；而记忆通道（§6 步 A）的简报文字来自档案 ⇒ 被删档案的干涉若仍 `active`，会继续通过 `<CANON_CURRENT_VIEW>` / 检索影响事实，却不再有可读的改写历史注入正文——正文"事实变了但没有来龙去脉"。
+
+真机样本（2026-09-17，驾驶员）：该聊天 `headRevision=12`，本地档案仅剩 1 条（R12 `Ruin-node-3-e1034379`）；其余 11 条为**驾驶员测试期主动删档**（已排除记录丢失：`清理缓存` 只清未归档待结算快照、不删已归档档案；删楼/回退只把记录标 `reverted/orphaned` 不删记录；唯一删除入口是时间线页删除档案）。
+
+**已冻结处置**：不改删除语义、不回滚 Canon，也不暗藏整份档案。删除时只为仍 active 的干涉写入独立紧凑记忆残片；正文按当前 Canon operation 重新投影“仍有效结果”，回滚/取代后自动收缩。IndexedDB v8 新增独立仓，资料导出与诊断可见计数，时间线不可浏览原档。自动化已覆盖 active 保留与 reverted 退出。2026-09-27 真机导出的删除前状态、删除后记忆与删除返回楼层后的记忆依次确认：active 干涉保留紧凑因果，删除正文回到 R0 后注入为空；G-09 已通过驾驶员验收。
+
+### G-10 · 记忆通道关键词口径两处偏差 — internal.86 发现 / **internal.87 已修**
+
+**① 硬词池混入非专名长串**（真机样本 R12 的 4/12 条）：`causalStages[].carrier` 描述短语 3 条（如"第三麦庄巡夜管事及其口述报告"）+ `locationChain` 整链拼串 1 条（"奥古斯提姆帝国-东部金谷城外郊-第三麦庄草料库"）。这些几乎不可能被正文逐字命中（死词），且违反 §6.5.2"只保留专名形态"。改法：地点链复用既有 `territorialFragments` 拆分、载体长句过滤（或只取其中可归并的专名）。
+
+**② 偏离 §6.5.1**：`extractHardKeywords()` 把模型 `historicalKeywords` 也并入硬词池（真机导出中 `soft ⊂ hard` 可证），使其单条命中即触发（硬词权重 3、≥1 即过），比蓝图"硬词仅从有效 delta 提取、模型关键词只作软词加分（≥2 或 1 个稀有词）"明显激进，存在过度注入风险。
+
+处置：驾驶员决定**先跑完 §6 步 A 真机四问**（当前包正好用于观察是否真出现过度注入），之后一并修复并打包。
+
+**③ 关键词可匹配性缺口（§6.5.3 未做）**：真机正文里的实际字面是"麦堆里的第三只眼"，而模型给的关键词是概括短语"麦堆禁忌"——逐字 `includes` 匹配命中不了；同一批关键词里的"监察者神位""纠缠的惩戒""第三麦庄"则**是**正文会出现的字面形态（后续楼逐字命中）。即模型关键词**混有"摘要"与"字面形态"两类**，rules/15 §十四 只要求"专名"，没要求"必须是正文里会真实出现的字面形态"。修法候选：提示词加"关键词须能逐字出现在正文/史料中"、别名与形态扩展（§6.5.3）、或从 digest/落点字段抽候选词。
+
+### G-11 · 记忆简报经正文转述会漂移（叙事层 vs 事实层分歧）— 观察项（internal.87 已加框定句）
+
+真机病历（2026-09-17，R12 后续楼）：注入块原文写"托马斯与贝瑟那因惊吓而**锁合在一起、无法分离**的肉体……随后被**强行分开并变卖至南方的石矿场**"，后续正文转述成"**私奔**的男女在麦垛里被**当场嵌死**、变卖为奴"——两处都偏（私通→私奔、嵌顿无法分离→嵌死）。
+
+成因：注入块是**叙事简报**（320 字摘要），正文模型按其自身语感复述，多次转述后细节漂移；Canon 事实层不变，于是出现"叙事层与事实层分歧"。风险：漂移版本再被写进新档案/新干涉时，误差累积成二次事实。
+
+处置候选（未定，与 G-10 一并处理）：①注入框定句加强（"人物关系与结局以本简报为准，不得改写"）；②digest 改结构化短句（人物／事件／后果分列）降低转述歧义；③接受叙事弹性，档案保留原稿（现状）。
+
+**判别实验的附带教训（验收方法）**：靠"后续正文是否延续改写历史"**无法**判别注入是否生效——改写内容一旦被正文复述，就永久留在聊天上下文里，成为独立载体。因此：①第一版实验（只删面板 `[历史演变]`/`[历史关键词]` 两行）不充分，因为上一楼已用正文复述过整套细节（"监察者神位""麦堆里的第三只眼""击掌报备""石碑《纠缠的惩戒》"全在）；②可靠判据应改用**只在注入块里出现过的词**（R12 经 diff：`秘密兄弟会`、`神圣化`、`铁律`、`惊动神明`、`行业契约`、`装饰艺术`、`奸淫者`、`严苛的道德准则`；注意 `赤裸者`/`神明锁定` 也在面板「可感知证据」行里，不算独有）。
+
+## 4. 当前验收门
+
+### A · P0-A 人物事实
+
+用长人物条目复测传记和墟境，确认：
+
+- 后部经历、亲属身份、分别事件、现状装备进入模型可见事实；
+- plan 与 expansion 使用相同 factIds；
+- 不把暧昧关系或推断晋升为 explicit；
+- 自动时间范围不把人物放到出生前。
+
+### B · P0-B 持久化回滚
+
+完成一次“进入墟境 → 遣返 → 形成 canonRevision → 删除遣返助手楼”，检查：
+
+- branch/revision/action/delta/receipt 正确落库；
+- 删除后 head 回父 revision；
+- 旧行动原稿仍可审计；
+- 后继效果不会在前提消失后继续 active。
+
+### C · Qualified Evidence 与地理舞台
+
+复测“英雄纪元 / 奥古斯提姆帝国 / 第二次位面入侵时帝国军方英雄群像”，回传：
+
+- `listRetrievalShadowObservations()` 的 qualification details；
+- `listPromptDiagnostics()` 字符诊断；
+- 全部候选及史稿；
+- 外部地点是否只作参照，没有偷换本轮舞台。
+
+### D · 墟境先审后选与进入
+
+确认全部史稿在选择前自动完成、加载圈正常、失败项可重试、切换与进入不请求模型、非 ready 不可进入、进入只建立一轮玩家楼和助手楼。
+
+### E · P0-C 证据解释与部分顺序
+
+用玲山长条目分别复测传记与墟境，确认：
+
+- “离开梵尼亚、抵达帝国、梅薇娜赠书”等事实被完整读到，但资料排列没有被直接当成年代顺序；
+- 明确关系和当前“琉璃塔信报社社长/报业从业者”状态成为推理前提；
+- 对赠书日期可形成一个合理解释，也允许另一种同样有据的解释；
+- 同一“铃羽被选中/梅薇娜赠书”事件不会在多个独立墟境候选中仅换年份重复发生；
+- `reported` 的“官方说法”没有被无提示改写成唯一客观真相。
+
+### F · P0-D 确定性主路径 + 共证门（保留的回归清单）
+
+用地点、人物、组织、事件和时代各至少一组异构世界书条目复测，确认：
+
+- 全部开启、非空、未排除来源都出现在 CompactKnowledgeDirectory，但没有整本注入；
+- 名称后缀、词表、正则和整来源共现只产生候选，不直接生成 passage 级硬资格；
+- 实体绑定、关系、事件簇和时空解释都能回指真实 passage；
+- 模型可从分散条目提出多个可成立解释，明确区分 explicit/structural/reported/contested/inferred/unknown；
+- 同一冻结证据被传记、谱系、墟境和蝴蝶共享，计划、扩写与 repair 不重新选源；
+- 共证门拦截同形泛词污染：补充方向「英雄史诗」不召入装备品质/技能规则条目（单弱词无佐证不开门、括号「(类别/品质)」标注不拆别名）；「史诗品质装备」照常召回装备规则（多弱词互证/字段实体）；「荷马史诗」「翼民」「玲山·哈姆斯沃思」专名照常独证；
+- 骰表、基调和文风不打开世界书来源；
+- 不启用 embedding 或向量服务仍能通过典型样本；召回遗漏、词法误判和 Canon 冲突能在回执中分开定位。
+
+以上真实酒馆门由用户执行；自动化不能代替驾驶员判断。
+
+## 5. 唯一下一道门
+
+> **2026-09-20 状态更新：P3-A、P3-B、P3-C 真机门均已通过，P3-D 文档收口完成。** P3-C 只在确定性重基线无法机械表达局部新方向时进入，一次请求、至多一次 repair；内部稳定 ID 不交给模型，坏提案逐项丢弃，失败局部 uncertain 且不截断遣返。R5—R7 已在真实酒馆证明确定性零调用、局部新方向单次协调、坏项隔离、direct 根保护、无关事实保留与删楼回滚恢复。专项 6/6、P3/P2/Canon 联合 122/122、全量 597/597、typecheck、三份本地正则契约与生产 build 均通过。详见 `docs/04-P3确定因果冲突与局部重基线蓝图.md`、`docs/P3-B真机验收清单-20260919.md` 与 `docs/P3-C真机验收清单-20260920.md`。
+
+> **2026-09-22 状态更新：P4-0 总合同已经冻结，P4-A internal.98 已实施并等待真机验收。** 详细合同与实施回执见 `docs/05-P4跨产物连续性蓝图.md`。它把生成连续性限定为低权、同分支、同 revision、可撤销的自然语言事件锚；不把模型原创升级成 Canon，不扫描旧正文，不因锚错误阻断生成，并将 P4-A—D 拆成四道独立验收门。
+
+当前下一道门是 **在真实酒馆验收 G-08 相关普通正文能自然感知《暮潮手札》双版本、无关话题零注入；并用新生成传记完成 G-07 的 S 句柄端到端验收**。G-09 已于 internal.126 通过驾驶员验收。P4-C2 已由驾驶员选择在当前结果处收口；P4-A2 的其他连续性场景与时间原点补丁仍须分别验收。
+
+历史 P0-D 已实现范围固定为：
+
+1. CompactKnowledgeDirectory：列出全部开启合格来源及其结构、实体线索、短代表片段和可打开范围；
+2. CandidatePassagePool：本地宽召回，固定规则只当提示；
+3. 共证门确定性资格（internal.72）：括号别名校验、强词（≥3 字或索引实体）独证、2 字非实体弱词共证（强词/正文佐证或 ≥2 弱词互证）、`title-exact`/`indexed-term`/`matchedEntities` 匹配面统一到查询片段集合；
+4. 引用、预算、缓存、硬事实和失败路径的确定性校验；
+5. 四模块共用入口；墟境 plan/全部 expansion/repair/retry 持久化复用同一 frozenContext。
+
+TaskCitationRegistry 的四模块迁移已经完成；真实宿主门现在只验证短句柄解析、未知句柄降级和同一冻结证据跨阶段复用，不再新增引用兼容补丁。
+
+P0-D 不包含向量索引、embedding、外部向量库、版本仲裁、产物失效或镜像退役。P1-0 与 P1-1 文档合同保持冻结：权威结构由脚本持有；模型脚手架、自然语言解释和诊断不得自动写入 Canon 或成为正文硬门。internal.78 已完成以下 P1-1 范围：
+
+1. BaseCanon 与有效 delta 生成唯一 CanonResolvedView；
+2. 版本化人物 lifespan、关系和事件；
+3. 生成 CanonPassageView，事实级遮蔽失效世界书 span；
+4. 四模块、人物在场、角色编排、qualification、prompt 和 validator 固定同一 revision；
+5. 注入 `<CANON_CURRENT_VIEW>`；
+6. 自动化完成“世界书 470 年死亡、干涉改为 458 年、回滚后恢复原值”的确定性夹具；RC-02/RC-06/RC-07 的真实酒馆档案替换、事实遮蔽与分支隔离已由驾驶员验收。
+
+P1-1 的冻结验收矩阵为 RC-01—RC-07：BaseCanon 等价、明确事实覆盖/回滚、非冲突事实共存、局部作用域覆盖、坏 delta 局部跳过、混合 passage 事实级遮蔽、分支隔离与四模块同视图。`resolveCanon` 第一版不得调用模型、网络或修改检索提示词。
+
+P1-1 不包含：产物局部失效、交叉重基线、模型 canon-reconcile、世界书镜像物理删除。这些分别属于 P2、P3 和后续记忆替代门。
+
+## 6. 当前范围锁
+
+- 不恢复 `CharacterFactLedger / TimelineRevisionStore / applyTimelineRevisions`。
+- 不使用固定模块权威排序。
+- 不为单一人物、地点或纪元增加补丁。
+- 不让四模块自行仲裁版本或重新选源。
+- 不把来源顺序当时间线，不用脚本替模型冻结无证据的唯一解释。
+- 不用地点后缀、人物称谓、固定关系词或整来源共现替代语义理解。
+- 不在 P0-D 首版引入向量依赖；也不以“无向量”为由扩大到整本注入或无限补检。
+- 不跨过真实酒馆门宣称 P0、Qualified Evidence 或进入链路 accepted。
+- 不自动安装、Git、发布、物理删除用户历史产物或修改世界书。
+
+## 7. 文档治理记录
+
+- 第一轮建立四份现行权威文档，将 18 份历史蓝图和交接资料移入 `docs/archive/`。
+- 第二轮把旧 BP01—BP05、旧总设计/索引和五份已实施模块任务书移入可恢复隔离备份 `_backup_blueprints_20260823/`；关键设计原稿、迁移交接和风险审计继续留在 `docs/archive/`。
+- 本文件只保留当前事实、证据、缺口和下一道门；精简前的完整时间线保存在历史快照中。

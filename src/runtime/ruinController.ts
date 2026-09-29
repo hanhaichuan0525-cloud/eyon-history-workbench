@@ -1,8 +1,9 @@
 import { createButtonCommand, parseTextCommand } from '../core/commands.ts';
 import { namespaceKey } from '../core/namespace.ts';
 import type { RuinGenerationInput } from '../schemas/ruin.ts';
-import type {
-  RuinCandidateRecord,
+import {
+  ruinCandidateState,
+  type RuinCandidateRecord,
 } from '../storage/ruins.ts';
 import {
   RuinWorkflow,
@@ -10,10 +11,12 @@ import {
 } from '../workflows/ruin.ts';
 import type { TavernRuntime } from './contracts.ts';
 import { fingerprintText } from './transactionIdentity.ts';
+import { isTaskCancellationError } from './tavernGeneration.ts';
 
 export type RuinControllerStatus =
   | 'assembling_context'
   | 'generating_candidates'
+  | 'retrying_candidate'
   | 'ready'
   | 'failed';
 
@@ -41,6 +44,7 @@ export class RuinTransactionGuard {
 
 export class RuinController {
   private readonly inFlight = new Map<string, Promise<RuinCandidateRecord>>();
+  private readonly expansionInFlight = new Map<string, Promise<RuinCandidateRecord>>();
   private readonly workflow: RuinWorkflow;
   private readonly runtime: TavernRuntime;
   private readonly hooks: RuinControllerHooks;
@@ -85,6 +89,43 @@ export class RuinController {
   cancelPending(): void {
     this.transactionGuard.cancelAll();
     this.inFlight.clear();
+    this.expansionInFlight.clear();
+  }
+
+  async retryCandidate(
+    recordKey: string,
+    candidateId: string,
+  ): Promise<RuinCandidateRecord> {
+    const message = this.latestVisibleMessage();
+    const identity = this.identityFor(message.message_id);
+    const key = [
+      'manual-retry', namespaceKey(identity.namespace), recordKey, candidateId,
+      identity.lifecycleEpoch,
+    ].join('::');
+    const existing = this.expansionInFlight.get(key);
+    if (existing) return existing;
+    const task = (async () => {
+      try {
+        this.hooks.onStatus?.('retrying_candidate', '原稿仍在，正在单独补全这条历史岔路');
+        const record = await this.workflow.retryCandidate(
+          recordKey, candidateId, identity,
+        );
+        this.hooks.onStatus?.('ready', '这段墟境史稿已经补全');
+        return record;
+      } catch (error) {
+        if (isTaskCancellationError(error)) throw error;
+        this.hooks.onStatus?.(
+          'failed', error instanceof Error ? error.message : String(error),
+        );
+        throw error;
+      }
+    })().finally(() => {
+      if (this.expansionInFlight.get(key) === task) {
+        this.expansionInFlight.delete(key);
+      }
+    });
+    this.expansionInFlight.set(key, task);
+    return task;
   }
 
   private async generate(
@@ -105,12 +146,20 @@ export class RuinController {
 
     const task = (async () => {
       try {
-        this.hooks.onStatus?.('assembling_context', '伊雍正在检索历史坐标');
-        this.hooks.onStatus?.('generating_candidates', '伊雍正在编织历史岔路');
+        this.hooks.onStatus?.('assembling_context', '正在对齐本次探查的时间、地点与参考史料');
+        this.hooks.onStatus?.('generating_candidates', '已找到历史切口，正在展开候选岔路');
         const record = await this.workflow.generate(command, input, identity);
-        this.hooks.onStatus?.('ready', '候选墟境已经完成');
+        const ready = record.result.candidates.filter(candidate =>
+          ruinCandidateState(record, candidate.id).status === 'ready').length;
+        this.hooks.onStatus?.(
+          'ready',
+          ready === record.result.candidates.length
+            ? '候选墟境史稿已经全部完成'
+            : `已完成${ready}份候选史稿，其余可单独重试`,
+        );
         return record;
       } catch (error) {
+        if (isTaskCancellationError(error)) throw error;
         this.hooks.onStatus?.(
           'failed',
           error instanceof Error ? error.message : String(error),
@@ -188,7 +237,6 @@ export function createRuinIdentityAssertion(
       || message.is_hidden
       || fingerprintText(message.message) !== identity.triggerTextHash
       || runtime.getMessageSwipeId(identity.triggerMessageId) !== identity.triggerSwipeId
-      || runtime.getLastMessageId() !== identity.triggerMessageId
     ) {
       throw new Error('Ruin anchor floor changed while request was running');
     }

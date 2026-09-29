@@ -3,7 +3,11 @@ dist/
 !dist/
 dist/*
 !dist/index.js
-!dist/character-viewer.js
+!dist/genealogy.js
+!dist/ruin.js
+!dist/biography.js
+!dist/timeline.js
+!dist/workbench.js
 .vite/
 coverage/
 .env
@@ -16,3 +20,12 @@ Thumbs.db
 .idea/
 .vscode/
 tmp/
+.reference/
+_backup_*/
+tmp-*.css
+tests/_regression-*.txt
+tests/_tmp_*.mjs
+release/archive/
+release/*-内测.json
+release/*.zip
+security-report*.json

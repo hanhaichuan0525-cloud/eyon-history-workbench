@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>伊雍历史工作台</title>
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #080d0d; }
+    [data-eyon-workbench-shell] { display: block; width: 100%; height: 100%; min-height: 0; }
+    [data-eyon-workbench-reopen] {
+      position: fixed; right: 16px; bottom: 16px; z-index: 1000;
+      display: none;
+      min-height: 42px; border: 1px solid #52b8ad; border-radius: 5px;
+      padding: 0 14px; color: #f1eee5; background: #0d1313; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <main data-eyon-workbench-shell data-preview-source="production-bundle"></main>
+  <button type="button" data-eyon-workbench-reopen>打开伊雍工作台</button>
+  <script>
+    const previewParams = new URLSearchParams(location.search);
+    const previewOption = (key, values, fallback) => {
+      const value = previewParams.get(key);
+      return values.includes(value) ? value : fallback;
+    };
+    const settings = {
+      schemaVersion: 1,
+      generation: {
+        genealogy: { mode: 'follow_tavern' },
+        ruin: { mode: 'follow_tavern' },
+        biography: { mode: 'follow_tavern' },
+        butterfly: { mode: 'follow_tavern' },
+      },
+      ruinDraft: null,
+      genealogyDepth: { ancestors: 4, descendants: 3, maxPerGeneration: 7 },
+      appearance: {
+        mode: previewOption('mode', ['light', 'dark'], 'light'),
+        accent: previewOption('accent', ['jade', 'gold', 'blue', 'crimson'], 'jade'),
+        text: previewOption('text', ['neutral', 'warm', 'cool'], 'neutral'),
+      },
+    };
+    const character = {
+      mvuId: '维奥莱塔·马克西姆·奥古斯塔',
+      name: '维奥莱塔·马克西姆·奥古斯塔',
+      aliases: ['铁血女皇'],
+      race: '人类',
+      identities: ['奥古斯提姆帝国女皇'],
+      professions: ['统治者', '神话战士'],
+      lifeLevel: '第六层级',
+    };
+    const runtime = {
+      flowState: 'idle',
+      runId: '',
+      realityTime: '复兴纪元488年-风信之月(3月)-15日-14:09',
+      realityLocation: '奥古斯提姆帝国-金谷城近郊-布劳尔子爵城堡',
+      ruinTime: '',
+      ruinLocation: '',
+    };
+    const previewBiographyRecords = [{
+      key: 'preview::biography::dusk-tide-notebook',
+      namespace: { characterKey: 'preview', chatId: 'preview-chat' },
+      biographyId: 'dusk-tide-notebook',
+      requestId: 'preview-biography-131',
+      triggerMessageId: 1,
+      assistantMessageId: 2,
+      sourceHash: 'preview',
+      status: 'committed',
+      revision: 1,
+      biography: {
+        schema: 'eyon.biography.v1',
+        requestId: 'preview-biography-131',
+        playerDirective: {
+          raw: '追溯《暮潮手札》的流转',
+          interpretedTarget: '暮潮手札',
+          hardTimeScope: '复兴纪元475年至488年',
+          primaryDirection: '手札在战乱与港口间的流转',
+          secondaryInterests: ['水文', '外港'],
+          reconciliation: '',
+        },
+        target: {
+          type: 'object',
+          name: '暮潮手札',
+          aliases: ['泥潮行录'],
+          sourceRefs: ['preview-worldbook'],
+        },
+        presentation: {
+          title: '暮潮手札·雾港残卷',
+          subtitle: '盐雾、兵燹与两代测绘者留下的水脉证词',
+        },
+        span: {
+          mode: 'calendar',
+          start: { year: 475, month: 3, day: null, hour: null, age: null, era: '复兴纪元' },
+          end: { year: 488, month: 3, day: null, hour: null, age: null, era: '复兴纪元' },
+          label: '复兴纪元475年3月 - 488年3月',
+        },
+        origin: {
+          title: '起源（复兴纪元475年3月）',
+          content: '南境旧水道春汛倒灌，老领航员费恩将第一笔异常潮位写入防潮羊皮册。',
+          sourceRefs: ['preview-worldbook'],
+          inference: false,
+        },
+        stages: [
+          ['watergate', 'turbulent', '水门兵燹与残卷逃亡', '复兴纪元476年 - 478年', '旧水门在兵火中陷落，洛安从潮湿瓦砾下抢救出残卷。'],
+          ['dry-river', 'transition', '涸谷干滩的旧图新注', '复兴纪元479年 - 481年', '旧航图在旱季显露出另一种意义，手札由记录变成求生的路标。'],
+          ['blackwater', 'stable', '黑水驿栈的私怨横祸', '复兴纪元481年 - 484年', '失窃与典押令手札沉入柴房，也留下难以抹去的市井痕迹。'],
+          ['handover', 'transition', '外港秋雾与暮潮移交', '复兴纪元485年8月 - 11月', '洛安在第七泊位将手札交给弥拉，交接年份却留下两套证词。'],
+          ['oath', 'stable', '潮音神龛的定历誓约', '复兴纪元485年 - 487年', '弥拉以实测潮痕校正旧历，残卷由私人物证成为公共尺度。'],
+        ].map(([id, type, title, span, content]) => ({
+          id,
+          type,
+          title,
+          span,
+          diceMaterial: '史料流转',
+          content,
+          introduced: [],
+          people: ['费恩', '洛安', '弥拉'],
+          factions: ['外港学派'],
+          objects: ['暮潮手札'],
+          locations: ['艾瑟嘉德外港'],
+          sourceRefs: ['preview-worldbook'],
+          biographyUsage: [],
+          inference: true,
+        })),
+        status: {
+          title: '现状（复兴纪元488年3月）',
+          content: '手札现存于观潮阁双锁防潮匣，仍是外港学徒校正潮汐时必须查阅的原始尺度。',
+          sourceRefs: ['preview-worldbook'],
+          inference: true,
+        },
+        summary: '一册水文手札在战火、荒滩与港口之间辗转，最终成为保存异说与实测证据的王庭典藏。',
+        indexes: {
+          people: ['费恩', '洛安', '弥拉'],
+          factions: ['外港学派'],
+          objects: ['暮潮手札'],
+          locations: ['南境旧水道', '艾瑟嘉德外港'],
+          themes: ['水文', '史料流转', '冲突证词'],
+          potentialRuinLinks: ['暮潮移交'],
+        },
+        rootTrace: '[Preview RootTrace]',
+        qualityChecks: {
+          playerDirectionFulfilled: true,
+          hardTimeScopeRespected: true,
+          worldbookConsistent: true,
+          diceIntegratedWithoutHijacking: true,
+          existingBiographiesUsedResponsibly: true,
+          rootTraceMatchesStructuredData: true,
+        },
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    }];
+    const facade = {
+      version: '0.10.0',
+      getSettings: () => structuredClone(settings),
+      updateSettings: patch => {
+        Object.assign(settings, patch);
+        if (patch.generation) Object.assign(settings.generation, patch.generation);
+        return structuredClone(settings);
+      },
+      setGenerationSettings: (task, next) => {
+        settings.generation[task] = structuredClone(next);
+        return structuredClone(settings);
+      },
+      applyGenerationSettingsToAll: next => {
+        for (const key of Object.keys(settings.generation)) {
+          settings.generation[key] = structuredClone(next);
+        }
+        return structuredClone(settings);
+      },
+      setRuinDraft: input => {
+        settings.ruinDraft = structuredClone(input);
+        return structuredClone(settings);
+      },
+      getRuinRuntimeSnapshot: async () => structuredClone(runtime),
+      listGenealogyCharacters: async () => [structuredClone(character)],
+      listCharacterWorldbookEntries: async () => [],
+      setCharacterWorldbookEntryEnabled: async () => [],
+      setCharacterWorldbookEntriesEnabled: async () => [],
+      generateGenealogy: async () => { throw new Error('预览页不调用生成 API'); },
+      listGenealogies: async () => [],
+      listRuinCharacterReferences: async () => [],
+      toggleGenealogyNodeRuinReference: async () => [],
+      removeRuinCharacterReference: async () => [],
+      listRuinBiographyReferences: async () => [],
+      toggleBiographyRuinReference: async () => [],
+      removeRuinBiographyReference: async () => [],
+      generateRuin: async () => { throw new Error('预览页不调用生成 API'); },
+      listRuins: async () => [],
+      listBiographies: async () => structuredClone(previewBiographyRecords),
+      deleteBiography: async () => true,
+      listButterflies: async () => [],
+      listButterflyPending: async () => [],
+      deleteButterfly: async () => true,
+      fetchCustomApiModels: async () => [],
+      inspectCurrentData: async () => ({
+        namespace: { characterKey: 'preview', chatId: 'preview-chat' },
+        checkedAt: new Date().toISOString(),
+        counts: {
+          biographies: previewBiographyRecords.length,
+          genealogies: 0,
+          ruins: 0,
+          butterflies: 0,
+          pendingButterflies: 0,
+          ruinReferences: 0,
+        },
+        issues: [],
+        healthy: true,
+      }),
+      exportCurrentData: async () => ({
+        format: 'eyon-history-workbench-backup',
+        schemaVersion: 1,
+        workbenchVersion: '0.10.0',
+        exportedAt: new Date().toISOString(),
+        namespace: { characterKey: 'preview', chatId: 'preview-chat' },
+        settings: structuredClone(settings),
+        data: {
+          biographies: structuredClone(previewBiographyRecords),
+          genealogies: [],
+          ruins: [],
+          butterflies: [],
+          pendingButterflies: [],
+          ruinReferences: [],
+        },
+      }),
+      clearGenerationCache: async () => {
+        settings.ruinDraft = null;
+        return { ruinDraftCleared: true, ruinReferencesCleared: 0 };
+      },
+      clearErrorLog: async () => 0,
+      enterRuin: async () => undefined,
+      returnRuin: async () => undefined,
+      retryButterfly: async () => undefined,
+      dispose: () => undefined,
+    };
+    window.EyonHistoryWorkbench = facade;
+    const previewView = previewParams.get('view');
+    if (previewView) {
+      document.querySelector('[data-eyon-workbench-shell]').dataset.initialView = previewView;
+    }
+    document.querySelector('[data-eyon-workbench-shell]').addEventListener(
+      'eyon-history-workbench:close',
+      () => { document.querySelector('[data-eyon-workbench-reopen]').style.display = 'block'; },
+    );
+    document.querySelector('[data-eyon-workbench-reopen]').addEventListener(
+      'click',
+      () => { document.querySelector('[data-eyon-workbench-reopen]').style.display = 'none'; },
+    );
+  </script>
+  <script type="module" src="../dist/workbench.js?v=0.10.0"></script>
+  <script type="module">
+    // The preview must announce its mock facade after the production bundle has
+    // installed its listeners. Keeping this page on the real bundle prevents a
+    // second hand-written interface from drifting away from the packaged UI.
+    const announceWorkbench = () => {
+      window.dispatchEvent(new CustomEvent(
+        'eyon-history-workbench:ready',
+        { detail: window.EyonHistoryWorkbench },
+      ));
+      void window.EyonHistoryWorkbenchShell?.refresh();
+      const requestedView = new URLSearchParams(location.search).get('view');
+      if (requestedView) window.EyonHistoryWorkbenchShell?.navigate(requestedView);
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        window.setTimeout(announceWorkbench, 0);
+      }, { once: true });
+    } else {
+      window.setTimeout(announceWorkbench, 0);
+    }
+  </script>
+</body>
+</html>

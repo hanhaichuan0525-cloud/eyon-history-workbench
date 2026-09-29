@@ -10,8 +10,8 @@ output: assistant_message
 
 - 世界书核心: 生成伊雍人设、语气、mood和固定美化标签。
 - 正文模型: 依据世界书核心流式输出伊雍的传记开场。
-- 独立API: 生成完整传记JSON和唯一权威 `rootTrace`。
-- 脚本: 调度请求、保存API成品、放置占位槽、替换消息、重新渲染并写入传记书库。
+- 独立API: 生成唯一一份完整结构化传记JSON。
+- 脚本: 校验结构化传记、确定性渲染唯一权威 `rootTrace`、放置占位槽、替换消息、重新渲染并写入传记书库。
 
 脚本禁止生成、补写、改写或模仿伊雍对白。
 正文模型禁止重新创作、复述或润色API传记。
@@ -33,11 +33,10 @@ output: assistant_message
 
 1. 生成唯一 `requestId`。
 2. 完成独立API调用。
-3. 校验 `biography.schema`。
-4. 校验 `biography.rootTrace` 同时含有 `[RootTrace]` 和 `[/RootTrace]`。
-5. 把API原始 `rootTrace` 保存在本次请求的内存状态中。
-6. 创建唯一占位槽:
-   `[EYON_ROOTTRACE_SLOT::{{requestId}}]`
+3. 校验 `biography.schema`、对象、来源、时间范围与时期结构。
+4. 由已校验结构化传记确定性渲染唯一 `[RootTrace]...[/RootTrace]`。
+5. 校验脚本渲染结果的标记、闭合结构与禁用内容，并保存在本次请求的内存状态中。
+6. 创建只属于本次请求的唯一运行时占位槽。槽位正文只能由脚本动态注入，世界书不得展示或猜测其格式。
 
 完整 `rootTrace` 不注入正文模型，不加入世界书扫描，也不写入后台草稿消息。
 
@@ -57,8 +56,8 @@ output: assistant_message
 请只依据当前世界书中的伊雍核心、人设、语气、mood与固定格式，生成伊雍对此次传记的简短开场。
 伊雍正文必须使用世界书规定的 `<eyon name="伊雍" mood="...">「对白」</eyon>` 与 `<eyon_court/>` 格式。
 禁止自行生成、复述、概括、改写或评论传记正文。
-伊雍开场结束后，必须单独原样输出以下占位槽，并立即结束:
-[EYON_ROOTTRACE_SLOT::{{requestId}}]
+伊雍开场结束后，必须单独原样输出脚本在本次运行时控制信息末尾提供的具体占位槽，并立即结束。
+若本次控制信息没有提供具体槽位，则禁止自行输出任何占位符、`requestId` 或模板字符串。
 
 注入配置:
 
@@ -80,8 +79,8 @@ output: assistant_message
 正文生成结束后:
 
 1. 读取本次生成对应的AI消息，不使用“最新楼层”猜测。
-2. 查找完全匹配的 `[EYON_ROOTTRACE_SLOT::{{requestId}}]`。
-3. 用内存中保存的API原始 `rootTrace` 原样替换该占位槽。
+2. 查找与本次请求ID完全匹配的运行时占位槽。
+3. 用内存中保存的脚本渲染 `rootTrace` 原样替换该占位槽。
 4. 不对 `rootTrace` 进行Markdown转义、格式化、清洗、压缩或重排。
 5. 更新同一个AI消息。
 6. 触发该消息重新渲染，使现有传记美化生效。
@@ -91,9 +90,7 @@ output: assistant_message
 
 <eyon name="伊雍" mood="世界书决定">「世界书核心生成的开场」</eyon>
 <eyon_court/>
-[RootTrace]
-API原始传记
-[/RootTrace]
+随后是由脚本写入的完整 `[RootTrace]...[/RootTrace]` 区段。
 
 # 七、异常兜底
 
@@ -101,21 +98,21 @@ API原始传记
 
 若正文模型未输出占位槽:
 
-1. 若消息中已经存在模型自行生成的 `[RootTrace]...[/RootTrace]`，用API原始 `rootTrace` 替换该区段。
-2. 若不存在RootTrace，在最后一个 `<eyon_court/>` 后追加API原始 `rootTrace`。
-3. 若连 `<eyon_court/>` 也不存在，在消息末尾追加API原始 `rootTrace`，并记录格式警告。
+1. 若消息中已经存在模型自行生成的 `[RootTrace]...[/RootTrace]`，用脚本渲染 `rootTrace` 替换该区段。
+2. 若不存在RootTrace，在最后一个 `<eyon_court/>` 后追加脚本渲染 `rootTrace`。
+3. 若连 `<eyon_court/>` 也不存在，在消息末尾追加脚本渲染 `rootTrace`，并记录格式警告。
 
-兜底只允许插入API原稿，禁止脚本补写伊雍标签或对白。
+兜底只允许插入由已校验结构化传记生成的展示稿，禁止脚本补写伊雍标签或对白。
 
 ## 7.2 重复占位槽
 
-- 只在第一个匹配位置插入 `rootTrace`。
-- 删除同一 `requestId` 的其余重复占位槽。
+- 只在第一个本次请求槽位的位置插入 `rootTrace`。
+- 删除同一请求的其余重复槽位。
 - 不处理其他请求ID的占位槽。
 
 ## 7.3 取消与失败
 
-- API失败或 `rootTrace` 不合法时，不启动正文生成。
+- API失败、结构化传记不合法或本地 `rootTrace` 渲染失败时，不启动正文生成。
 - 玩家取消正文生成时，不向残缺AI消息追加传记。
 - 保留待处理API成品，允许玩家重新执行正文交接。
 - 不生成空AI楼层。

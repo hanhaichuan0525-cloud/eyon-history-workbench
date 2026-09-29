@@ -1,6 +1,6 @@
 ---
 id: eyon.api.routing
-version: 2
+version: 3
 consumer: script
 mode: runtime_contract
 ---
@@ -14,7 +14,9 @@ mode: runtime_contract
 - `biography`：寻根溯源。
 - `butterfly`：蝴蝶效应结算。
 
-四个模块彼此独立。它们可以全部跟随酒馆插头，也可以分别使用独立API。界面可以把同一份独立API配置应用到全部模块，但运行时仍按模块保存，任何一个模块的修改都不得覆盖其他模块。
+四个模块彼此独立。它们分别使用各自保存的独立 API 配置，界面可以把同一份独立 API 配置应用到全部模块，但运行时仍按模块保存，任何一个模块的修改都不得覆盖其他模块。
+
+v0.10 起不再提供“跟随酒馆插头”模式：所有生成请求固定使用本脚本独立保存的 API 地址、密钥与模型，不读取、不复制、不依赖酒馆当前连接。
 
 # 二、唯一设置结构
 
@@ -24,65 +26,40 @@ mode: runtime_contract
 {
   "schemaVersion": 1,
   "generation": {
-    "genealogy": { "mode": "follow_tavern" },
-    "ruin": { "mode": "follow_tavern" },
-    "biography": { "mode": "follow_tavern" },
-    "butterfly": { "mode": "follow_tavern" }
+    "genealogy": {
+      "apiurl": "https://example.com/v1",
+      "key": "",
+      "model": "model-name",
+      "source": "openai",
+      "maxTokens": 4096,
+      "temperature": 0.8
+    },
+    "ruin": { "apiurl": "", "key": "", "model": "", "source": "openai", "maxTokens": 4096, "temperature": 0.8 },
+    "biography": { "apiurl": "", "key": "", "model": "", "source": "openai", "maxTokens": 4096, "temperature": 0.8 },
+    "butterfly": { "apiurl": "", "key": "", "model": "", "source": "openai", "maxTokens": 4096, "temperature": 0.8 }
   }
 }
 ```
 
-单个模块只允许以下两种配置。
+四个模块各保存一份完整配置。`apiurl` / `key` / `model` 允许为空：未配置的模块在生成时由运行时给出明确中文报错，不在设置解析阶段卡死。
 
-跟随酒馆：
-
-```json
-{
-  "mode": "follow_tavern"
-}
-```
-
-独立API：
-
-```json
-{
-  "mode": "custom",
-  "custom": {
-    "apiurl": "https://example.com/v1",
-    "key": "",
-    "model": "model-name",
-    "source": "openai",
-    "maxTokens": 4096,
-    "temperature": 0.8
-  }
-}
-```
+旧数据迁移：读取脚本设置时，旧版 `{ "mode": "follow_tavern" }` 自动转为空配置（未配置）；旧版 `{ "mode": "custom", "custom": { ... } }` 自动展开为 `custom` 字段内容，密钥原样保留。
 
 禁止在界面层另外发明 `external`、`baseUrl`、`apiKey`、`inherit` 等别名后直接写入脚本变量。界面展示名称可以本地化，但提交给运行时前必须转换为上述唯一结构。
 
-# 三、酒馆插头路由
+# 三、独立 API 路由
 
-使用 `follow_tavern` 时：
+所有生成模块固定走独立 API：
 
-1. 通过酒馆助手的 `generateRaw` 发起请求。
-2. 调用瞬间使用酒馆插头当前有效的连接、鉴权与模型。
-3. 不复制、不覆盖、不持久化酒馆插头配置。
-4. 不修改正文模型预设、采样参数或聊天历史。
-5. 请求必须静默、非流式，并且不创建聊天楼。
-6. 只发送当前模块的系统提示词和经过筛选的当前资料。
-
-# 四、独立API路由
-
-使用 `custom` 时：
-
-1. 仍通过酒馆助手的 `generateRaw` 发起请求，并传入 `custom_api`。
+1. 通过酒馆助手的 `generateRaw` 发起请求并传入 `custom_api`；宿主支持直连通道时优先使用酒馆后端直连（`/api/backends/chat-completions/generate`）。
 2. `apiurl`、`key`、`model`、`source`、`maxTokens`、`temperature` 由当前模块独立保存。
-3. API密钥只保存在脚本私有设置中。
-4. API密钥不得进入世界书、正文、MVU、本地资料导出、状态事件或调试日志。
+3. API 密钥只保存在脚本私有设置中。
+4. API 密钥不得进入世界书、正文、MVU、本地资料导出、状态事件或调试日志。
 5. 每个请求必须是无历史的独立调用。
-6. 玩家可使用“应用到全部模块”复制配置；复制完成后四个模块仍保存各自的完整配置。
+6. 请求必须静默、非流式，并且不创建聊天楼。
+7. 玩家可使用“应用到全部模块”复制配置；复制完成后四个模块仍保存各自的完整配置。
 
-# 五、按需装配规则
+# 四、按需装配规则
 
 脚本调用模块时只装配该模块所需规则：
 
@@ -93,7 +70,7 @@ mode: runtime_contract
 
 未被调用的规则不得进入请求，不消耗上下文Token。
 
-# 六、隔离与失败
+# 五、隔离与失败
 
 每个请求必须拥有独立的：
 
@@ -113,18 +90,18 @@ mode: runtime_contract
 - 不得写入MVU、切换墟境状态或发送残缺正文。
 - 玩家修改设置只影响下一次调用，不中断已经开始的请求。
 
-# 七、界面
+# 六、界面
 
 API来源只在“设置 > API调用”中配置。其他页面不得重复出现端口、密钥和模型控件。
 
-界面必须通过工作台公开方法进行设置：
+设置页必须直接展示独立 API 凭据表单（接口地址、密钥、模型），不再提供“跟随酒馆插头”选项。支持：
 
 - `setGenerationSettings(taskType, settings)`：只修改一个模块。
 - `applyGenerationSettingsToAll(settings)`：把同一份已校验配置复制到四个模块。
 
 界面不得直接深层修改脚本变量，不得直接调用 `replaceVariables`，也不得把设置写入聊天变量或世界书。
 
-# 八、蝴蝶效应边界
+# 七、蝴蝶效应边界
 
 `butterfly` 请求可以与遣返正文并行，但不得阻塞时间控制模块完成遣返。
 

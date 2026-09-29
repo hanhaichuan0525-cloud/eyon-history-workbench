@@ -2,6 +2,11 @@ import { parseTextCommand, type WorkbenchCommand } from '../core/commands.ts';
 import type { RuinGenerationInput } from '../schemas/ruin.ts';
 import type { GenealogyGenerationInput } from '../schemas/genealogy.ts';
 import type { TavernRuntime } from './contracts.ts';
+import { findGenerationTriggerUserMessage } from './generationTrigger.ts';
+import {
+  noopRuinTurnGuard,
+  type RuinTurnGuard,
+} from './ruinTurnGuard.ts';
 
 const SUPPORTED_GENERATION_TYPES = new Set<string | undefined>([
   undefined,
@@ -14,6 +19,7 @@ export interface WorkbenchBiographyController {
   prepareText(text: string): Promise<unknown | null>;
   commitRendered(messageId: number): Promise<unknown | null>;
   cancelPending(): Promise<void>;
+  releaseStaleNarrative?(latestUserMessageId: number): Promise<void>;
 }
 
 export interface RuinLifecycleController {
@@ -22,6 +28,22 @@ export interface RuinLifecycleController {
     input: RuinGenerationInput,
   ): Promise<unknown | null>;
   cancelPending(): void;
+}
+
+/**
+ * 进入特异点的生命周期控制器(RuinEntryWorkflow):
+ * 渲染事件提交 + 聊天切换/取消时清理注入。
+ */
+export interface RuinEntryLifecycleController {
+  commitRendered(messageId: number): Promise<unknown | null>;
+  cancelPending(): Promise<void>;
+}
+
+export interface RuinTaskLifecycleController {
+  preparePlayerFloor?(text: string, triggerMessageId: number): Promise<boolean>;
+  prepareGeneration?(triggerMessageId: number): Promise<boolean>;
+  commitRendered(messageId: number): Promise<unknown | null>;
+  cancelPending(): Promise<void>;
 }
 
 export interface RuinGenerationInputProvider {
@@ -44,6 +66,7 @@ export interface ButterflyLifecycleController {
   prepareText(text: string): Promise<unknown | null>;
   commitRendered(messageId: number): Promise<unknown | null>;
   onChatChanged(): Promise<void>;
+  releaseStaleNarrative?(latestUserMessageId: number): Promise<void>;
 }
 
 export class WorkbenchLifecycle {
@@ -53,7 +76,25 @@ export class WorkbenchLifecycle {
   private readonly genealogy: GenealogyLifecycleController;
   private readonly genealogyInputProvider: GenealogyGenerationInputProvider;
   private readonly butterfly: ButterflyLifecycleController;
+  private readonly ruinEntry: RuinEntryLifecycleController;
+  private readonly ruinTask: RuinTaskLifecycleController;
+  private readonly ruinTurnGuard: RuinTurnGuard;
   private readonly runtime: TavernRuntime;
+  /**
+   * MESSAGE_SENT 比输入框 DOM 更接近宿主事实：无论点击、回车还是其他扩展
+   * 建楼，只要酒馆确认了玩家楼，就在这里启动同一份遣返准备。生成前钩子
+   * 会等待这份 Promise，避免事件监听器与生成钩子各自冻结一次历史。
+   */
+  private returnPreparation: {
+    messageId: number;
+    rawCommand: string;
+    result: Promise<boolean>;
+  } | null = null;
+  private taskConfirmationPreparation: {
+    messageId: number;
+    rawText: string;
+    result: Promise<boolean>;
+  } | null = null;
 
   constructor(options: {
     biography: WorkbenchBiographyController;
@@ -62,6 +103,9 @@ export class WorkbenchLifecycle {
     genealogy: GenealogyLifecycleController;
     genealogyInputProvider: GenealogyGenerationInputProvider;
     butterfly?: ButterflyLifecycleController;
+    ruinEntry?: RuinEntryLifecycleController;
+    ruinTask?: RuinTaskLifecycleController;
+    ruinTurnGuard?: RuinTurnGuard;
     runtime: TavernRuntime;
   }) {
     this.biography = options.biography;
@@ -74,15 +118,40 @@ export class WorkbenchLifecycle {
       async commitRendered() { return null; },
       async onChatChanged() {},
     };
+    this.ruinEntry = options.ruinEntry ?? {
+      async commitRendered() { return null; },
+      async cancelPending() {},
+    };
+    this.ruinTask = options.ruinTask ?? {
+      async commitRendered() { return null; },
+      async cancelPending() {},
+    };
+    this.ruinTurnGuard = options.ruinTurnGuard ?? noopRuinTurnGuard;
     this.runtime = options.runtime;
   }
 
   async beforeGeneration(type?: string): Promise<boolean> {
     if (!SUPPORTED_GENERATION_TYPES.has(type)) return false;
-    const userMessage = this.findLatestVisibleUserMessage();
+    const userMessage = findGenerationTriggerUserMessage(this.runtime, type);
     if (!userMessage) return false;
+    await this.releaseStaleNarratives(userMessage.message_id);
+    const queuedTask = this.taskConfirmationPreparation;
+    if (
+      queuedTask
+      && queuedTask.messageId === userMessage.message_id
+      && queuedTask.rawText === userMessage.message
+    ) {
+      await queuedTask.result;
+    } else {
+      await this.ruinTask.preparePlayerFloor?.(userMessage.message, userMessage.message_id);
+    }
+    await this.ruinTask.prepareGeneration?.(userMessage.message_id);
     const command = parseTextCommand(userMessage.message);
-    if (!command) return false;
+    if (!command) {
+      await this.ruinTurnGuard.prepareOrdinaryTurn();
+      return false;
+    }
+    await this.ruinTurnGuard.clear();
 
     if (command.type === 'biography.generate') {
       return (await this.biography.prepareText(userMessage.message)) !== null;
@@ -100,44 +169,134 @@ export class WorkbenchLifecycle {
       ) !== null;
     }
     if (command.type === 'ruin.return') {
+      const queued = this.returnPreparation;
+      if (
+        queued
+        && queued.messageId === userMessage.message_id
+        && queued.rawCommand === command.raw
+      ) {
+        return queued.result;
+      }
       return (await this.butterfly.prepareText(userMessage.message)) !== null;
     }
     return false;
   }
 
+  /**
+   * 酒馆已创建玩家楼后的权威入口。这里不创建楼、不触发正文，只提前启动
+   * 遣返冻结；普通消息保持零副作用。返回值主要供测试与宿主诊断使用，真正
+   * 的 fail-closed 仍由 beforeGeneration 等待同一 Promise 后执行。
+   */
+  onUserMessageSent(messageId: number): Promise<boolean> {
+    const message = this.runtime
+      .getChatMessages(messageId, { include_swipes: false })
+      .find(item => item.message_id === messageId);
+    const messageText = message?.message ?? '';
+    if (!message || message.role !== 'user' || message.is_hidden) {
+      this.returnPreparation = null;
+      this.taskConfirmationPreparation = null;
+      return Promise.resolve(false);
+    }
+    const command = parseTextCommand(messageText);
+    const taskResult = this.ruinTask.preparePlayerFloor?.(messageText, messageId)
+      ?? Promise.resolve(false);
+    void taskResult.catch(() => undefined);
+    this.taskConfirmationPreparation = {
+      messageId,
+      rawText: messageText,
+      result: taskResult,
+    };
+    if (!command || command.type !== 'ruin.return') {
+      this.returnPreparation = null;
+      return taskResult;
+    }
+    const existing = this.returnPreparation;
+    if (
+      existing
+      && existing.messageId === messageId
+      && existing.rawCommand === command.raw
+    ) {
+      return Promise.all([taskResult, existing.result])
+        .then(results => results.some(Boolean));
+    }
+    const result = this.butterfly.prepareText(messageText)
+      .then(prepared => prepared !== null);
+    // MESSAGE_SENT 的宿主派发器未必等待异步监听器；先挂一个 rejection
+    // observer 防止未处理拒绝，但保留原 Promise 给生成前钩子 fail-closed。
+    void result.catch(() => undefined);
+    this.returnPreparation = {
+      messageId,
+      rawCommand: command.raw,
+      result,
+    };
+    return Promise.all([taskResult, result]).then(results => results.some(Boolean));
+  }
+
   async onAssistantRendered(messageId: number): Promise<void> {
-    await settleIndependently([
+    // 任务终态卡与蝴蝶效应面板可能落在同一遣返楼。先让任务卡完成
+    // 读改写，再让蝴蝶面板追加，避免两个模块并发覆盖同一条消息。
+    const taskResult = await Promise.allSettled([
+      this.ruinTask.commitRendered(messageId),
+    ]);
+    const remainingResults = await Promise.allSettled([
       this.biography.commitRendered(messageId),
       this.butterfly.commitRendered(messageId),
+      this.ruinEntry.commitRendered(messageId),
+      this.ruinTurnGuard.clear(),
     ]);
+    if (
+      this.returnPreparation
+      && this.returnPreparation.messageId < messageId
+    ) {
+      this.returnPreparation = null;
+    }
+    if (
+      this.taskConfirmationPreparation
+      && this.taskConfirmationPreparation.messageId < messageId
+    ) {
+      this.taskConfirmationPreparation = null;
+    }
+    throwSettledFailures([...taskResult, ...remainingResults]);
   }
 
   async onChatChanged(): Promise<void> {
+    this.returnPreparation = null;
+    this.taskConfirmationPreparation = null;
     this.ruin.cancelPending();
     this.genealogy.cancelPending();
     await settleIndependently([
       this.butterfly.onChatChanged(),
       this.biography.cancelPending(),
+      this.ruinEntry.cancelPending(),
+      this.ruinTask.cancelPending(),
+      this.ruinTurnGuard.clear(),
     ]);
   }
 
-  private findLatestVisibleUserMessage() {
-    const lastMessageId = this.runtime.getLastMessageId();
-    if (lastMessageId < 0) return null;
-    const messages = this.runtime.getChatMessages(
-      `0-${lastMessageId}`,
-      { include_swipes: false },
-    );
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (message.role === 'user' && !message.is_hidden) return message;
+  private async releaseStaleNarratives(latestUserMessageId: number): Promise<void> {
+    const tasks = [
+      this.biography.releaseStaleNarrative?.(latestUserMessageId),
+      this.butterfly.releaseStaleNarrative?.(latestUserMessageId),
+    ].filter((task): task is Promise<void> => task !== undefined);
+    const results = await Promise.allSettled(tasks);
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        // 过期提示的清理失败不得截断玩家的普通正文。
+        console.error(
+          '[Eyon History Workbench] failed to release a stale narrative lease',
+          result.reason,
+        );
+      }
     }
-    return null;
   }
 }
 
 async function settleIndependently(tasks: Promise<unknown>[]): Promise<void> {
   const results = await Promise.allSettled(tasks);
+  throwSettledFailures(results);
+}
+
+function throwSettledFailures(results: PromiseSettledResult<unknown>[]): void {
   const failures = results.flatMap(result =>
     result.status === 'rejected' ? [result.reason] : []
   );

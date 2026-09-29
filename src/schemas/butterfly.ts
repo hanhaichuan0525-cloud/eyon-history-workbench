@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+z.config({ jitless: true });
+
 export const ButterflyScopeSchema = z.enum([
   '个人',
   '双人',
@@ -62,6 +64,17 @@ export const ButterflyRequestSchema = z.strictObject({
   sourceIndex: z.array(ButterflySourceSchema).min(1),
 });
 
+/**
+ * 蝴蝶效应的“直接变化索引卡”。它只帮脚本把正文已经说清的核心变化写进 Canon，
+ * 不承担语义编译：字段保持自然语言，未知键会被忽略，局部格式错误由外层数组降级为空。
+ */
+export const ButterflyDirectEffectSchema = z.object({
+  subject: z.preprocess(value => typeof value === 'string' ? value : '', z.string()),
+  time: z.preprocess(value => typeof value === 'string' ? value : '', z.string()),
+  stateHint: z.preprocess(value => typeof value === 'string' ? value : '', z.string()),
+  change: z.preprocess(value => typeof value === 'string' ? value : '', z.string()),
+});
+
 export const ButterflyResultSchema = z.strictObject({
   schema: z.literal('eyon.butterfly.v1'),
   requestId: z.string().min(1),
@@ -83,6 +96,8 @@ export const ButterflyResultSchema = z.strictObject({
     linkToNext: z.string().min(1),
     sourceIds: z.array(z.string().min(1)),
   })).min(2).max(5),
+  // 旧结果可缺省；模型误写类型时直接退化为 []，不得让已经生成的遣返正文被截断。
+  directEffects: z.array(ButterflyDirectEffectSchema).catch([]).optional(),
   sourceIds: z.array(z.string().min(1)),
   inferences: z.array(z.strictObject({
     content: z.string().min(1),

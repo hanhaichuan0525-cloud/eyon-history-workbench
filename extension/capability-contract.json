@@ -20,9 +20,9 @@
       "fallback": null
     },
     {
-      "id": "mvu",
-      "owner": "provider",
-      "symbol": "Mvu.getMvuData",
+      "id": "mvu-bridge",
+      "owner": "tavern-helper",
+      "symbol": "TavernHelper.waitGlobalInitialized('Mvu')",
       "required": true,
       "fallback": null
     }

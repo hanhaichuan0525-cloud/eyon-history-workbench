@@ -1,8 +1,8 @@
 import type { RuntimeChatMessage, TavernRuntime } from './contracts.ts';
 import type { TavernDataBindings } from './tavernHost.ts';
 import { parseTextCommand } from '../core/commands.ts';
+import { resolveGlobalMvu } from './globalBindings.ts';
 import {
-  resolveHostGlobal,
   resolveTavernHelperFunction,
 } from './tavernRuntimeAdapter.ts';
 
@@ -106,7 +106,7 @@ export function registerRuinTimeKernel(
   bindings: TavernDataBindings,
   globalObject: Record<string, unknown> = globalThis as Record<string, unknown>,
 ): RuinTimeKernelRegistration {
-  const mvu = asRecord(resolveHostGlobal(globalObject, 'Mvu'));
+  const mvu = asRecord(resolveGlobalMvu(globalObject));
   const events = asRecord(mvu.events);
   const eventOn = resolveTavernHelperFunction<(
     event: string,

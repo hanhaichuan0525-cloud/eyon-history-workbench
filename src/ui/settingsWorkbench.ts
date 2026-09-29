@@ -71,7 +71,7 @@ const EMPTY_CUSTOM: GenerationSettings = {
   temperature: 0.8,
 };
 
-const CURRENT_EXTENSION_VERSION = '0.11.8';
+const CURRENT_EXTENSION_VERSION = '0.11.9';
 const REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/manifest.json';
 const EXTENSION_ID = 'eyon-history-workbench';
 
@@ -124,7 +124,7 @@ export function mountSettingsWorkbench(
   let updateState: UpdateState = {
     latest: null,
     available: false,
-    message: '当前版本 0.11.8；点击检查更新以读取 GitHub 稳定版。',
+    message: '当前版本 0.11.9；点击检查更新以读取 GitHub 稳定版。',
   };
   let busy = false;
   let status = '';
@@ -856,7 +856,8 @@ export function mountSettingsWorkbench(
     };
     render();
     try {
-      const response = await fetch(REMOTE_MANIFEST_URL, { cache: 'no-store' });
+      const remoteManifestUrl = `${REMOTE_MANIFEST_URL}?workbench=${encodeURIComponent(CURRENT_EXTENSION_VERSION)}&t=${Date.now()}`;
+      const response = await fetch(remoteManifestUrl, { cache: 'no-store' });
       if (!response.ok) throw new Error(`远程清单请求失败（HTTP ${response.status}）`);
       const manifest = await response.json() as { version?: unknown };
       const latest = typeof manifest.version === 'string' ? manifest.version.trim() : '';

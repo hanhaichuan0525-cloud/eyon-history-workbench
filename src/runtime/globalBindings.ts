@@ -12,19 +12,60 @@ import {
 type GlobalRecord = Record<string, unknown>;
 type Listener = (...args: unknown[]) => unknown;
 
+// MVU is shared by Tavern Helper rather than guaranteed to be a property of
+// the native extension window. Keep the resolved interface here so every
+// consumer (data bindings and the time kernel) uses the same object returned
+// by waitGlobalInitialized instead of re-discovering a missing sibling-frame
+// global.
+const resolvedMvuByGlobal = new WeakMap<object, GlobalRecord>();
+
+export function resolveGlobalMvu(
+  globalObject: GlobalRecord = globalThis as GlobalRecord,
+): GlobalRecord | null {
+  const cached = resolvedMvuByGlobal.get(globalObject);
+  if (cached) return cached;
+  const resolved = resolveHostGlobal(globalObject, 'Mvu');
+  const mvu = isRecord(resolved) ? resolved : null;
+  if (typeof mvu?.getMvuData === 'function') {
+    resolvedMvuByGlobal.set(globalObject, mvu);
+    return mvu;
+  }
+  return null;
+}
+
 export async function waitForGlobalMvu(
   globalObject: GlobalRecord = globalThis as GlobalRecord,
 ): Promise<void> {
+  if (resolveGlobalMvu(globalObject)) return;
   const waitGlobalInitialized = resolveTavernHelperFunction<
-    (name: string) => Promise<void>
+    (name: string) => Promise<unknown>
   >(globalObject, 'waitGlobalInitialized') ?? globalObject.waitGlobalInitialized;
   if (typeof waitGlobalInitialized === 'function') {
-    await (waitGlobalInitialized as (name: string) => Promise<void>)('Mvu');
+    // The generic Tavern Helper contract returns the shared interface. Native
+    // extensions must retain that return value: Mvu may live in a script
+    // iframe/sibling registry and therefore never become window.Mvu here.
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const initialized = await Promise.race([
+        Promise.resolve().then(() =>
+          (waitGlobalInitialized as (name: string) => Promise<unknown>)('Mvu')),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(
+            'Mvu.getMvuData is unavailable (waitGlobalInitialized timed out)',
+          )), 30_000);
+        }),
+      ]);
+      const returnedMvu = isRecord(initialized) ? initialized : null;
+      if (typeof returnedMvu?.getMvuData === 'function') {
+        resolvedMvuByGlobal.set(globalObject, returnedMvu);
+      }
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
   }
-  const resolvedMvu = resolveHostGlobal(globalObject, 'Mvu');
-  const mvu = isRecord(resolvedMvu) ? resolvedMvu : null;
+  const mvu = resolveGlobalMvu(globalObject);
   if (typeof mvu?.getMvuData !== 'function') {
-    throw new Error('Mvu.getMvuData is unavailable');
+    throw new Error('Mvu.getMvuData is unavailable (Tavern Helper waitGlobalInitialized did not return MVU)');
   }
 }
 
@@ -81,30 +122,24 @@ export function createGlobalDataBindings(
     globalObject,
     'triggerSlash',
   );
-  const resolvedMvu = resolveHostGlobal(globalObject, 'Mvu');
-  const mvu = isRecord(resolvedMvu) ? resolvedMvu : null;
+  const mvu = resolveGlobalMvu(globalObject);
   const getMvuData = typeof mvu?.getMvuData === 'function'
-    ? mvu.getMvuData as (option: Record<string, unknown>) => Record<string, unknown>
+    ? mvu.getMvuData.bind(mvu) as (option: Record<string, unknown>) => Record<string, unknown>
     : null;
   const replaceMvuData = typeof mvu?.replaceMvuData === 'function'
-    ? mvu.replaceMvuData as (
+    ? mvu.replaceMvuData.bind(mvu) as (
         variables: Record<string, unknown>,
         option: Record<string, unknown>,
       ) => Promise<void>
     : null;
+  if (!getMvuData) {
+    throw new Error('Mvu.getMvuData is unavailable');
+  }
 
   return {
     getChatVariables: () => getVariables({ type: 'chat' }),
-    getCurrentVariables: () => (
-      getMvuData
-        ? getMvuData({ type: 'message', message_id: -1 })
-        : getVariables({ type: 'message', message_id: -1 })
-    ),
-    getMessageVariables: messageId => (
-      getMvuData
-        ? getMvuData({ type: 'message', message_id: messageId })
-        : getVariables({ type: 'message', message_id: messageId })
-    ),
+    getCurrentVariables: () => getMvuData({ type: 'message', message_id: -1 }),
+    getMessageVariables: messageId => getMvuData({ type: 'message', message_id: messageId }),
     replaceMessageVariables: replaceMvuData
       ? (messageId, variables) =>
           replaceMvuData(variables, { type: 'message', message_id: messageId })

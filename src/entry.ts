@@ -759,7 +759,7 @@ async function bootstrap(): Promise<void> {
     }
   };
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.11.8',
+    version: '0.11.9',
     resolveDisplayText: text => resolveWorkbenchDisplayText(text, globalObject),
     getSettings: () => settings.read(),
     updateSettings,

@@ -1,4 +1,4 @@
-const VERSION = '0.11.8';
+const VERSION = '0.11.9';
 const RUNTIME_URL = new URL('../dist/index.js', import.meta.url).href;
 const WORKBENCH_URL = new URL('../dist/workbench.js', import.meta.url).href;
 const INSTANCE_KEY = '__eyonHistoryWorkbenchExtension';
@@ -189,10 +189,10 @@ function missingRuntimeSurface() {
   const missing = [];
   const sillyTavern = runtimeGlobal('SillyTavern');
   const tavernHelper = runtimeGlobal('TavernHelper');
-  const mvu = runtimeGlobal('Mvu');
   if (!sillyTavern) missing.push('SillyTavern');
   if (!tavernHelper) missing.push('TavernHelper');
-  if (!mvu || typeof mvu.getMvuData !== 'function') missing.push('MVU');
+  // MVU is not required to be a property of the native extension window.
+  // The runtime obtains the shared API through TavernHelper.waitGlobalInitialized.
   return missing;
 }
 
@@ -434,8 +434,10 @@ async function start() {
     const message = error instanceof Error ? error.message : String(error);
     const missing = missingRuntimeSurface();
     const detail = missing.length > 0
-      ? `等待运行时依赖：${missing.join('、')}。请启用 Tavern Helper 与 MVU；依赖就绪后会自动接管。`
-      : `工作台运行时正在重试：${message}`;
+      ? `等待运行时依赖：${missing.join('、')}。请启用 Tavern Helper；依赖就绪后会自动接管。`
+      : /Mvu\.getMvuData/u.test(message)
+        ? '正在等待 Tavern Helper 返回 MVU 接口；请确认 MVU 变量框架脚本已启用，依赖就绪后会自动接管。'
+        : `工作台运行时正在重试：${message}`;
     console.warn('[Eyon History Workbench] runtime is not ready; retrying', {
       missing,
       error,

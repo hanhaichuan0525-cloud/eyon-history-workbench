@@ -8,6 +8,7 @@ import type {
   GenerationTaskType,
   WorkbenchSettings,
 } from '../runtime/workbenchSettings.ts';
+import { resolveTavernHelperFunction } from '../runtime/tavernRuntimeAdapter.ts';
 import settingsCss from './settingsWorkbench.css?raw';
 import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
 import {
@@ -70,7 +71,7 @@ const EMPTY_CUSTOM: GenerationSettings = {
   temperature: 0.8,
 };
 
-const CURRENT_EXTENSION_VERSION = '0.11.6';
+const CURRENT_EXTENSION_VERSION = '0.11.7';
 const REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/manifest.json';
 const EXTENSION_ID = 'eyon-history-workbench';
 
@@ -123,7 +124,7 @@ export function mountSettingsWorkbench(
   let updateState: UpdateState = {
     latest: null,
     available: false,
-    message: '当前版本 0.11.6；点击检查更新以读取 GitHub 稳定版。',
+    message: '当前版本 0.11.7；点击检查更新以读取 GitHub 稳定版。',
   };
   let busy = false;
   let status = '';
@@ -887,7 +888,16 @@ export function mountSettingsWorkbench(
     updateState = { ...updateState, message: `正在请求酒馆更新到 ${updateState.latest}…` };
     render();
     try {
-      const updater = (globalThis as Record<string, unknown>).updateExtension;
+      const globalObject = globalThis as Record<string, unknown>;
+      // Tavern Helper 的扩展管理 API 属于宿主桥，标准入口是
+      // TavernHelper.updateExtension；脚本可能运行在消息 iframe 或工作台
+      // 影子根所在窗口，因此通过统一解析器同时检查父/顶层宿主。
+      const directUpdater = globalObject.updateExtension;
+      const updater = typeof directUpdater === 'function'
+        ? directUpdater as (extensionId: string) => Promise<Response>
+        : resolveTavernHelperFunction<
+            (extensionId: string) => Promise<Response>
+          >(globalObject, 'updateExtension');
       if (typeof updater !== 'function') {
         throw new Error('当前酒馆未暴露 updateExtension 接口，请在扩展管理器中手动更新');
       }

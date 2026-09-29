@@ -9,7 +9,10 @@ import {
   type WorkbenchStatusDetail,
 } from '../runtime/facade.ts';
 import type { GenerationSettings } from '../runtime/settings.ts';
-import type { GenerationTaskType } from '../runtime/workbenchSettings.ts';
+import type {
+  GenerationTaskType,
+  WorkbenchSettings,
+} from '../runtime/workbenchSettings.ts';
 import type { RuinRuntimeSnapshot } from '../adapters/host.ts';
 
 export interface WorkbenchUiSnapshot {
@@ -21,6 +24,9 @@ export interface WorkbenchUiSnapshot {
   ruins: Awaited<ReturnType<EyonHistoryWorkbenchFacade['listRuins']>>;
   butterflies: Awaited<ReturnType<EyonHistoryWorkbenchFacade['listButterflies']>>;
 }
+
+const EXTENSION_SETTINGS_KEY = 'eyon-history-workbench';
+const SETTINGS_CHANGED_EVENT = 'eyon-history-workbench:settings-changed';
 
 export class WorkbenchUiClient {
   private readonly globals: Record<string, unknown>;
@@ -36,6 +42,18 @@ export class WorkbenchUiClient {
 
   isReady(): boolean {
     return isFacade(this.globals[WORKBENCH_GLOBAL]);
+  }
+
+  /**
+   * The launcher is intentionally usable before the runtime facade is ready.
+   * This is the narrow host-settings fallback used by the settings banner; all
+   * other settings still require the real facade.
+   */
+  isWorkbenchEnabled(): boolean {
+    const facade = this.globals[WORKBENCH_GLOBAL];
+    if (isFacade(facade)) return facade.getSettings().workbenchEnabled !== false;
+    const value = readExtensionSettings(this.globals)?.[EXTENSION_SETTINGS_KEY];
+    return isRecord(value) && value.workbenchEnabled === true;
   }
 
   facade(): EyonHistoryWorkbenchFacade {
@@ -90,8 +108,38 @@ export class WorkbenchUiClient {
 
   updateSettings(
     patch: Parameters<EyonHistoryWorkbenchFacade['updateSettings']>[0],
-  ) {
-    return this.facade().updateSettings(patch);
+  ): WorkbenchSettings | Pick<WorkbenchSettings, 'workbenchEnabled'> {
+    const facade = this.globals[WORKBENCH_GLOBAL];
+    if (isFacade(facade)) return facade.updateSettings(patch);
+    if (!Object.prototype.hasOwnProperty.call(patch, 'workbenchEnabled')) {
+      return this.facade().updateSettings(patch);
+    }
+    const extensionSettings = readExtensionSettings(this.globals, true);
+    if (!extensionSettings) {
+      throw new Error('SillyTavern.extensionSettings 不可用');
+    }
+    const enabled = patch.workbenchEnabled === true;
+    extensionSettings[EXTENSION_SETTINGS_KEY] = {
+      ...(isRecord(extensionSettings[EXTENSION_SETTINGS_KEY])
+        ? extensionSettings[EXTENSION_SETTINGS_KEY]
+        : {}),
+      workbenchEnabled: enabled,
+    };
+    const host = isRecord(this.globals.SillyTavern)
+      ? this.globals.SillyTavern
+      : null;
+    const context = typeof host?.getContext === 'function'
+      ? host.getContext() as Record<string, unknown>
+      : null;
+    const saveSettingsDebounced = context?.saveSettingsDebounced
+      ?? host?.saveSettingsDebounced;
+    if (typeof saveSettingsDebounced === 'function') {
+      void (saveSettingsDebounced as () => Promise<void> | void)();
+    }
+    this.events.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, {
+      detail: { workbenchEnabled: enabled },
+    }));
+    return { workbenchEnabled: enabled };
   }
 
   listGenealogyCharacters() {
@@ -421,6 +469,25 @@ function isFacade(value: unknown): value is EyonHistoryWorkbenchFacade {
     && typeof candidate.confirmRuinTaskDraft === 'function'
     && typeof candidate.returnRuin === 'function'
   );
+}
+
+function readExtensionSettings(
+  globals: Record<string, unknown>,
+  create = false,
+): Record<string, unknown> | null {
+  const host = isRecord(globals.SillyTavern) ? globals.SillyTavern : null;
+  const context = typeof host?.getContext === 'function'
+    ? host.getContext() as Record<string, unknown>
+    : null;
+  const fromContext = context?.extensionSettings;
+  if (isRecord(fromContext)) return fromContext;
+  const fromHost = host?.extensionSettings;
+  if (isRecord(fromHost)) return fromHost;
+  return create ? null : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function isStatusDetail(value: unknown): value is WorkbenchStatusDetail {

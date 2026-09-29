@@ -328,6 +328,27 @@ test('UI客户端通过公开门面执行资料管理操作', async () => {
   });
 });
 
+test('运行时未就绪时启动开关仍写入酒馆扩展设置', () => {
+  const extensionSettings: Record<string, unknown> = {};
+  const globals = {
+    SillyTavern: {
+      extensionSettings,
+      saveSettingsDebounced: () => undefined,
+    },
+  };
+  const client = new WorkbenchUiClient(globals, new EventTarget());
+  assert.equal(client.isReady(), false);
+  assert.equal(client.isWorkbenchEnabled(), false);
+  assert.deepEqual(client.updateSettings({ workbenchEnabled: true }), {
+    workbenchEnabled: true,
+  });
+  assert.equal(
+    (extensionSettings['eyon-history-workbench'] as { workbenchEnabled: boolean }).workbenchEnabled,
+    true,
+  );
+  assert.equal(client.isWorkbenchEnabled(), true);
+});
+
 test('UI客户端订阅并释放工作台状态与就绪事件', () => {
   const events = new EventTarget();
   const client = new WorkbenchUiClient({}, events);

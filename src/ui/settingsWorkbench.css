@@ -25,6 +25,117 @@ button {
   min-width: 0;
 }
 
+.launcher-banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--teal, #52b8ad) 42%, var(--line, transparent));
+  border-radius: var(--archive-radius-panel, 15px);
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--teal, #52b8ad) 12%, var(--panel, transparent)),
+      color-mix(in srgb, var(--gold, #c5a45c) 8%, var(--panel, transparent)));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold, #c5a45c) 10%, transparent);
+}
+
+.launcher-copy {
+  min-width: 0;
+}
+
+.launcher-kicker {
+  color: var(--teal-2, #83d5ca);
+  font: 800 9px/1.3 ui-monospace, Consolas, monospace;
+  letter-spacing: .16em;
+}
+
+.launcher-copy h1 {
+  margin: 5px 0 0;
+  color: var(--ink, #f1eee5);
+  font: 800 18px/1.25 "Noto Serif SC", "Songti SC", serif;
+}
+
+.launcher-copy p {
+  max-width: 720px;
+  margin: 6px 0 0;
+  color: var(--muted, #9da6a2);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.launcher-update-status {
+  display: block;
+  margin-top: 7px;
+  color: var(--gold-2, #dfc77e);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.launcher-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.launcher-toggle {
+  position: relative;
+  min-width: 190px;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 11px;
+  border: 1px solid var(--teal-line, rgba(82, 184, 173, .36));
+  border-radius: var(--archive-radius-control, 9px);
+  background: color-mix(in srgb, var(--surface, #101515) 82%, transparent);
+  color: var(--ink, #f1eee5);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.launcher-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.launcher-toggle i {
+  position: relative;
+  width: 38px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line, rgba(177, 145, 78, .3));
+  border-radius: 11px;
+  background: var(--input, rgba(4, 8, 8, .72));
+}
+
+.launcher-toggle i::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  top: 2px;
+  left: 2px;
+  border-radius: 50%;
+  background: var(--muted, #9da6a2);
+  transition: .18s ease;
+}
+
+.launcher-toggle input:checked + i {
+  border-color: var(--teal-line, rgba(82, 184, 173, .5));
+  background: color-mix(in srgb, var(--teal, #52b8ad) 15%, transparent);
+}
+
+.launcher-toggle input:checked + i::after {
+  left: 20px;
+  background: var(--teal, #52b8ad);
+}
+
 .settings-nav {
   display: grid;
   align-content: start;
@@ -793,6 +904,22 @@ button {
 }
 
 @media (max-width: 720px) {
+  .launcher-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .launcher-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .launcher-toggle,
+  .launcher-actions .quiet-button,
+  .launcher-actions .primary-button {
+    width: 100%;
+  }
+
   .settings {
     grid-template-columns: 1fr;
   }

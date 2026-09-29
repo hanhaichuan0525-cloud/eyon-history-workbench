@@ -1,11 +1,12 @@
-const VERSION = '0.11.2';
+const VERSION = '0.11.4';
 const RUNTIME_URL = new URL('../dist/index.js', import.meta.url).href;
 const WORKBENCH_URL = new URL('../dist/workbench.js', import.meta.url).href;
 const INSTANCE_KEY = '__eyonHistoryWorkbenchExtension';
 const WAND_ENTRY_ID = 'eyon-history-workbench-wand-entry';
-const EXTENSION_SETTINGS_ID = 'eyon-history-workbench-extension-settings';
+const LEGACY_SETTINGS_ID = 'eyon-history-workbench-extension-settings';
 const ENTRY_STYLE_ID = 'eyon-history-workbench-entry-style';
 const SETTINGS_CHANGED_EVENT = 'eyon-history-workbench:settings-changed';
+const EXTENSION_SETTINGS_KEY = 'eyon-history-workbench';
 
 const state = {
   stopped: false,
@@ -19,6 +20,8 @@ const state = {
   onPageHide: null,
   uiObserver: null,
   uiObserverTimer: null,
+  runtimeRetryTimer: null,
+  runtimeAttempt: 0,
   entryStyle: null,
 };
 
@@ -34,11 +37,59 @@ function workbenchFacade() {
   return hostWindow().EyonHistoryWorkbench;
 }
 
-function workbenchEnabled() {
+function hostSettingsContext() {
+  const host = hostWindow();
+  const sillyTavern = host.SillyTavern;
+  const context = typeof sillyTavern?.getContext === 'function'
+    ? sillyTavern.getContext()
+    : null;
+  const extensionSettings = context?.extensionSettings
+    || sillyTavern?.extensionSettings
+    || null;
+  const saveSettingsDebounced = context?.saveSettingsDebounced
+    || sillyTavern?.saveSettingsDebounced
+    || null;
+  return { extensionSettings, saveSettingsDebounced };
+}
+
+function storedWorkbenchEnabled() {
   try {
-    return workbenchFacade()?.getSettings?.()?.workbenchEnabled !== false;
+    const { extensionSettings } = hostSettingsContext();
+    const value = extensionSettings?.[EXTENSION_SETTINGS_KEY];
+    // 新安装默认不启动；用户从魔术棒入口明确启用后才持久化为 true。
+    return value?.workbenchEnabled === true;
   } catch {
-    return true;
+    return false;
+  }
+}
+
+function persistStoredWorkbenchEnabled(enabled) {
+  const { extensionSettings, saveSettingsDebounced } = hostSettingsContext();
+  if (!extensionSettings) {
+    throw new Error('SillyTavern.extensionSettings 不可用');
+  }
+  const current = extensionSettings[EXTENSION_SETTINGS_KEY];
+  extensionSettings[EXTENSION_SETTINGS_KEY] = {
+    ...(current && typeof current === 'object' ? current : {}),
+    workbenchEnabled: enabled,
+  };
+  void saveSettingsDebounced?.();
+  hostWindow().dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, {
+    detail: { workbenchEnabled: enabled },
+  }));
+  return extensionSettings[EXTENSION_SETTINGS_KEY];
+}
+
+function workbenchEnabled() {
+  if (!storedWorkbenchEnabled()) return false;
+  try {
+    const facade = workbenchFacade();
+    if (facade?.getSettings) {
+      return facade.getSettings()?.workbenchEnabled !== false;
+    }
+    return storedWorkbenchEnabled();
+  } catch {
+    return storedWorkbenchEnabled();
   }
 }
 
@@ -53,12 +104,24 @@ function emitStatus(detail) {
 }
 
 function hasRuntimeSurface() {
+  return missingRuntimeSurface().length === 0;
+}
+
+function missingRuntimeSurface() {
   const host = hostWindow();
-  return Boolean(
-    host.SillyTavern
-    && host.TavernHelper
-    && host.Mvu,
-  );
+  const missing = [];
+  if (!host.SillyTavern) missing.push('SillyTavern');
+  if (!host.TavernHelper) missing.push('TavernHelper');
+  if (!host.Mvu) missing.push('Mvu');
+  return missing;
+}
+
+function scheduleRuntimeRetry() {
+  if (state.stopped || state.runtimeRetryTimer) return;
+  state.runtimeRetryTimer = setTimeout(() => {
+    state.runtimeRetryTimer = null;
+    if (!state.stopped && !workbenchFacade()) void start();
+  }, 3000);
 }
 
 async function waitForRuntimeSurface(timeoutMs = 30_000) {
@@ -150,10 +213,6 @@ function ensureEntryStyle() {
     #${WAND_ENTRY_ID}:focus-visible { background: color-mix(in srgb, currentColor 12%, transparent); outline: none; }
     #${WAND_ENTRY_ID} { padding: .45em .65em; border-radius: .35em; box-sizing: border-box; }
     #${WAND_ENTRY_ID} .eyon-history-wand-icon { width: 1.25em; text-align: center; opacity: .9; }
-    #${EXTENSION_SETTINGS_ID} { margin: .5rem 0; }
-    #${EXTENSION_SETTINGS_ID} .eyon-history-settings-row { display: flex; align-items: center; gap: .55rem; }
-    #${EXTENSION_SETTINGS_ID} .eyon-history-settings-row label { display: flex; align-items: center; gap: .45rem; cursor: pointer; }
-    #${EXTENSION_SETTINGS_ID} small { display: block; margin-top: .35rem; opacity: .72; line-height: 1.35; }
   `;
   (doc.head || doc.documentElement).append(style);
   state.entryStyle = style;
@@ -173,17 +232,19 @@ function createWandEntry(doc) {
   wrap.className = 'list-group-item flex-container flexGap5 eyon-history-workbench-menu-entry';
   wrap.setAttribute('role', 'menuitem');
   wrap.setAttribute('tabindex', '0');
-  wrap.title = '打开伊雍历史工作台';
+  wrap.title = '启用或打开伊雍历史工作台';
   const icon = doc.createElement('i');
   icon.className = 'fa-solid fa-book-open eyon-history-wand-icon';
   icon.setAttribute('aria-hidden', 'true');
   const label = doc.createElement('span');
-  label.textContent = '伊雍历史工作台';
+  label.textContent = storedWorkbenchEnabled()
+    ? '伊雍历史工作台'
+    : '启用伊雍历史工作台';
   wrap.append(icon, label);
   const open = event => {
     event.preventDefault();
     event.stopPropagation();
-    if (workbenchEnabled()) openWorkbench();
+    activateFromWand();
   };
   wrap.addEventListener('click', open);
   wrap.addEventListener('keydown', event => {
@@ -204,54 +265,22 @@ function refreshWandEntry() {
   ensureEntryStyle();
   if (!entry) entry = createWandEntry(doc);
   if (entry.parentNode !== host) host.append(entry);
-  entry.hidden = !workbenchEnabled();
-  return true;
-}
-
-function refreshExtensionSettingsPanel() {
-  const doc = hostDocument();
-  const host = doc.querySelector('#extensions_settings2')
-    || doc.querySelector('#extensions_settings');
-  if (!host) return false;
-  ensureEntryStyle();
-  let panel = doc.getElementById(EXTENSION_SETTINGS_ID);
-  if (!panel) {
-    panel = doc.createElement('div');
-    panel.id = EXTENSION_SETTINGS_ID;
-    panel.className = 'extension_settings';
-    const row = doc.createElement('div');
-    row.className = 'eyon-history-settings-row';
-    const label = doc.createElement('label');
-    const input = doc.createElement('input');
-    input.type = 'checkbox';
-    input.dataset.eyonHistoryEnabled = 'true';
-    input.addEventListener('change', () => {
-      const facade = workbenchFacade();
-      try {
-        facade?.updateSettings?.({ workbenchEnabled: input.checked });
-      } catch (error) {
-        console.error('[Eyon History Workbench] failed to update launcher setting', error);
-      }
-      refreshWandEntry();
-    });
-    const title = doc.createElement('span');
-    title.textContent = '启用伊雍历史工作台';
-    label.append(input, title);
-    row.append(label);
-    const hint = doc.createElement('small');
-    hint.textContent = '控制魔术棒菜单入口；关闭不会停止后台生成链路。';
-    panel.append(row, hint);
-    host.append(panel);
+  const label = entry.querySelector('span');
+  if (label) {
+    label.textContent = storedWorkbenchEnabled()
+      ? '伊雍历史工作台'
+      : '启用伊雍历史工作台';
   }
-  const input = panel.querySelector('input[data-eyon-history-enabled]');
-  if (input) input.checked = workbenchEnabled();
-  if (panel.parentNode !== host) host.append(panel);
+  // 入口始终保留，关闭时显示为“启用”，否则用户没有恢复入口。
+  entry.hidden = false;
   return true;
 }
 
 function ensureEntryControls() {
+  // v0.11.3 created a separate host settings row. Remove it on upgrade so
+  // there is exactly one authoritative launcher in the workbench settings.
+  hostDocument().getElementById(LEGACY_SETTINGS_ID)?.remove();
   refreshWandEntry();
-  refreshExtensionSettingsPanel();
 }
 
 function observeHostUi() {
@@ -272,7 +301,7 @@ function observeHostUi() {
 function removeEntryControls() {
   const doc = hostDocument();
   doc.getElementById(WAND_ENTRY_ID)?.remove();
-  doc.getElementById(EXTENSION_SETTINGS_ID)?.remove();
+  doc.getElementById(LEGACY_SETTINGS_ID)?.remove();
   doc.getElementById(ENTRY_STYLE_ID)?.remove();
   if (state.uiObserverTimer) clearTimeout(state.uiObserverTimer);
   state.uiObserverTimer = null;
@@ -283,6 +312,10 @@ function removeEntryControls() {
 
 async function start() {
   if (state.stopped) return;
+  if (state.runtimeRetryTimer) {
+    clearTimeout(state.runtimeRetryTimer);
+    state.runtimeRetryTimer = null;
+  }
   const host = hostWindow();
   // 先挂载壳体与入口，再等待 Tavern Helper/MVU。宿主扩展的加载顺序并不
   // 保证这些全局对象先于本扩展出现；若把入口也放在等待之后，用户只能看到
@@ -299,21 +332,18 @@ async function start() {
     return;
   }
 
-  await waitForRuntimeSurface();
-
-  let readyResolve;
-  let readyReject;
-  const ready = new Promise((resolve, reject) => {
-    readyResolve = resolve;
-    readyReject = reject;
-  });
-  state.onReady = event => {
-    if (event.detail?.version || host.EyonHistoryWorkbench) readyResolve();
-  };
-  host.addEventListener('eyon-history-workbench:ready', state.onReady, { once: true });
-
   try {
-    await import(`${RUNTIME_URL}?v=${encodeURIComponent(VERSION)}`);
+    await waitForRuntimeSurface();
+    let readyResolve;
+    const ready = new Promise(resolve => {
+      readyResolve = resolve;
+    });
+    state.onReady = event => {
+      if (event.detail?.version || host.EyonHistoryWorkbench) readyResolve();
+    };
+    host.addEventListener('eyon-history-workbench:ready', state.onReady, { once: true });
+    state.runtimeAttempt += 1;
+    await import(`${RUNTIME_URL}?v=${encodeURIComponent(VERSION)}&attempt=${state.runtimeAttempt}`);
     state.ownsRuntime = true;
     await Promise.race([
       ready,
@@ -322,14 +352,50 @@ async function start() {
     ensureEntryControls();
     observeHostUi();
   } catch (error) {
-    readyReject?.(error);
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[Eyon History Workbench] extension start failed', error);
-    emitStatus({ status: 'failed', detail: `伊雍历史工作台扩展未启动：${message}`, technicalDetail: message });
+    const missing = missingRuntimeSurface();
+    const detail = missing.length > 0
+      ? `等待运行时依赖：${missing.join('、')}。请启用 Tavern Helper 与 MVU；依赖就绪后会自动接管。`
+      : `工作台运行时正在重试：${message}`;
+    console.warn('[Eyon History Workbench] runtime is not ready; retrying', {
+      missing,
+      error,
+    });
+    emitStatus({
+      status: 'waiting_dependencies',
+      phase: 'info',
+      detail,
+      technicalDetail: message,
+    });
+    scheduleRuntimeRetry();
   } finally {
     if (state.onReady) host.removeEventListener('eyon-history-workbench:ready', state.onReady);
     state.onReady = null;
   }
+}
+
+async function prepareUi() {
+  await mountWorkbench();
+  ensureEntryControls();
+  observeHostUi();
+}
+
+function activateFromWand() {
+  try {
+    if (!storedWorkbenchEnabled()) persistStoredWorkbenchEnabled(true);
+  } catch (error) {
+    console.error('[Eyon History Workbench] failed to enable launcher', error);
+    emitStatus({
+      status: 'failed',
+      detail: '无法保存工作台启用状态，请检查酒馆扩展设置权限。',
+      technicalDetail: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+  ensureEntryControls();
+  void start().then(() => openWorkbench()).catch(error => {
+    console.error('[Eyon History Workbench] launcher start failed', error);
+  });
 }
 
 function openWorkbench() {
@@ -345,6 +411,8 @@ function stop() {
   if (state.onOpen) host.removeEventListener('eyon-history-workbench:open', state.onOpen);
   if (state.onSettingsChanged) host.removeEventListener(SETTINGS_CHANGED_EVENT, state.onSettingsChanged);
   if (state.onPageHide) host.removeEventListener('pagehide', state.onPageHide);
+  if (state.runtimeRetryTimer) clearTimeout(state.runtimeRetryTimer);
+  state.runtimeRetryTimer = null;
   removeEntryControls();
   host.EyonHistoryWorkbenchShell?.dispose?.();
   if (state.ownsRuntime) host.EyonHistoryWorkbench?.dispose?.();
@@ -365,6 +433,8 @@ function resetForActivation() {
   state.onPageHide = null;
   state.uiObserver = null;
   state.uiObserverTimer = null;
+  state.runtimeRetryTimer = null;
+  state.runtimeAttempt = 0;
   state.entryStyle = null;
 }
 
@@ -378,15 +448,22 @@ export function onActivate() {
   hostWindow().addEventListener(SETTINGS_CHANGED_EVENT, state.onSettingsChanged);
   state.onPageHide = stop;
   hostWindow().addEventListener('pagehide', state.onPageHide, { once: true });
-  void start().catch(error => {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error('[Eyon History Workbench] extension start failed', error);
-    emitStatus({
-      status: 'failed',
-      detail: `伊雍历史工作台扩展未启动：${message}`,
-      technicalDetail: message,
-    });
+  // 首次安装只挂载轻量入口，不启动后台监听器；用户点击魔术棒中的
+  // “启用伊雍历史工作台”后，才启动运行时与任务链路。
+  void prepareUi().catch(error => {
+    console.error('[Eyon History Workbench] UI preparation failed', error);
   });
+  if (storedWorkbenchEnabled()) {
+    void start().catch(error => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[Eyon History Workbench] extension start failed', error);
+      emitStatus({
+        status: 'failed',
+        detail: `伊雍历史工作台扩展未启动：${message}`,
+        technicalDetail: message,
+      });
+    });
+  }
 }
 
 export function onEnable() {

@@ -70,6 +70,16 @@ const EMPTY_CUSTOM: GenerationSettings = {
   temperature: 0.8,
 };
 
+const CURRENT_EXTENSION_VERSION = '0.11.4';
+const REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/manifest.json';
+const EXTENSION_ID = 'eyon-history-workbench';
+
+type UpdateState = {
+  latest: string | null;
+  available: boolean;
+  message: string;
+};
+
 type CustomApiSettings = GenerationSettings;
 
 const FALLBACK_SETTINGS: Pick<
@@ -109,6 +119,12 @@ export function mountSettingsWorkbench(
     ...FALLBACK_SETTINGS.appearance,
     mode: options.theme ?? FALLBACK_SETTINGS.appearance.mode,
   };
+  let launcherEnabled = client.isWorkbenchEnabled();
+  let updateState: UpdateState = {
+    latest: null,
+    available: false,
+    message: '当前版本 0.11.4；点击检查更新以读取 GitHub 稳定版。',
+  };
   let busy = false;
   let status = '';
   let error = '';
@@ -128,6 +144,7 @@ export function mountSettingsWorkbench(
         client.listCharacterWorldbookEntries(),
       ]);
       appearance = snapshot.settings.appearance;
+      launcherEnabled = snapshot.settings.workbenchEnabled === true;
       syncCustomDrafts(snapshot.settings);
       error = '';
     } catch (cause) {
@@ -143,6 +160,9 @@ export function mountSettingsWorkbench(
   function render(): void {
     const current = settings();
     appearance = current?.appearance ?? appearance;
+    if (current?.workbenchEnabled !== undefined) {
+      launcherEnabled = current.workbenchEnabled === true;
+    }
     host.dataset.theme = appearance.mode;
     // internal.86：每次渲染同步读取最近一次蝴蝶记忆注入快照（只读、无副作用）。
     try {
@@ -153,6 +173,7 @@ export function mountSettingsWorkbench(
     root.innerHTML = `
       <style>${settingsCss}</style>
       <div class="settings">
+        ${renderLauncherBanner()}
         <nav class="settings-nav" aria-label="设置分类">
           ${TABS.map(item => tabButton(item)).join('')}
         </nav>
@@ -178,6 +199,30 @@ export function mountSettingsWorkbench(
       </button>`;
   }
 
+  function renderLauncherBanner(): string {
+    const enabled = launcherEnabled;
+    const updateButton = updateState.available
+      ? `<button class="primary-button" type="button" data-action="update-extension" ${busy ? 'disabled' : ''}>${icon('download')}更新到 ${escapeHtml(updateState.latest ?? '')}</button>`
+      : `<button class="quiet-button" type="button" data-action="check-update" ${busy ? 'disabled' : ''}>${icon('refresh-cw')}检查更新</button>`;
+    return `
+      <section class="launcher-banner" aria-label="伊雍历史工作台启动与更新">
+        <div class="launcher-copy">
+          <div class="launcher-kicker">EYON HISTORY WORKBENCH · CONTROL</div>
+          <h1>工作台启动与版本</h1>
+          <p>首次载入只保留魔术棒入口；打开这里的开关后，才启动后台监听与历史模块。更新只在你点击按钮后执行。</p>
+          <small class="launcher-update-status">${escapeHtml(updateState.message)}</small>
+        </div>
+        <div class="launcher-actions">
+          <label class="launcher-toggle">
+            <span>启用伊雍历史工作台</span>
+            <input id="workbench-enabled" type="checkbox" ${enabled ? 'checked' : ''}>
+            <i aria-hidden="true"></i>
+          </label>
+          ${updateButton}
+        </div>
+      </section>`;
+  }
+
   function renderApi(current: WorkbenchSettings | null): string {
     const custom = customDraftFor(task, current?.generation[task]);
     const selectedTask = TASKS.find(item => item.id === task) ?? TASKS[0];
@@ -200,11 +245,6 @@ export function mountSettingsWorkbench(
               `<input id="api-timeout" type="number" min="0" max="900" step="30"
                 value="${Math.round((current?.customApiTimeoutMs ?? 600_000) / 1000)}"
                 aria-label="独立 API 请求超时秒数">`,
-            )}
-            ${settingRow(
-              'DeepSeek 一键结构化',
-              '面向 DeepSeek 官方 API 或 DeepSeek 系中转：强制 json_object 输出、禁用思考模式、输出上限锁定 8192（官方硬上限，超出会 400）。换用其他模型时关闭。',
-              `<label class="toggle"><input id="api-deepseek-structured" type="checkbox" ${current?.deepseekStructured ? 'checked' : ''}><span></span></label>`,
             )}
           </section>
           <section class="api-group">
@@ -255,19 +295,10 @@ export function mountSettingsWorkbench(
   }
 
   function renderAppearance(current: WorkbenchAppearance): string {
-    const workbenchEnabled = settings()?.workbenchEnabled !== false;
     return `
       <section class="section">
         ${sectionHeader('palette', '外观皮肤', '分别设置明暗模式、界面强调色与正文字色')}
         <div class="section-body appearance-stack">
-          <div class="appearance-block launcher-block">
-            ${appearanceHeading('工作台入口', '控制魔术棒菜单与工作台快捷入口是否显示；关闭不会停止传记、墟境任务或遣返等后台链路。')}
-            ${settingRow(
-              '启用伊雍历史工作台',
-              '停用后可在酒馆扩展设置区重新开启；如果只想暂停入口，不必关闭整个扩展。',
-              `<label class="toggle"><input id="workbench-enabled" type="checkbox" ${workbenchEnabled ? 'checked' : ''}><span></span></label>`,
-            )}
-          </div>
           <div class="appearance-block">
             ${appearanceHeading('明暗模式', '日间使用雾紫纸面，夜间使用明度克制的深紫灰档案底色。')}
             <div class="mode-grid">
@@ -516,13 +547,6 @@ export function mountSettingsWorkbench(
         '请求超时已保存',
       );
     });
-    root.querySelector<HTMLInputElement>('#api-deepseek-structured')?.addEventListener('change', async event => {
-      const checked = (event.currentTarget as HTMLInputElement).checked;
-      await persist(
-        async () => client.updateSettings({ deepseekStructured: checked }),
-        checked ? '已启用 DeepSeek 一键结构化' : '已关闭 DeepSeek 一键结构化',
-      );
-    });
     root.querySelector<HTMLButtonElement>('[data-action="save-api"]')?.addEventListener('click', async () => {
       await saveGeneration(readGenerationForm());
     });
@@ -572,10 +596,17 @@ export function mountSettingsWorkbench(
     });
     root.querySelector<HTMLInputElement>('#workbench-enabled')?.addEventListener('change', async event => {
       const enabled = (event.currentTarget as HTMLInputElement).checked;
+      launcherEnabled = enabled;
       await persist(
         async () => client.updateSettings({ workbenchEnabled: enabled }),
-        enabled ? '伊雍历史工作台入口已启用' : '伊雍历史工作台入口已关闭；可在酒馆扩展设置中重新开启',
+        enabled ? '伊雍历史工作台入口已启用' : '伊雍历史工作台入口已关闭；可从魔术棒重新开启',
       );
+    });
+    root.querySelector<HTMLButtonElement>('[data-action="check-update"]')?.addEventListener('click', async () => {
+      await checkForUpdate();
+    });
+    root.querySelector<HTMLButtonElement>('[data-action="update-extension"]')?.addEventListener('click', async () => {
+      await updateExtension();
     });
     root.querySelector<HTMLInputElement>('#merge-aliases')?.addEventListener('change', async event => {
       const current = settings()?.retrieval ?? FALLBACK_SETTINGS.retrieval;
@@ -815,6 +846,70 @@ export function mountSettingsWorkbench(
     }
   }
 
+  async function checkForUpdate(): Promise<void> {
+    busy = true;
+    error = '';
+    updateState = {
+      ...updateState,
+      message: '正在读取 GitHub 稳定版信息…',
+    };
+    render();
+    try {
+      const response = await fetch(REMOTE_MANIFEST_URL, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`远程清单请求失败（HTTP ${response.status}）`);
+      const manifest = await response.json() as { version?: unknown };
+      const latest = typeof manifest.version === 'string' ? manifest.version.trim() : '';
+      if (!latest) throw new Error('远程清单没有可识别的版本号');
+      const available = compareVersions(latest, CURRENT_EXTENSION_VERSION) > 0;
+      updateState = {
+        latest,
+        available,
+        message: available
+          ? `发现新版本 ${latest}（当前 ${CURRENT_EXTENSION_VERSION}），可点击右侧按钮更新。`
+          : `当前已是最新稳定版（${CURRENT_EXTENSION_VERSION}）。`,
+      };
+    } catch (cause) {
+      updateState = {
+        ...updateState,
+        message: `检查更新失败：${cause instanceof Error ? cause.message : String(cause)}`,
+      };
+      error = updateState.message;
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+
+  async function updateExtension(): Promise<void> {
+    if (!updateState.available || !updateState.latest) return;
+    busy = true;
+    error = '';
+    updateState = { ...updateState, message: `正在请求酒馆更新到 ${updateState.latest}…` };
+    render();
+    try {
+      const updater = (globalThis as Record<string, unknown>).updateExtension;
+      if (typeof updater !== 'function') {
+        throw new Error('当前酒馆未暴露 updateExtension 接口，请在扩展管理器中手动更新');
+      }
+      const response = await (updater as (extensionId: string) => Promise<Response>)(EXTENSION_ID);
+      if (!response?.ok) {
+        throw new Error(`酒馆更新请求失败${response?.status ? `（HTTP ${response.status}）` : ''}`);
+      }
+      updateState = {
+        ...updateState,
+        available: false,
+        message: `已请求酒馆更新到 ${updateState.latest}；刷新页面后生效。`,
+      };
+      status = '更新请求已提交，请刷新酒馆使新版本生效。';
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause);
+      updateState = { ...updateState, message: error };
+    } finally {
+      busy = false;
+      render();
+    }
+  }
+
   async function persist(action: () => Promise<unknown> | unknown, message: string): Promise<boolean> {
     busy = true;
     error = '';
@@ -823,11 +918,21 @@ export function mountSettingsWorkbench(
       status = message;
       if (isWorkbenchSettings(result) && snapshot) {
         snapshot = { ...snapshot, settings: result };
-      } else {
+        launcherEnabled = result.workbenchEnabled === true;
+      } else if (isLauncherPatch(result)) {
+        launcherEnabled = result.workbenchEnabled === true;
+      } else if (client.isReady()) {
         snapshot = await client.readSnapshot();
+      } else {
+        // The launcher toggle is deliberately available while the runtime is
+        // still waiting for Tavern Helper/MVU; do not turn that valid action
+        // into a false "runtime failed" message.
+        return true;
       }
-      appearance = snapshot.settings.appearance;
-      syncCustomDrafts(snapshot.settings);
+      if (snapshot) {
+        appearance = snapshot.settings.appearance;
+        syncCustomDrafts(snapshot.settings);
+      }
       return true;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
@@ -1238,6 +1343,32 @@ function isWorkbenchSettings(value: unknown): value is WorkbenchSettings {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<WorkbenchSettings>;
   return Boolean(candidate.generation && candidate.appearance && candidate.retrieval);
+}
+
+function isLauncherPatch(
+  value: unknown,
+): value is Pick<WorkbenchSettings, 'workbenchEnabled'> {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && typeof (value as { workbenchEnabled?: unknown }).workbenchEnabled === 'boolean',
+  );
+}
+
+function compareVersions(left: string, right: string): number {
+  const parse = (value: string) => value
+    .replace(/^v/iu, '')
+    .split(/[.-]/u)
+    .map(part => Number.parseInt(part, 10))
+    .map(value => Number.isFinite(value) ? value : 0);
+  const a = parse(left);
+  const b = parse(right);
+  const length = Math.max(a.length, b.length, 3);
+  for (let index = 0; index < length; index += 1) {
+    const delta = (a[index] ?? 0) - (b[index] ?? 0);
+    if (delta !== 0) return delta;
+  }
+  return 0;
 }
 
 function downloadJson(fileName: string, value: unknown): void {

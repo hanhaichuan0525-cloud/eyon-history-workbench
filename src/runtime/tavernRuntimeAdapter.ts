@@ -532,6 +532,13 @@ export function resolveTavernHelperFunction<T extends (...args: never[]) => unkn
     if (typeof value === 'function') {
       return value.bind(candidate) as T;
     }
+    // TH 的 _bind 私有命名约定（_waitGlobalInitialized / _eventOn / _initializeGlobal …）。
+    // 脚本 iframe 里由 TH 自动去下划线注入成裸全局，原生扩展所在的酒馆页面没有这层注入，
+    // 因此必须在这里回退，否则扩展通道取不到 waitGlobalInitialized → 读不到 MVU。
+    const bound = (candidate as { _bind?: Record<string, unknown> })._bind?.[`_${name}`];
+    if (typeof bound === 'function') {
+      return bound.bind(candidate) as T;
+    }
   }
   return null;
 }

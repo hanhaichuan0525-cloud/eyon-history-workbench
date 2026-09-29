@@ -11,9 +11,14 @@ const outputPath = resolve(releaseDir, '酒馆助手脚本-伊雍历史工作台
 const sumsPath = resolve(releaseDir, 'SHA256SUMS.txt');
 const remoteLoaderPath = resolve(root, 'extension/auto-loader.js');
 
-const MANIFEST_URL = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/manifest.json';
-const REMOTE_LOADER_URL = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/extension/auto-loader.js';
-const AUTO_LOADER_VERSION = '0.2.0';
+// 缺陷修复（2026-09-29）：GitHub raw 对 .js 返回 text/plain，而本文件生成的入口是
+// `import "…/extension/auto-loader.js"` —— 浏览器对 <script type="module"> 强制 MIME 校验，
+// raw 会被直接拒绝（加载器一行都不执行）。jsDelivr 返回 application/javascript 且内容一致，
+// 同时 manifest/dist 也走同一基址（resolveRemoteUrl 以 MANIFEST_URL 为基）。
+const CDN_BASE = 'https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@main';
+const MANIFEST_URL = `${CDN_BASE}/manifest.json`;
+const REMOTE_LOADER_URL = `${CDN_BASE}/extension/auto-loader.js`;
+const AUTO_LOADER_VERSION = '0.2.1';
 const AUTO_LOADER_ID = 'eyon-history-workbench-auto-loader';
 
 function sha256(value) {
@@ -83,6 +88,18 @@ function createLoaderContent() {
     try { legacyExtension.stop(); } catch (error) { console.warn('[伊雍工作台] 停止旧原生扩展失败', error); }
   }
   hostWindow[INSTANCE_KEY] = state;
+
+  // 缺陷修复（2026-09-29）：悬浮球点击只派发 eyon-history-workbench:open，
+  // 而该事件的接收端原本只写在原生扩展入口里 —— JSON 加载器通道下球能拖、能弹气泡，
+  // 但点不开工作台。这里补上同款桥接（与 extension/index.js 行为一致）。
+  const onOpenRequest = () => {
+    try {
+      const shell = hostWindow.EyonHistoryWorkbenchShell;
+      if (shell && typeof shell.open === 'function') { shell.open(); return; }
+      void load();
+    } catch (error) { console.warn('[伊雍工作台] 悬浮球打开工作台失败', error); }
+  };
+  hostWindow.addEventListener('eyon-history-workbench:open', onOpenRequest);
 
   const emitStatus = (phase, detail, level = 'info') => {
     const payload = { source: 'eyon-history-workbench-auto-loader', phase, detail, level, version: state.version };
@@ -413,6 +430,10 @@ function createLoaderContent() {
       ensureEntryControls();
       if (state.openRequested && hostWindow.EyonHistoryWorkbenchShell) hostWindow.EyonHistoryWorkbenchShell.open();
       emitStatus('ready', '伊雍历史工作台已就绪');
+      // 缺陷修复（2026-09-29）：运行时通知表只在 error / success / cancelled 上安排退场，
+      // phase:'ready' 会永久驻留 → 悬浮球停在"就绪"动作不回 idle 日常循环。
+      // 保留 ready 事件兼容其它消费者，随后补一次 success 让同 key 条目自然退场。
+      setTimeout(() => emitStatus('success', '伊雍历史工作台已就绪'), 150);
       return facade;
     })().catch((error) => {
       state.loading = null;
@@ -427,6 +448,7 @@ function createLoaderContent() {
     if (state.disposed) return;
     state.disposed = true;
     if (state.observer) state.observer.disconnect();
+    hostWindow.removeEventListener('eyon-history-workbench:open', onOpenRequest);
     if (state.uiTimer) clearTimeout(state.uiTimer);
     state.uiTimer = null;
     state.runtimeWaitCancel?.(new Error('伊雍历史工作台加载器已停止'));
@@ -470,7 +492,7 @@ const artifact = {
   enabled: true,
   name: `伊雍历史工作台自动更新加载器 ${manifest.version}`,
   id: AUTO_LOADER_ID,
-  info: `伊雍历史工作台 ${manifest.version} 远端自动更新加载器（loader ${AUTO_LOADER_VERSION}）。通过 Tavern Helper 直接导入 GitHub 远端模块，每次酒馆载入时读取最新 manifest，先校验 SHA-256 再加载；网络不可用时使用最后一次已验证缓存。请停用旧版原生扩展和旧内嵌整合脚本，避免重复监听。`,
+  info: `伊雍历史工作台 ${manifest.version} 远端自动更新加载器（loader ${AUTO_LOADER_VERSION}）。入口经 jsDelivr 导入（GitHub raw 的 text/plain 会被浏览器按 module MIME 规则拒绝），每次酒馆载入读取 manifest 并校验 SHA-256 后加载，网络不可用时回退最后一次已验证缓存；内置悬浮球 :open 桥接与 ready 通知退场。请停用旧版原生扩展和旧内嵌整合脚本，避免重复监听。`,
   button: { enabled: true, buttons: [] },
   data: {},
   export_with: { data: true, button: true },

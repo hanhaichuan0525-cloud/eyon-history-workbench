@@ -3,8 +3,8 @@
 
   // This script is intentionally small: runtime and UI bytes are fetched from the
   // public release manifest and are executed only after SHA-256 verification.
-  const MANIFEST_URL = "https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/manifest.json";
-  const LOADER_VERSION = "0.2.0";
+  const MANIFEST_URL = "https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@main/manifest.json";
+  const LOADER_VERSION = "0.2.1";
   const CACHE_NAME = 'eyon-history-workbench-verified-v1';
   const INSTANCE_KEY = '__eyonHistoryWorkbenchAutoLoader';
   const LEGACY_INSTANCE_KEY = '__eyonHistoryWorkbenchInternalLoader';
@@ -46,6 +46,18 @@
     try { legacyExtension.stop(); } catch (error) { console.warn('[伊雍工作台] 停止旧原生扩展失败', error); }
   }
   hostWindow[INSTANCE_KEY] = state;
+
+  // 缺陷修复（2026-09-29）：悬浮球点击只派发 eyon-history-workbench:open，
+  // 而该事件的接收端原本只写在原生扩展入口里 —— JSON 加载器通道下球能拖、能弹气泡，
+  // 但点不开工作台。这里补上同款桥接（与 extension/index.js 行为一致）。
+  const onOpenRequest = () => {
+    try {
+      const shell = hostWindow.EyonHistoryWorkbenchShell;
+      if (shell && typeof shell.open === 'function') { shell.open(); return; }
+      void load();
+    } catch (error) { console.warn('[伊雍工作台] 悬浮球打开工作台失败', error); }
+  };
+  hostWindow.addEventListener('eyon-history-workbench:open', onOpenRequest);
 
   const emitStatus = (phase, detail, level = 'info') => {
     const payload = { source: 'eyon-history-workbench-auto-loader', phase, detail, level, version: state.version };
@@ -376,6 +388,10 @@
       ensureEntryControls();
       if (state.openRequested && hostWindow.EyonHistoryWorkbenchShell) hostWindow.EyonHistoryWorkbenchShell.open();
       emitStatus('ready', '伊雍历史工作台已就绪');
+      // 缺陷修复（2026-09-29）：运行时通知表只在 error / success / cancelled 上安排退场，
+      // phase:'ready' 会永久驻留 → 悬浮球停在"就绪"动作不回 idle 日常循环。
+      // 保留 ready 事件兼容其它消费者，随后补一次 success 让同 key 条目自然退场。
+      setTimeout(() => emitStatus('success', '伊雍历史工作台已就绪'), 150);
       return facade;
     })().catch((error) => {
       state.loading = null;
@@ -390,6 +406,7 @@
     if (state.disposed) return;
     state.disposed = true;
     if (state.observer) state.observer.disconnect();
+    hostWindow.removeEventListener('eyon-history-workbench:open', onOpenRequest);
     if (state.uiTimer) clearTimeout(state.uiTimer);
     state.uiTimer = null;
     state.runtimeWaitCancel?.(new Error('伊雍历史工作台加载器已停止'));

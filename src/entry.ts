@@ -145,6 +145,50 @@ import {
 import { inspectContinuityAnchors } from './runtime/continuityAnchors.ts';
 
 let disposeCurrent: (() => void) | null = null;
+let bootstrapRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let bootstrapInFlight = false;
+
+function hasActiveChatContext(globalObject: Record<string, unknown>): boolean {
+  let chatId = '';
+  try {
+    const sillyTavern = globalObject.SillyTavern as Record<string, unknown> | undefined;
+    const getCurrentChatId = sillyTavern?.getCurrentChatId;
+    chatId = typeof getCurrentChatId === 'function'
+      ? String((getCurrentChatId as () => unknown)() ?? '').trim()
+      : '';
+  } catch {
+    chatId = '';
+  }
+
+  let characterName = '';
+  const getCurrentCharacterName = resolveTavernHelperFunction<() => unknown>(
+    globalObject,
+    'getCurrentCharacterName',
+  ) ?? (typeof globalObject.getCurrentCharacterName === 'function'
+    ? globalObject.getCurrentCharacterName as () => unknown
+    : null);
+  try {
+    characterName = typeof getCurrentCharacterName === 'function'
+      ? String(getCurrentCharacterName() ?? '').trim()
+      : '';
+  } catch {
+    characterName = '';
+  }
+  return Boolean(chatId && characterName);
+}
+
+function scheduleBootstrapRetry(): void {
+  if (bootstrapRetryTimer) return;
+  bootstrapRetryTimer = setTimeout(() => {
+    bootstrapRetryTimer = null;
+    start();
+  }, 1000);
+}
+
+function isTransientChatContextError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /No active character chat|当前没有可用的角色聊天|当前聊天没有可用的玩家楼|Mvu\.getMvuData is unavailable/u.test(message);
+}
 
 async function bootstrap(): Promise<void> {
   disposeCurrent?.();
@@ -713,7 +757,7 @@ async function bootstrap(): Promise<void> {
     }
   };
   const facade: EyonHistoryWorkbenchFacade = {
-    version: '0.11.5',
+    version: '0.11.6',
     resolveDisplayText: text => resolveWorkbenchDisplayText(text, globalObject),
     getSettings: () => settings.read(),
     updateSettings,
@@ -1557,14 +1601,31 @@ function taskLabel(taskType: GenerationTaskType): string {
 }
 
 function start(): void {
-  void bootstrap().catch(error => {
-    console.error('[Eyon History Workbench] bootstrap failed', error);
-    emitStatus('failed', '历史工作台载入未完成，请查看控制台日志', {
-      taskType: 'system',
-      phase: 'error',
-      technicalDetail: error instanceof Error ? error.message : String(error),
+  const globalObject = globalThis as Record<string, unknown>;
+  if (bootstrapInFlight || globalObject.EyonHistoryWorkbench) return;
+  if (!hasActiveChatContext(globalObject)) {
+    // 首页/设置页没有聊天命名空间是正常状态。保持静默并短暂重试，进入
+    // 角色卡后由同一入口完成首次初始化，不向用户显示失败提示。
+    scheduleBootstrapRetry();
+    return;
+  }
+  bootstrapInFlight = true;
+  void bootstrap()
+    .catch(error => {
+      if (isTransientChatContextError(error) || !hasActiveChatContext(globalObject)) {
+        scheduleBootstrapRetry();
+        return;
+      }
+      console.error('[Eyon History Workbench] bootstrap failed', error);
+      emitStatus('failed', '历史工作台载入未完成，请查看控制台日志', {
+        taskType: 'system',
+        phase: 'error',
+        technicalDetail: error instanceof Error ? error.message : String(error),
+      });
+    })
+    .finally(() => {
+      bootstrapInFlight = false;
     });
-  });
 }
 
 const globalRecord = globalThis as Record<string, unknown>;
@@ -1576,6 +1637,8 @@ if (typeof jquery === 'function') {
 }
 
 globalThis.addEventListener('pagehide', () => {
+  if (bootstrapRetryTimer) clearTimeout(bootstrapRetryTimer);
+  bootstrapRetryTimer = null;
   disposeCurrent?.();
   disposeCurrent = null;
 }, { once: true });

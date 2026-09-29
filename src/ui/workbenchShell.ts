@@ -43,7 +43,7 @@ export function mountWorkbenchShell(
   container.replaceChildren(host);
   let active = normalizeWorkbenchView(options.initialView ?? 'timeline');
   let appearance: WorkbenchAppearance = {
-    mode: 'dark',
+    mode: 'light',
     accent: 'jade',
     text: 'neutral',
   };

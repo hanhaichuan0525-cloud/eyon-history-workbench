@@ -70,7 +70,7 @@ const EMPTY_CUSTOM: GenerationSettings = {
   temperature: 0.8,
 };
 
-const CURRENT_EXTENSION_VERSION = '0.11.5';
+const CURRENT_EXTENSION_VERSION = '0.11.6';
 const REMOTE_MANIFEST_URL = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/manifest.json';
 const EXTENSION_ID = 'eyon-history-workbench';
 
@@ -123,7 +123,7 @@ export function mountSettingsWorkbench(
   let updateState: UpdateState = {
     latest: null,
     available: false,
-    message: '当前版本 0.11.5；点击检查更新以读取 GitHub 稳定版。',
+    message: '当前版本 0.11.6；点击检查更新以读取 GitHub 稳定版。',
   };
   let busy = false;
   let status = '';

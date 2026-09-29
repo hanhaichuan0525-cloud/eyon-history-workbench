@@ -1,4 +1,4 @@
-const VERSION = '0.11.5';
+const VERSION = '0.11.6';
 const RUNTIME_URL = new URL('../dist/index.js', import.meta.url).href;
 const WORKBENCH_URL = new URL('../dist/workbench.js', import.meta.url).href;
 const INSTANCE_KEY = '__eyonHistoryWorkbenchExtension';
@@ -107,12 +107,52 @@ function hasRuntimeSurface() {
   return missingRuntimeSurface().length === 0;
 }
 
+function currentChatContextReady() {
+  const host = hostWindow();
+  let chatId = '';
+  try {
+    chatId = typeof host.SillyTavern?.getCurrentChatId === 'function'
+      ? String(host.SillyTavern.getCurrentChatId() ?? '')
+      : '';
+  } catch {
+    chatId = '';
+  }
+
+  let characterName = '';
+  const candidates = [];
+  const append = value => {
+    if (value && typeof value === 'object' && !candidates.includes(value)) candidates.push(value);
+  };
+  try { append(host.TavernHelper); } catch { /* optional host bridge */ }
+  try { append(host.parent?.TavernHelper); } catch { /* cross-origin parent */ }
+  try { append(host.top?.TavernHelper); } catch { /* cross-origin top */ }
+  for (const candidate of candidates) {
+    if (typeof candidate.getCurrentCharacterName !== 'function') continue;
+    try {
+      characterName = String(candidate.getCurrentCharacterName() ?? '').trim();
+    } catch {
+      characterName = '';
+    }
+    if (characterName) break;
+  }
+  if (!characterName && typeof host.getCurrentCharacterName === 'function') {
+    try {
+      characterName = String(host.getCurrentCharacterName() ?? '').trim();
+    } catch {
+      characterName = '';
+    }
+  }
+  // Tavern 首页也可能已经暴露全部宿主依赖，但没有角色聊天。此时只保留
+  // 悬浮球/魔术棒入口，等进入角色卡后再装载运行时，避免误报“载入未完成”。
+  return Boolean(chatId.trim() && characterName);
+}
+
 function missingRuntimeSurface() {
   const host = hostWindow();
   const missing = [];
   if (!host.SillyTavern) missing.push('SillyTavern');
   if (!host.TavernHelper) missing.push('TavernHelper');
-  if (!host.Mvu) missing.push('Mvu');
+  if (!host.Mvu || typeof host.Mvu.getMvuData !== 'function') missing.push('MVU');
   return missing;
 }
 
@@ -317,6 +357,11 @@ async function start() {
   await mountWorkbench();
   ensureEntryControls();
   observeHostUi();
+
+  if (!currentChatContextReady()) {
+    scheduleRuntimeRetry();
+    return;
+  }
 
   const existingFacade = host.EyonHistoryWorkbench;
   if (existingFacade && typeof existingFacade.dispose === 'function') {

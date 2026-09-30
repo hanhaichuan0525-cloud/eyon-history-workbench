@@ -8,14 +8,22 @@ import {
 } from '../runtime/facade.ts';
 import eyonCompanionAtlas from '../../prototype/assets/eyon-companion-prototype-v5.png';
 import {
-  clampCompanionPosition,
+  clampCompanionInViewport,
+  collectHostFrames,
   companionPresentation,
+  companionViewportRect,
+  isWorkbenchVisible,
   type CompanionMotion,
+  type HostFrameLike,
 } from './companionPresentation.ts';
 
 const HOST_ID = 'eyon-history-workbench-host-toast';
-const POSITION_KEY = 'eyon-history-workbench-companion-position-v1';
+/** β1.2 起不再读取该键：悬浮球位置不跨会话持久化（见下方 keepCompanionVisible 注释）。 */
+const LEGACY_POSITION_KEY = 'eyon-history-workbench-companion-position-v1';
 const COMPANION_SIZE = 56;
+const COMPANION_MARGIN = 8;
+/** 触屏上把默认角抬高，避开手机输入栏与底部安全区。 */
+const COMPANION_TOUCH_BOTTOM = 92;
 
 interface CompanionEntry {
   key: string;
@@ -149,26 +157,66 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
     host.dataset.text = detail.text;
   };
 
-  const onResize = (): void => clampCurrentPosition(host, hostWindow);
+  // β1.2：视口变化一律重夹。原来只监听 window.resize 且"没拖过就 return"，
+  // 于是转屏、键盘弹出、地址栏收展、双指缩放都不会把球拉回来。
+  const onViewportChange = (): void => keepCompanionVisible(host, hostWindow);
   eventTarget.addEventListener(WORKBENCH_STATUS_EVENT, onStatus);
   hostWindow?.addEventListener(WORKBENCH_APPEARANCE_EVENT, onAppearance);
-  hostWindow?.addEventListener('resize', onResize);
+  hostWindow?.addEventListener('resize', onViewportChange);
+  hostWindow?.addEventListener('orientationchange', onViewportChange);
+  const visualViewport = hostWindow?.visualViewport ?? null;
+  visualViewport?.addEventListener('resize', onViewportChange);
+  visualViewport?.addEventListener('scroll', onViewportChange);
+
+  // 点击反馈（β1.4）：以前只在"没有任何通知条目"时才弹，于是"点了没反应"时你分不清
+  // 是点击没生效还是工作台没打开。现在只要没有进行中的任务，每次都给一次可见反馈。
+  const showTapFeedback = (
+    key: string,
+    detail: WorkbenchStatusDetail,
+    ttl: number,
+  ): void => {
+    const busy = [...entries.values()].some(entry => entry.detail.phase === 'running');
+    if (busy && !entries.has(key)) return;
+    const entry = createEntry(key, 'system', detail);
+    entry.updatedAt = Date.now();
+    entry.hideTimer = setTimeout(() => removeEntry(entry.key), ttl);
+    entries.set(entry.key, entry);
+    renderActive();
+  };
 
   installCompanionDrag(host, avatar, hostWindow, () => {
-    if (entries.size === 0) {
-      const detail: WorkbenchStatusDetail = {
-        status: 'workbench_open',
-        detail: '卷宗、谱系与时间暗流，都请从这里看。',
-        taskType: 'system',
-        phase: 'info',
-      };
-      const entry = createEntry('system:workbench-open', 'system', detail);
-      entry.updatedAt = Date.now();
-      entry.hideTimer = setTimeout(() => removeEntry(entry.key), 1800);
-      entries.set(entry.key, entry);
-      renderActive();
+    const showOpened = (): void => showTapFeedback('system:workbench-open', {
+      status: 'workbench_open',
+      detail: '卷宗、谱系与时间暗流，都请从这里看。',
+      taskType: 'system',
+      phase: 'info',
+    }, 1800);
+    if (openWorkbenchAcrossFrames(hostWindow)) {
+      showOpened();
+      return;
     }
-    hostWindow?.dispatchEvent(new hostWindow.CustomEvent(WORKBENCH_OPEN_EVENT));
+    showTapFeedback('system:workbench-open', {
+      status: 'workbench_opening',
+      detail: '正在等待界面实际展开……',
+      taskType: 'system',
+      phase: 'info',
+    }, 1800);
+    // β1.3/β1.4：外壳可能挂在别的 frame 层（手机真机病历）。先沿 frame 树找真正持有
+    // `EyonHistoryWorkbenchShell` 的那一层并打开；找不到就把 `:open` 广播给所有相关
+    // 窗口——仍然活着的加载器收到后会重新挂载（缺外壳时它走 load()）。
+    setTimeout(() => {
+      if (disposed) return;
+      if (openWorkbenchAcrossFrames(hostWindow)) {
+        showOpened();
+        return;
+      }
+      showTapFeedback('system:workbench-open-failed', {
+        status: 'workbench_open_failed',
+        detail: '工作台尚未可见：请稍后再点一次；仍无界面时重新载入「伊雍历史工作台」脚本。',
+        taskType: 'system',
+        phase: 'error',
+      }, 6000);
+    }, 900);
   });
 
   stop.addEventListener('click', event => {
@@ -182,7 +230,10 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
 
   // 首次装载只播放一次空闲开场，然后停在微动循环。
   setMotion('idle');
-  restorePosition(host, hostWindow);
+  // β1.2：不再恢复持久化坐标；每次进酒馆都回到默认角（触屏会避开输入栏），
+  // 挂载后立刻按可视视口夹一次，保证初始就在看得见的地方。
+  clearLegacyPosition(hostWindow);
+  keepCompanionVisible(host, hostWindow);
 
   function createEntry(
     key: string,
@@ -318,7 +369,10 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
     disposed = true;
     eventTarget.removeEventListener(WORKBENCH_STATUS_EVENT, onStatus);
     hostWindow?.removeEventListener(WORKBENCH_APPEARANCE_EVENT, onAppearance);
-    hostWindow?.removeEventListener('resize', onResize);
+    hostWindow?.removeEventListener('resize', onViewportChange);
+    hostWindow?.removeEventListener('orientationchange', onViewportChange);
+    visualViewport?.removeEventListener('resize', onViewportChange);
+    visualViewport?.removeEventListener('scroll', onViewportChange);
     currentSheet.removeEventListener('animationend', onIntroEnd as EventListener);
     if (transitionTimer) clearTimeout(transitionTimer);
     for (const entry of entries.values()) clearEntryTimers(entry);
@@ -343,11 +397,15 @@ function installCompanionDrag(
     pointerId: number;
     startX: number;
     startY: number;
+    lastX: number;
+    lastY: number;
     left: number;
     top: number;
     moved: boolean;
   } | null = null;
   let suppressClick = false;
+  /** pointerup 已经激活过一次，随后合成的 click 需要被吞掉，避免重复打开。 */
+  let activatedByPointer = false;
 
   avatar.addEventListener('pointerdown', event => {
     if (event.button !== 0 || drag) return;
@@ -356,6 +414,8 @@ function installCompanionDrag(
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
       left: rect.left,
       top: rect.top,
       moved: false,
@@ -366,85 +426,160 @@ function installCompanionDrag(
 
   avatar.addEventListener('pointermove', event => {
     if (!drag || event.pointerId !== drag.pointerId || !hostWindow) return;
+    drag.lastX = event.clientX;
+    drag.lastY = event.clientY;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
     if (Math.hypot(dx, dy) >= 4) drag.moved = true;
-    const next = clampCompanionPosition(
-      drag.left + dx,
-      drag.top + dy,
-      hostWindow.innerWidth,
-      hostWindow.innerHeight,
-      COMPANION_SIZE,
-    );
-    applyAbsolutePosition(host, next.left, next.top);
-    updateBubbleDirection(host, hostWindow);
+    if (!drag.moved) return;
+    keepCompanionVisible(host, hostWindow, { left: drag.left + dx, top: drag.top + dy }, drag);
+    event.preventDefault();
   });
 
-  const finish = (event: PointerEvent): void => {
+  const finish = (event: PointerEvent, keepPosition: boolean): void => {
     if (!drag || event.pointerId !== drag.pointerId) return;
-    suppressClick = drag.moved;
+    const moved = drag.moved;
+    suppressClick = moved;
     drag = null;
     try {
       avatar.releasePointerCapture(event.pointerId);
     } catch {
       // 宿主中指针已丢失时无需再释放。
     }
-    const rect = host.getBoundingClientRect();
-    savePosition(hostWindow, rect.left, rect.top);
+    // β1.2：拖动结束（含 pointercancel）只做一次视口夹取，**不写任何持久化位置**。
+    // 旧实现在 cancel 时也会 savePosition，把中断手势的中间坐标固化下来。
+    if (keepPosition) keepCompanionVisible(host, hostWindow);
+    // β1.3：触屏上 `preventDefault()`（pointerdown）会抑制浏览器合成的 click，
+    // 于是"点一下没反应"。未发生位移时直接在这里激活；click 只作鼠标/键盘后备。
+    if (!moved) {
+      activatedByPointer = true;
+      onClick();
+    }
   };
-  avatar.addEventListener('pointerup', finish);
-  avatar.addEventListener('pointercancel', finish);
+  avatar.addEventListener('pointerup', event => finish(event, true));
+  avatar.addEventListener('pointercancel', event => finish(event, false));
   avatar.addEventListener('click', () => {
     if (suppressClick) {
       suppressClick = false;
+      return;
+    }
+    if (activatedByPointer) {
+      activatedByPointer = false;
       return;
     }
     onClick();
   });
 }
 
-function restorePosition(host: HTMLElement, hostWindow: Window | null): void {
-  if (!hostWindow) return;
-  try {
-    const raw = hostWindow.localStorage.getItem(POSITION_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw) as { left?: unknown; top?: unknown };
-    if (typeof parsed.left !== 'number' || typeof parsed.top !== 'number') return;
-    const next = clampCompanionPosition(
-      parsed.left,
-      parsed.top,
-      hostWindow.innerWidth,
-      hostWindow.innerHeight,
-      COMPANION_SIZE,
-    );
-    applyAbsolutePosition(host, next.left, next.top);
-    updateBubbleDirection(host, hostWindow);
-  } catch {
-    // localStorage 不可用时保持默认右下角。
+/**
+ * 沿 frame 树找到持有工作台外壳的那一层并打开它（β1.3 / β1.4）。
+ *
+ * 悬浮球挂在最顶层窗口，而脚本加载器历史上只上溯一层；手机上两者可能不是同一个
+ * 窗口，于是 `:open` 事件无人接收、工作台打不开。这里改为：
+ * ① `collectHostFrames` 收集自己 + 祖先 + 后代 frame；
+ * ② 找到第一个真的持有 `EyonHistoryWorkbenchShell` 的窗口：先向它派发 `:open`
+ *    （加载器据此显示 overlay），再直接调一次 `shell.open()` 兜底；实际可见才返回 true；
+ * ③ 一个外壳都找不到：把 `:open` **广播**给所有相关窗口——仍然活着的加载器收到后
+ *    会重新挂载（缺外壳时它走 load()），返回 false 让调用方稍后复查/给提示。
+ */
+function openWorkbenchAcrossFrames(hostWindow: Window | null): boolean {
+  const frames = collectHostFrames(hostWindow as unknown as HostFrameLike | null);
+  const hasShell = (frame: HostFrameLike): boolean => {
+    try {
+      return Boolean((frame as { EyonHistoryWorkbenchShell?: unknown }).EyonHistoryWorkbenchShell);
+    } catch {
+      return false;
+    }
+  };
+  const dispatchOpen = (frame: HostFrameLike): void => {
+    const candidate = frame as unknown as {
+      CustomEvent?: new (type: string) => Event;
+      dispatchEvent?: (event: Event) => boolean;
+    };
+    try {
+      const CustomEventCtor = candidate.CustomEvent;
+      if (typeof CustomEventCtor === 'function' && typeof candidate.dispatchEvent === 'function') {
+        candidate.dispatchEvent(new CustomEventCtor(WORKBENCH_OPEN_EVENT));
+      }
+    } catch {
+      // 跨域窗口无法派发：跳过。
+    }
+  };
+
+  const owner = frames.find(hasShell);
+  if (owner) {
+    dispatchOpen(owner);
+    try {
+      (owner as unknown as { EyonHistoryWorkbenchShell?: { open?: () => void } })
+        .EyonHistoryWorkbenchShell?.open?.();
+    } catch {
+      // 外壳自身抛错时保持静默：调用方会复查并给出提示。
+    }
+    return isWorkbenchVisible(owner as unknown as Window);
   }
+
+  // 一个外壳都没有：广播（可能是加载器活着但外壳已被销毁），但不声称成功。
+  for (const frame of frames) dispatchOpen(frame);
+  return false;
 }
 
-function savePosition(hostWindow: Window | null, left: number, top: number): void {
-  try {
-    hostWindow?.localStorage.setItem(POSITION_KEY, JSON.stringify({ left, top }));
-  } catch {
-    // 跨域宿主或隐私模式拒绝存储时不影响当前拖动。
-  }
-}
-
-function clampCurrentPosition(host: HTMLElement, hostWindow: Window | null): void {
-  if (!hostWindow || !host.style.left) return;
+/**
+ * 把悬浮球夹回**可视视口**内（β1.2）。
+ *
+ * 真机病历：手机上球跑出界面且拖不动。三处叠加——①夹取用 `innerWidth/innerHeight`
+ * （布局视口），手机可视视口更小；②只在 `window.resize` 重夹、且"没拖过就 return"，
+ * 转屏/键盘/地址栏变化都不重算；③把坐标持久化到 localStorage 并每次挂载恢复，
+ * 坏坐标被永久固化。现在对齐真王核心：始终用 `visualViewport`、数值非法就不动、
+ * margin 自适应、拖动中遇到视口修正时以最后一次指针采样重设拖动原点（球不跳），
+ * 并且**不再持久化**——每次进酒馆都回到默认角。
+ */
+function keepCompanionVisible(
+  host: HTMLElement,
+  hostWindow: Window | null,
+  position?: { left: number; top: number },
+  drag?: {
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    left: number;
+    top: number;
+  } | null,
+): void {
+  const viewport = companionViewportRect(hostWindow);
+  if (!viewport) return;
+  if (position && !Number.isFinite(position.left + position.top)) return;
   const rect = host.getBoundingClientRect();
-  const next = clampCompanionPosition(
-    rect.left,
-    rect.top,
-    hostWindow.innerWidth,
-    hostWindow.innerHeight,
+  // 元素尚未布局（或已被隐藏）时 rect 全 0：此时写坐标会把球钉到左上角，宁可不写。
+  if (!position && !(rect.width > 0 && rect.height > 0)) return;
+  const next = clampCompanionInViewport(
+    position?.left ?? rect.left,
+    position?.top ?? rect.top,
+    viewport,
     COMPANION_SIZE,
+    COMPANION_MARGIN,
   );
+  // 未指定目标位置、且本来就在视口内时什么都不写：默认态继续由 CSS 的
+  // right/bottom 锚定（它能自动跟随视口），一旦写成像素就失去这个好处。
+  if (!position && next.left === rect.left && next.top === rect.top) return;
   applyAbsolutePosition(host, next.left, next.top);
+  if (drag) {
+    drag.left = next.left;
+    drag.top = next.top;
+    drag.startX = drag.lastX;
+    drag.startY = drag.lastY;
+  }
   updateBubbleDirection(host, hostWindow);
-  savePosition(hostWindow, next.left, next.top);
+}
+
+function clearLegacyPosition(hostWindow: Window | null): void {
+  // β1.2：位置不再跨会话持久化。顺手清掉旧版本可能留下的坏坐标，
+  // 免得下一版代码（或排查时的控制台）再读到它。
+  try {
+    hostWindow?.localStorage.removeItem(LEGACY_POSITION_KEY);
+  } catch {
+    // 隐私模式/跨域宿主拒绝存储：忽略。
+  }
 }
 
 function applyAbsolutePosition(host: HTMLElement, left: number, top: number): void {
@@ -455,17 +590,30 @@ function applyAbsolutePosition(host: HTMLElement, left: number, top: number): vo
 }
 
 function updateBubbleDirection(host: HTMLElement, hostWindow: Window | null): void {
-  if (!hostWindow) return;
+  const viewport = companionViewportRect(hostWindow);
+  if (!viewport) return;
   const rect = host.getBoundingClientRect();
-  host.dataset.side = rect.left < hostWindow.innerWidth / 2 ? 'right' : 'left';
-  host.dataset.vertical = rect.top < 150 ? 'down' : 'up';
+  host.dataset.side = rect.left - viewport.left < viewport.width / 2 ? 'right' : 'left';
+  host.dataset.vertical = rect.top - viewport.top < 150 ? 'down' : 'up';
 }
 
 function hardenHost(host: HTMLElement): void {
+  // 触屏用更高的默认角，避开手机输入栏与底部安全区；桌面保持贴角。
+  const coarsePointer = (() => {
+    try {
+      return typeof host.ownerDocument?.defaultView?.matchMedia === 'function'
+        && host.ownerDocument.defaultView.matchMedia('(pointer: coarse)').matches;
+    } catch {
+      return false;
+    }
+  })();
+  const bottom = coarsePointer
+    ? `calc(${COMPANION_TOUCH_BOTTOM}px + env(safe-area-inset-bottom, 0px))`
+    : '18px';
   const styles: Record<string, string> = {
     position: 'fixed',
     right: '18px',
-    bottom: '18px',
+    bottom,
     width: `${COMPANION_SIZE}px`,
     height: `${COMPANION_SIZE}px`,
     margin: '0',
@@ -474,6 +622,8 @@ function hardenHost(host: HTMLElement): void {
     background: 'transparent',
     'z-index': '2147483646',
     'pointer-events': 'auto',
+    // 宿主元素也要声明：sprite 比宿主盒大 4~8px，落在边缘的触摸否则会被当成滚动手势。
+    'touch-action': 'none',
     'writing-mode': 'horizontal-tb',
     direction: 'ltr',
   };

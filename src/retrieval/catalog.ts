@@ -340,7 +340,9 @@ function extractStructuredSeeds(snapshot: SourceSnapshot): {
     if (name) {
       const type = firstString(value, ['kind', 'type', '类型', 'category']);
       const aliases = stringValues(value.aliases ?? value['别名'] ?? value['又称']);
-      const identity = firstString(value, ['identity', '身份', 'role', '职务', 'profession']);
+      const identity = firstString(value, ['identity', '身份', 'role', '职务', 'profession'])
+        || stringValues(value.identities).join('、')
+        || stringValues(value.professions).join('、');
       const temporal = firstString(value, ['era', 'time', '时期', '纪元']);
       const location = firstString(value, ['location', '地点', '所在地', 'activeAt']);
       // 谱系节点本身已经保存结构化生卒。它与世界书/MVU 是同一人物时间事实的
@@ -579,7 +581,46 @@ function mergeSeeds(seeds: EntitySeed[]): KnowledgeEntity[] {
     if (seed.span && !entity.spans.some(span => sameSpan(span, seed.span!))) entity.spans.push(seed.span);
     merged.set(key, entity);
   }
-  return [...merged.values()].sort((a, b) => a.entityId.localeCompare(b.entityId));
+  // 无日期的习惯/补充资料不是一个“无时代分身”。仅当同名人物只有一个
+  // 有日期的身份锚、且明确生卒不冲突时，将无日期片段补到该锚；跨时代
+  // 同名者仍保留歧义，不凭姓名强行合并。
+  const entities = [...merged.values()];
+  const byName = new Map<string, KnowledgeEntity[]>();
+  for (const entity of entities) {
+    const group = byName.get(entity.normalizedName) ?? [];
+    group.push(entity);
+    byName.set(entity.normalizedName, group);
+  }
+  const absorbed = new Set<string>();
+  for (const group of byName.values()) {
+    const dated = group.filter(entity => entity.temporalScopes.length && entity.kinds.includes('person'));
+    const undated = group.find(entity => !entity.temporalScopes.length
+      && entity.kinds.every(kind => kind === 'person' || kind === 'unknown'));
+    if (dated.length !== 1 || !undated) continue;
+    const anchor = dated[0]!;
+    const conflict = (['born', 'died'] as const).some(key => {
+      const a = anchor.lifespan?.[key];
+      const b = undated.lifespan?.[key];
+      return a && b && a.year != null && b.year != null
+        && (a.era !== b.era || a.year !== b.year);
+    });
+    if (conflict) continue;
+    for (const key of ['aliases', 'kinds', 'tags', 'locationScopes', 'identities', 'sourceSnapshotIds'] as const) {
+      for (const item of undated[key]) uniquePush(anchor[key] as string[], item);
+    }
+    for (const span of undated.spans) {
+      if (!anchor.spans.some(existing => sameSpan(existing, span))) anchor.spans.push(span);
+    }
+    if (undated.lifespan && (!anchor.lifespan
+      || lifespanInfoScore(undated.lifespan) > lifespanInfoScore(anchor.lifespan))) {
+      anchor.lifespan = undated.lifespan;
+    }
+    absorbed.add(undated.entityId);
+  }
+  return entities.filter(entity => !absorbed.has(entity.entityId)).map(entity => {
+    if (entity.kinds.includes('person')) entity.kinds = entity.kinds.filter(kind => kind !== 'unknown');
+    return entity;
+  }).sort((a, b) => a.entityId.localeCompare(b.entityId));
 }
 
 /** lifespan 信息完整度评分：显式生卒 > 只有出生 > 只有年龄 > 无。 */

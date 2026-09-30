@@ -46,7 +46,7 @@ test('墟境大纲后自动扩写全部候选，界面只为失败项保留手�
   assert.match(css, /\.timeline-event\.selected::after[\s\S]*background: var\(--teal\)/u);
   assert.match(
     css,
-    /\.chronology-viewport\s*\{[\s\S]*?height:\s*auto;[\s\S]*?overflow-y:\s*visible;/u,
+    /\.chronology-viewport\s*\{[\s\S]*?height:\s*auto;[\s\S]*?overflow-y:\s*hidden;/u,
     '编辑部节点条必须清除旧时间轴的固定视口高度',
   );
   assert.match(

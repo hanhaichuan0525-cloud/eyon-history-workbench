@@ -1,4 +1,4 @@
-const VERSION = '0.12.0';
+const VERSION = '0.13.3';
 const RUNTIME_URL = new URL('../dist/index.js', import.meta.url).href;
 const WORKBENCH_URL = new URL('../dist/workbench.js', import.meta.url).href;
 const INSTANCE_KEY = '__eyonHistoryWorkbenchExtension';
@@ -230,8 +230,10 @@ function createOverlay() {
       position: fixed;
       inset: 0;
       z-index: 2147483000;
-      width: 100%;
-      height: 100%;
+      width: 100vw;
+      width: 100dvw;
+      height: 100vh;
+      height: 100dvh;
       overflow: hidden;
       color-scheme: dark;
       background: #1a1720;

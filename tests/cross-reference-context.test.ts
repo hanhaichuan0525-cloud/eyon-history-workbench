@@ -166,6 +166,47 @@ test('墟境生成同时读取谱系与传记，但保持为不同来源类型',
   assert.ok(fullIndex > digestIndex, '传记原文应位于连续性摘要之后');
 });
 
+const familySource = () => {
+  const person = (id: string, name: string, aliases: string[], relationToFocus: string, year: number) => ({
+    id, name, aliases, relationToFocus,
+    birth: { status: 'known', era: '复兴纪元', year, label: `复兴纪元${year}年` },
+    death: { status: 'alive', era: '', year: null, label: '在世' },
+    identities: ['翼民工匠'], professions: ['抄工'], summary: '长期生活于梵尼亚。',
+  });
+  return { sourceId: 'genealogy:ling', title: '玲山宗族谱系（当前局部）', content: JSON.stringify({
+    schema: 'eyon.genealogy.current.v1',
+    nodes: [person('ling', '玲山·哈姆斯沃思', ['玲山'], '本人', 461), person('father', '瓦伦·哈姆斯沃思', ['瓦伦'], '父亲', 435)],
+    edges: [{ from: 'father', to: 'ling', relationType: 'parent', label: '父女' }],
+  }) };
+};
+
+test('正式墟境上下文控制谱系演员来源，指定父亲被解析召回且名册与资格一致', async () => {
+  const provider: RuntimeContextSourceProvider = { ...sources,
+    async getGenealogySources() { return [familySource()]; },
+    async getCharacterSources() { return [{ sourceId: 'mvu-character:ling', title: '玲山·哈姆斯沃思', content: JSON.stringify({ 姓名: '玲山·哈姆斯沃思', 身份: '报社社长', 年龄: '27岁' }) }]; },
+    async getBiographySources() { return []; },
+  };
+  const observer = new RuntimeShadowRetrievalObserver();
+  const assembler = new TavernRuinContextAssembler(new ContextRuntime(), provider, undefined, observer);
+  const request = {
+    ...scope, directive: '复兴纪元 奥古斯提姆帝国 探讨玲山父亲的发家史',
+    castRequirementQuery: '探讨玲山父亲的发家史', territorialReferences: ['奥古斯提姆帝国'],
+    actorSelection: { autoGenealogy: false, location: '奥古斯提姆帝国', supplementaryDirection: '探讨玲山父亲的发家史', selectedCharacters: [] },
+  };
+  const context = await assembler.assemble(request);
+  assert.deepEqual(context.actorPolicy?.requestedSubjects, ['瓦伦·哈姆斯沃思']);
+  assert.ok(context.genealogyRefs.some(source => source.title.includes('瓦伦')));
+  assert.ok(!context.genealogyRefs.some(source => source.sourceId === 'genealogy:ling'));
+  const manifest = context.evidenceBundle.castManifest!;
+  const father = manifest.entries.find(entry => entry.identity.canonicalName === '瓦伦·哈姆斯沃思');
+  assert.equal(father?.disposition, 'required');
+  assert.ok(manifest.entries.filter(entry => entry.identity.canonicalName === '玲山·哈姆斯沃思').every(entry => entry.disposition !== 'required'));
+  assert.equal(context.evidenceBundle.personTimeline?.find(person => person.name === '瓦伦·哈姆斯沃思')?.lifespan?.born?.year, 435);
+  const ordinary = await assembler.assemble({ ...request, requestId: 'without-genealogy', directive: '复兴纪元 奥古斯提姆帝国工坊史', castRequirementQuery: '奥古斯提姆帝国工坊史', actorSelection: { ...request.actorSelection, supplementaryDirection: '' } });
+  assert.deepEqual(ordinary.genealogyRefs, []);
+  assert.deepEqual(ordinary.actorPolicy?.genealogyActors, []);
+});
+
 test('传记上下文收紧：聊天上限 6 条×2000 字，旧传记注入摘要而非全文', async () => {
   const longChats: RuntimeChatMessage[] = Array.from({ length: 12 }, (_, index) => ({
     message_id: index + 1,

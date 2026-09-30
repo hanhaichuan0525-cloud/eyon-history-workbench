@@ -24,6 +24,8 @@ import type { BiographyRepository } from '../storage/biographies.ts';
 import { buildContinuityViewSafely } from './continuityAnchors.ts';
 import type { ContinuityView } from '../core/continuityAnchors.ts';
 import { namespaceKey, type WorkbenchNamespace } from '../core/namespace.ts';
+import type { RuinGenerationInput } from '../schemas/ruin.ts';
+import { applyRuinActorPolicy, scopeRuinGenealogy } from './ruinActorPolicy.ts';
 
 const RECENT_MESSAGE_LIMIT = 8;
 const CURRENT_SCENE_MESSAGE_LIMIT = 12;
@@ -76,12 +78,13 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
     castRequirementQuery?: string;
     eraAnchor?: string;
     customEra?: boolean;
+    actorSelection?: Pick<RuinGenerationInput, 'autoGenealogy' | 'location' | 'selectedCharacters' | 'supplementaryDirection'>;
   }): Promise<RuinContextBundle> {
     const [
       currentWorld,
       worldbookCorpus,
       characters,
-      genealogies,
+      allGenealogies,
       biographies,
       butterflies,
     ] = await Promise.all([
@@ -93,6 +96,15 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       this.sources.getButterflySources(),
     ]);
     const worldbook = worldbookCorpus.sources;
+    const scopedGenealogy = input.actorSelection
+      ? scopeRuinGenealogy(allGenealogies, input.actorSelection)
+      : null;
+    if (scopedGenealogy?.policy.unresolvedRelatives.length) {
+      throw new Error(`无法唯一确认亲属：${scopedGenealogy.policy.unresolvedRelatives.join('、')}。请在补充方向填写姓名，或明确选择谱系人物。`);
+    }
+    const genealogies = scopedGenealogy?.sources ?? allGenealogies;
+    const actorNames = scopedGenealogy?.policy.requestedSubjects ?? [];
+    const retrievalDirective = [input.directive, ...actorNames].join('\n');
     const eraAnchor = input.eraAnchor?.normalize('NFKC').trim() ?? '';
     const exactEraSources = eraAnchor
       ? worldbook.filter(source => worldbookSourceMentionsExactEra(source, eraAnchor))
@@ -119,7 +131,7 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       80,
     );
     const retrievalQuery = [
-      input.directive,
+      retrievalDirective,
       currentWorld.time,
       currentWorld.location,
       ...recent.slice(-8).flatMap(item => [item.title, item.content.slice(0, 1800)]),
@@ -180,7 +192,7 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       retrieval: this.retrievalShadow,
       requestId: input.requestId,
       taskType: 'ruin',
-      query: input.directive,
+      query: retrievalDirective,
       contextQuery: [
         currentWorld.time,
         currentWorld.location,
@@ -206,7 +218,7 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       worldbookCorpusReceipt: worldbookCorpus.receipt,
       territorialReferences: input.territorialReferences,
       focusEntityNames: input.focusCharacterNames,
-      castRequirementQuery: input.castRequirementQuery,
+      castRequirementQuery: [input.castRequirementQuery ?? '', ...actorNames].join('\n'),
       baselineWorldTime: this.ensureBaselineTime?.(input.namespace, currentWorld.time) ?? null,
       // 工作台「引用传记」：显式选中的传记即使检索未命中也强制入选
       // （与全世界书/正文同池同门，sourceType/句柄/分组不变；时间资格门仍生效）。
@@ -216,6 +228,19 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       ],
       canonBranch,
     });
+    if (scopedGenealogy) {
+      active.bundle.castManifest = applyRuinActorPolicy(active.bundle.castManifest, scopedGenealogy.policy, input.actorSelection!.supplementaryDirection);
+      const dispositions = new Map(active.bundle.castManifest?.entries.map(entry => [entry.entityId, entry]));
+      for (const passage of active.bundle.qualifiedEvidence?.passages ?? []) {
+        passage.entityRoles = passage.entityRoles.map(role => {
+          const entry = dispositions.get(role.entityId);
+          return entry ? { ...role, disposition: entry.disposition, role: entry.role } : role;
+        });
+        if (passage.entityRoles.length && passage.entityRoles.every(role => role.role === 'context')) {
+          passage.allowedUses = passage.allowedUses.filter(use => use !== 'actor');
+        }
+      }
+    }
     const sourceIndex = active.sourceIndex;
     if (
       input.customEra
@@ -266,6 +291,7 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       ...(continuityView ? { continuityView } : {}),
       // 完整人物卡（原始全文，不参与检索；上限放宽——中心人物整条注入用）。
       characterCards: mapSources(characters, 'mvu', 95, CHARACTER_CARD_LIMIT),
+      ...(scopedGenealogy ? { actorPolicy: scopedGenealogy.policy } : {}),
       warnings,
       sourceHash: await hashSources(
         input.directive,

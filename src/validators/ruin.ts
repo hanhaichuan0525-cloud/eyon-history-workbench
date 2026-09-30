@@ -26,6 +26,7 @@ import {
   taskCitationRegistry,
 } from '../retrieval/citations.ts';
 import type { TaskCitationRegistry } from '../retrieval/contracts.ts';
+import { blockedRuinActor } from '../runtime/ruinActorPolicy.ts';
 import {
   RuinCandidatesErrorSchema,
   RuinCandidatesSchema,
@@ -97,6 +98,7 @@ export function parseAndNormalizeRuinOutlines(
     applySharedCast(candidate, sharedCast, expected.input, expected.context);
   }
   validateManifestCast(candidates, expected.context, expected.input);
+  for (const candidate of candidates) validateActorPolicy(candidate, expected.context);
   validateCanonInterpretations(candidates, expected.context);
   makeCandidateTitlesDistinct(candidates);
   // 节点 ID 唯一性（大纲端早拦，报错可操作化 + repair 结构指引闭环，internal.77 三轮覆盖）。
@@ -1158,7 +1160,7 @@ function localSelectedCharacterUsage(
 }
 
 /**
- * 大纲候选的 shift 归一化:from/to 由模型输出(缺失/无效时回退 periodType),
+ * 大纲候选的 shift 归一化：缺失或无效不再伪造为主导时期，
  * from === to 视为退化(起点终点同时期无转变可言),抛错走大纲 repair。
  */
 function normalizeCandidateShift(
@@ -1167,23 +1169,32 @@ function normalizeCandidateShift(
   fallbackExplanation: string,
 ): { from: RuinPeriodType; to: RuinPeriodType; explanation: string } {
   const source = readRecord(value);
+  const from = periodValue(source.from);
+  const to = periodValue(source.to);
+  if (!from || !to) {
+    throw new RuinValidationError(
+      `Ruin candidate shift is missing or invalid: from=${JSON.stringify(source.from)}, to=${JSON.stringify(source.to)}. `
+      + `请填写 stable/transition/turbulent；主导时期 ${periodType} 可作为任一端点，但两个端点必须不同。`,
+      'SHIFT_INVALID',
+    );
+  }
   const shift = {
-    from: periodValue(source.from, periodType),
-    to: periodValue(source.to, periodType),
+    from,
+    to,
     explanation: textValue(source.explanation) || fallbackExplanation,
   };
   if (shift.from === shift.to) {
     throw new RuinValidationError(
       `Ruin candidate shift is degenerate: from and to are both ${shift.from}. `
       + 'shift.from 必须是该候选起点时期的稳定期/过渡期/动荡期，shift.to 是终点时期的时期状态，'
-      + '二者必须不同（如 稳定期→动荡期、过渡期→稳定期）；禁止 from 等于 to 或与主导时期 periodType 同值。',
+      + '二者必须不同（如 稳定期→动荡期、过渡期→稳定期）；任一端点可以与主导时期 periodType 同值，不得为了过校验虚构转向。',
       'SHIFT_SAME_PERIOD',
     );
   }
   return shift;
 }
 
-function periodValue(value: unknown, fallback: RuinPeriodType): RuinPeriodType {
+function periodValue(value: unknown): RuinPeriodType | undefined {
   const map: Record<string, RuinPeriodType> = {
     stable: 'stable',
     transition: 'transition',
@@ -1191,8 +1202,11 @@ function periodValue(value: unknown, fallback: RuinPeriodType): RuinPeriodType {
     稳定期: 'stable',
     过渡期: 'transition',
     动荡期: 'turbulent',
+    稳定: 'stable',
+    过渡: 'transition',
+    动荡: 'turbulent',
   };
-  return map[textValue(value).toLowerCase()] ?? fallback;
+  return map[textValue(value).normalize('NFKC').toLowerCase().replace(/\s+period$/u, '')];
 }
 
 function normalizedSpan(
@@ -1879,6 +1893,7 @@ function validateRuinCandidate(
     citationRegistry?: TaskCitationRegistry;
   },
 ): void {
+  validateActorPolicy(candidate, expected.context);
   if (
     candidate.candidateKey !== expected.material.candidateKey
     || candidate.periodType !== expected.material.periodType
@@ -1944,6 +1959,15 @@ function validateRuinCandidate(
       throw new RuinValidationError(`Unknown source reference: ${sourceRef}`, 'SOURCE_NOT_FOUND');
     }
   }
+}
+
+function validateActorPolicy(candidate: RuinCandidate, context: RuinContextBundle): void {
+  const blocked = [...candidate.cast.map(member => member.name), ...candidate.nodes.flatMap(node => node.participants)]
+    .find(name => blockedRuinActor(context.actorPolicy, name));
+  if (blocked) throw new RuinValidationError(
+    `谱系人物「${blocked}」未获本次出场许可：仅可引用亲缘或资料，不得作为现场演员。保留当前方向，改用本地人物；要让其出场请手选或明确指定。`,
+    'GENEALOGY_ACTOR_NOT_REQUESTED',
+  );
 }
 
 function temporalClaimText(candidate: RuinCandidate): string {

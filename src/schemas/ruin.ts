@@ -454,6 +454,8 @@ export const RuinGenerationInputSchema = z.strictObject({
   location: z.string().trim().min(1),
   supplementaryDirection: z.string(),
   selectedCharacters: z.array(RuinSelectedCharacterSchema),
+  /** 旧草稿缺省时不自动拉入亲属；手选和明确方向不受开关限制。 */
+  autoGenealogy: z.boolean().optional(),
   wave: z.strictObject({
     level: RuinWaveLevelSchema,
     candidateCount: z.number().int().min(3).max(5),

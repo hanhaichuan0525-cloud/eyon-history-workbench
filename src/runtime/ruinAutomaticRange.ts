@@ -64,7 +64,11 @@ export function resolveAutomaticRuinRange(
   // 注意：人物下限只抬高不钳制——出生年可以晚于 capYear（如伊莲娜 472、出生仅数
   // 年的婴儿），自动窗口必须能够覆盖到他们。
   const selectedPersons = (context.evidenceBundle.personTimeline ?? [])
-    .filter(entry => input.selectedCharacters.some(character =>
+    .filter(entry => context.actorPolicy
+      ? context.actorPolicy.requestedSubjects.some(name => personNameMatches(entry.name, name))
+        || input.selectedCharacters.some(character => personNameMatches(entry.name, character.name)
+          && !context.actorPolicy!.referenceNames.some(name => personNameMatches(entry.name, name)))
+      : input.selectedCharacters.some(character =>
       personNameMatches(entry.name, character.name))
       || mentionTexts.some(text => personMentionedIn(text, entry.name)));
   const feasible = deriveFeasibleWindow(selectedPersons, context.currentWorld.time);

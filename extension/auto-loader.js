@@ -11,7 +11,24 @@
   const LEGACY_EXTENSION_KEY = '__eyonHistoryWorkbenchExtension';
 
   const scriptWindow = window;
-  const hostWindow = window.parent && window.parent !== window ? window.parent : window;
+  // β1.3：宿主窗口一路上溯到最顶层可访问窗口——与悬浮球（运行时 resolveHostDocument）
+  // 同一口径。旧实现只取 window.parent：手机上脚本 iframe 嵌得更深时，球挂在顶层、
+  // 工作台外壳与 open 事件监听器挂在上一层，于是"点悬浮球打不开工作台"。
+  const resolveHostWindow = () => {
+    let current = scriptWindow;
+    for (let depth = 0; depth < 8; depth += 1) {
+      try {
+        const parent = current.parent;
+        if (!parent || parent === current) break;
+        if (!parent.document || !parent.document.body) break;
+        current = parent;
+      } catch {
+        break;
+      }
+    }
+    return current;
+  };
+  const hostWindow = resolveHostWindow();
   const hostDocument = hostWindow.document || document;
   const state = {
     disposed: false,
@@ -281,8 +298,10 @@
         position: fixed;
         inset: 0;
         z-index: 2147483000;
-        width: 100%;
-        height: 100%;
+        width: 100vw;
+        width: 100dvw;
+        height: 100vh;
+        height: 100dvh;
         overflow: hidden;
         color-scheme: dark;
         background: #1a1720;
@@ -360,9 +379,36 @@
     if (hostWindow.EyonHistoryWorkbenchShell && typeof hostWindow.EyonHistoryWorkbenchShell.dispose === 'function') {
       try { hostWindow.EyonHistoryWorkbenchShell.dispose(); } catch {}
     }
+    // β1.4：必须清掉外壳全局。旧实现留着它，于是 openWorkbench() 看到"外壳还在"
+    // 就直接 open() 一个已被 dispose 的空壳，永远走不到 void load() 重载分支。
+    if (hostWindow.EyonHistoryWorkbenchShell) {
+      try { delete hostWindow.EyonHistoryWorkbenchShell; } catch {}
+    }
     if (hostWindow[INSTANCE_KEY] === state) delete hostWindow[INSTANCE_KEY];
   };
 
+  /**
+   * β1.4 真机病历（仅移动端）：手机切后台/锁屏触发 pagehide，加载器把 overlay 与监听器
+   * 全拆掉，而悬浮球属于运行时、不会跟着死——球还在、能拖，点上去毫无反应；bfcache
+   * 恢复时脚本不会重新执行，也不会自愈。修法：
+   *   ①只有真正离开页面（persisted === false）才销毁；
+   *   ②从 bfcache 回来（pageshow persisted）时自检，缺 overlay 就按已验证缓存重装（幂等）。
+   */
+  const onPageHide = (event) => {
+    if (event && event.persisted) return;
+    state.dispose();
+  };
+  const ensureMounted = () => {
+    if (state.disposed) return;
+    if (hostWindow[INSTANCE_KEY] && hostWindow[INSTANCE_KEY] !== state) return;
+    if (!state.overlay) void load().catch(() => {});
+  };
+  const onPageShow = (event) => {
+    if (event && event.persisted) ensureMounted();
+  };
+
   hostWindow.addEventListener('eyon-history-workbench:open', onOpenRequest);
+  hostWindow.addEventListener('pagehide', onPageHide);
+  hostWindow.addEventListener('pageshow', onPageShow);
   void load().catch(() => {});
 })();

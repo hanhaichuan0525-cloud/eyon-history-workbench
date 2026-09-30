@@ -1,3 +1,4 @@
+import { isWorkbenchGuidanceError } from '../core/workbenchGuidance.ts';
 import { resolveHostGlobal } from './tavernRuntimeAdapter.ts';
 
 export interface WorkbenchGenerationLifecycle {
@@ -38,7 +39,18 @@ export function registerBiographyLifecycle(
   const failClosed = async (
     error: unknown,
     abort?: (immediately: boolean) => void,
-  ): Promise<never> => {
+  ): Promise<void> => {
+    // β1.1：引导类问题（玩家话说得不全／该去工作台做）不再停生成。
+    // 真机病历：聊天里只输入「墟境探索」→ 工作台草稿为空 → getInput 抛错 →
+    // 这里 stopGeneration() 把整楼掐掉，玩家只看到自己那条消息。
+    // 现在这类问题放行正文，由角色卡把玩家引到工作台；只有真故障才 fail-closed。
+    if (isWorkbenchGuidanceError(error)) {
+      console.warn(
+        '[Eyon History Workbench] guidance required; generation continues',
+        error,
+      );
+      return;
+    }
     abort?.(true);
     stopHostGeneration(globalObject);
     await lifecycle.onChatChanged();

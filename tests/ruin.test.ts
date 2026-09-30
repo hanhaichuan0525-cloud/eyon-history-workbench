@@ -10,7 +10,7 @@ import {
   type EvidenceBundle,
   type TemporalEligibilityLedger,
 } from '../src/retrieval/contracts.ts';
-import { parseTextCommand } from '../src/core/commands.ts';
+import { createButtonCommand, parseTextCommand } from '../src/core/commands.ts';
 import {
   isValidMvuLocation,
   resolveRuinEntryLocation,
@@ -92,6 +92,7 @@ import {
   formatRuinSpanLabel,
 } from '../src/renderers/ruinTimeLabel.ts';
 import { insertRuinTrace } from '../src/workflows/messageAssembly.ts';
+import { scopeRuinGenealogy } from '../src/runtime/ruinActorPolicy.ts';
 
 const namespace = {
   characterKey: '命定之诗',
@@ -1697,11 +1698,11 @@ test('模型把 label 写成标题时被丢弃,由脚本确定性渲染为时间
   }
 });
 
-test('大纲 shift from==to(与主导时期同值)报 SHIFT_SAME_PERIOD,模型写不同值则通过', () => {
+test('大纲 shift from==to 报 SHIFT_SAME_PERIOD；任一端点可等于主导时期', () => {
   const input = makeInput();
   const context = makeContext();
 
-  // 模型没写 shift(或写同值):脚本回退 periodType → from==to → 拒绝
+  // 两端同值必须重写真实转向；不能靠篡改骰定主导时期过检。
   const same = makeCandidates();
   same.candidates.forEach(candidate => {
     (candidate as { shift?: unknown }).shift = {
@@ -1724,7 +1725,7 @@ test('大纲 shift from==to(与主导时期同值)报 SHIFT_SAME_PERIOD,模型�
   const distinct = makeCandidates();
   distinct.candidates.forEach(candidate => {
     (candidate as { shift?: unknown }).shift = {
-      from: 'transition',
+      from: candidate.periodType,
       to: 'turbulent',
       explanation: '动荡取代过渡',
     };
@@ -1737,6 +1738,47 @@ test('大纲 shift from==to(与主导时期同值)报 SHIFT_SAME_PERIOD,模型�
   });
   assert.equal(parsed.candidates[0]?.shift.from, 'transition');
   assert.equal(parsed.candidates[0]?.shift.to, 'turbulent');
+});
+
+test('缺失转向不能被主导时期默默填成两端同值，提示词不再禁止合法的主导期端点', () => {
+  const input = makeInput();
+  const context = makeContext();
+  const candidates = makeCandidates();
+  (candidates.candidates[0] as { shift?: unknown }).shift = {};
+  assert.throws(() => parseAndNormalizeRuinOutlines(JSON.stringify(candidates), { requestId, directive: '墟境探索', input, context }),
+    (error: unknown) => error instanceof RuinValidationError && error.code === 'SHIFT_INVALID');
+  const prompt = buildRuinOutlineBatchApiPrompt({ requestId, directive: '墟境探索', generationInput: input, context, rules: { generationContract: '' } });
+  assert.doesNotMatch(prompt, /Never make from equal to to or equal to periodType/u);
+  assert.match(prompt, /Either endpoint may equal/u);
+});
+
+test('新出场边界在提纲和扩写两端阻止未指定谱系人物偷渡进演员表', () => {
+  const input = makeInput();
+  const context = makeContext();
+  const candidates = makeCandidates();
+  const name = candidates.candidates[0]!.cast[0]!.name;
+  context.actorPolicy = scopeRuinGenealogy([{ sourceId: 'genealogy:blocked', title: '族谱', content: JSON.stringify({
+    schema: 'eyon.genealogy.current.v1', nodes: [{ id: 'father', name, aliases: [], relationToFocus: '父亲', summary: '生活于梵尼亚。' }], edges: [],
+  }) }], input).policy;
+  assert.throws(() => parseAndNormalizeRuinOutlines(JSON.stringify(candidates), { requestId, directive: '墟境探索', input, context }),
+    (error: unknown) => error instanceof RuinValidationError && error.code === 'GENEALOGY_ACTOR_NOT_REQUESTED');
+  assert.throws(() => parseAndValidateRuinCandidates(JSON.stringify(candidates), { requestId, directive: '墟境探索', input, context }),
+    (error: unknown) => error instanceof RuinValidationError && error.code === 'GENEALOGY_ACTOR_NOT_REQUESTED');
+});
+
+test('指定父亲的自动历史跨度不再被女儿出生年抬高，参考资料只加边界而不改原话', () => {
+  const input = { ...makeInput(), start: null, end: null, supplementaryDirection: '探讨玲山父亲的发家史' };
+  const context = makeContext();
+  context.actorPolicy = { autoGenealogy: false, requestedSubjects: ['瓦伦·哈姆斯沃思'], referenceNames: ['玲山·哈姆斯沃思'], genealogyActors: ['瓦伦·哈姆斯沃思'], blockedGenealogy: [{ name: '玲山·哈姆斯沃思', aliases: ['玲山'] }], unresolvedRelatives: [] };
+  context.evidenceBundle.personTimeline = [
+    { name: '瓦伦·哈姆斯沃思', state: 'deceased', narrative: '', lifespan: { born: { era: '复兴纪元', year: 435 }, died: { era: '复兴纪元', year: 482 } } },
+    { name: '玲山·哈姆斯沃思', state: 'alive', narrative: '', lifespan: { born: { era: '复兴纪元', year: 461 }, died: null } },
+  ];
+  const range = resolveAutomaticRuinRange(input, context, [input.supplementaryDirection]);
+  assert.equal(range.input.start?.year, 435);
+  const prompt = buildRuinOutlineBatchApiPrompt({ requestId, directive: '墟境探索', generationInput: range.input, context, rules: { generationContract: '' } });
+  assert.match(prompt, /<RUIN_ACTOR_POLICY_READ_ONLY>/u);
+  assert.match(prompt, /探讨玲山父亲的发家史/u);
 });
 
 test('P0-C：同一 Canon 事件不得在多个独立墟境候选中换年份重复发生', () => {
@@ -2086,7 +2128,7 @@ test('候选墟境严格核对材料、来源、时间轴和可进入特异点',
 test('候选生成只落入当前聊天命名空间，不改世界变量也不自动进入', async () => {
   const repository = new MemoryRuinCandidateRepository();
   const prompts: string[] = [];
-  const command = parseTextCommand('墟境探索');
+  const command = createButtonCommand('ruin.generate', '墟境探索');
   assert.ok(command);
   const workflow = new RuinWorkflow({
     contextAssembler: {
@@ -2320,9 +2362,13 @@ test('进入特异点的玩家楼文本决议:空/空白/命令格式回退默�
   assert.equal(resolveRuinEntryPlayerText(null), RUIN_ENTRY_DEFAULT_PHRASE);
   assert.equal(resolveRuinEntryPlayerText(''), RUIN_ENTRY_DEFAULT_PHRASE);
   assert.equal(resolveRuinEntryPlayerText('   \n\t '), RUIN_ENTRY_DEFAULT_PHRASE);
-  // 锚定命令格式:以命令开头
-  assert.equal(resolveRuinEntryPlayerText('请墟境探索：帮我看看这处裂点'), RUIN_ENTRY_DEFAULT_PHRASE);
+  // 仍存在的文本命令格式回退默认语（防止玩家楼被 beforeGeneration 误判为命令）
   assert.equal(resolveRuinEntryPlayerText('进入节点，我准备好了'), RUIN_ENTRY_DEFAULT_PHRASE);
+  // β1.1：「墟境探索」已不是命令，作为玩家原话原样保留（聊天里它只换来引导）
+  assert.equal(
+    resolveRuinEntryPlayerText('请墟境探索：帮我看看这处裂点'),
+    '请墟境探索：帮我看看这处裂点',
+  );
   // contains 陷阱:自然语言中包含「寻根溯源」也会被 parseTextCommand 判定为命令
   assert.equal(resolveRuinEntryPlayerText('我们一起去寻根溯源吧'), RUIN_ENTRY_DEFAULT_PHRASE);
   // 正常玩家输入:原样保留(仅 trim)
@@ -2378,7 +2424,7 @@ test('GB-09 墟境生成先重投影已选谱系人物，旧关系不进入检�
     repository: new MemoryRuinCandidateRepository(), rules: { generationContract: '测试' },
     createRequestId: () => requestId, now: () => 1, async assertCurrent() {},
   });
-  const record = await workflow.generate(parseTextCommand('墟境探索')!, input,
+  const record = await workflow.generate(createButtonCommand('ruin.generate', '墟境探索'), input,
     { namespace, triggerMessageId: 8, triggerTextHash: 'hash', triggerSwipeId: 0, lifecycleEpoch: 0 });
   assert.equal(record.input.selectedCharacters[0].contextSummary, '仅供辨识');
   assert.equal(input.selectedCharacters[0].contextSummary, '旧短传残留');
@@ -2422,7 +2468,7 @@ test('谱系人物节点只进入墟境初始检索，候选扩写与重试复�
     now: () => 1000,
     async assertCurrent() {},
   });
-  const command = parseTextCommand('墟境探索');
+  const command = createButtonCommand('ruin.generate', '墟境探索');
   assert.ok(command);
   const identity = {
     namespace,
@@ -2486,7 +2532,7 @@ test('候选提纲建立后先扩写全部史稿，再交给玩家比较选择',
     async assertCurrent() {},
   });
 
-  const command = parseTextCommand('墟境探索');
+  const command = createButtonCommand('ruin.generate', '墟境探索');
   assert.ok(command);
   const identity = {
     namespace,
@@ -2586,7 +2632,7 @@ test('P4-C2 较早时间窗的全部候选通过整段截止复核后才进入 r
     now: () => 1000,
     async assertCurrent() {},
   });
-  const record = await workflow.generate(parseTextCommand('墟境探索')!, input, {
+  const record = await workflow.generate(createButtonCommand('ruin.generate', '墟境探索'), input, {
     namespace,
     triggerMessageId: 8,
     triggerTextHash: 'hash',
@@ -2659,7 +2705,7 @@ test('P4-C2 较早时间窗裁决 BLOCK 时只让该候选进入可重试失败�
     now: () => 1000,
     async assertCurrent() {},
   });
-  const record = await workflow.generate(parseTextCommand('墟境探索')!, input, {
+  const record = await workflow.generate(createButtonCommand('ruin.generate', '墟境探索'), input, {
     namespace,
     triggerMessageId: 8,
     triggerTextHash: 'hash',
@@ -2712,7 +2758,7 @@ test('墟境已校验史稿写错已知人物明确年龄时只做一次软复�
     now: () => 1000,
     async assertCurrent() {},
   });
-  const command = parseTextCommand('墟境探索');
+  const command = createButtonCommand('ruin.generate', '墟境探索');
   assert.ok(command);
   const identity = {
     namespace,
@@ -2773,7 +2819,7 @@ test('墟境人物年龄软复核失败时保留已校验史稿，不截断整�
       now: () => 1000,
       async assertCurrent() {},
     });
-    const command = parseTextCommand('墟境探索');
+    const command = createButtonCommand('ruin.generate', '墟境探索');
     assert.ok(command);
     const record = await workflow.generate(command, makeInput(), {
       namespace,
@@ -2821,7 +2867,7 @@ test('候选首次格式偏差在槽位内部纠正，不触发整批重试', as
     now: () => 1000,
     async assertCurrent() {},
   });
-  const command = parseTextCommand('墟境探索');
+  const command = createButtonCommand('ruin.generate', '墟境探索');
   assert.ok(command);
   const identity = {
     namespace,
@@ -2874,7 +2920,7 @@ test('单个候选连续失败后可手动重试，且不改写其他成功候�
       progress.push(`${event.stage}:${event.candidateIndex}`);
     },
   });
-  const command = parseTextCommand('墟境探索');
+  const command = createButtonCommand('ruin.generate', '墟境探索');
   assert.ok(command);
   const identity = {
     namespace,
@@ -2965,7 +3011,7 @@ test('候选生成期间允许聊天自然推进，但原始锚点必须保持�
   await assert.doesNotReject(() => assertCurrent(identity));
 });
 
-test('统一生命周期只将严格墟境命令路由给独立候选生成器', async () => {
+test('聊天文本不再触发任何候选生成链路（β1.1：探索与谱系只能在工作台发起）', async () => {
   const runtime = new RuinRuntime();
   const calls: string[] = [];
   const lifecycle = new WorkbenchLifecycle({
@@ -3013,11 +3059,10 @@ test('统一生命周期只将严格墟境命令路由给独立候选生成器',
     },
   });
 
-  assert.equal(await lifecycle.beforeGeneration('normal'), true);
-  assert.deepEqual(calls, [
-    'input:ruin.generate',
-    'ruin:墟境探索',
-  ]);
+  // β1.1：聊天文本不再进入任何候选生成链路——「墟境探索」在聊天里只会被角色卡
+  // 引导去工作台，因此生命周期不得路由、不得请求生成条件、更不得掐掉生成。
+  assert.equal(await lifecycle.beforeGeneration('normal'), false);
+  assert.deepEqual(calls, []);
 
   runtime.messages.get(8)!.message = '我只是在讨论一段墟境历史';
   assert.equal(await lifecycle.beforeGeneration('normal'), false);
@@ -3139,8 +3184,9 @@ test('同一楼层同一输入的重复调用复用同一生成事务', async ()
   const guard = new RuinTransactionGuard();
   const controller = new RuinController(workflow, runtime, {}, guard);
 
-  const first = controller.generateFromText('墟境探索', makeInput());
-  const second = controller.generateFromText('墟境探索', makeInput());
+  // β1.1：文本入口已撤，界面路径改用 generateFromPanel（同一 generate 事务与去重键）。
+  const first = controller.generateFromPanel(makeInput());
+  const second = controller.generateFromPanel(makeInput());
   assert.equal(calls, 1);
   release?.();
   assert.equal(await first, await second);

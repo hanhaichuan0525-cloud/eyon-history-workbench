@@ -1,4 +1,5 @@
 import type { WorkbenchCommand } from '../core/commands.ts';
+import { WorkbenchGuidanceError } from '../core/workbenchGuidance.ts';
 import type {
   GenealogyGenerationInput,
 } from '../schemas/genealogy.ts';
@@ -27,14 +28,14 @@ export class TavernGenealogyInputProvider {
   async getInput(command: WorkbenchCommand): Promise<GenealogyGenerationInput> {
     const requestedName = extractGenealogyFocusName(command.raw);
     if (!requestedName) {
-      throw new Error('请在宗族谱系命令中写明MVU人物名称');
+      throw new WorkbenchGuidanceError('请在宗族谱系命令中写明MVU人物名称');
     }
     const characters = await this.sources.getCharacterSources();
     const focus = characters.find(character =>
       normalize(character.title) === normalize(requestedName)
     );
     if (!focus) {
-      throw new Error(`MVU关系列表中没有找到人物：${requestedName}`);
+      throw new WorkbenchGuidanceError(`MVU关系列表中没有找到人物：${requestedName}`);
     }
     return {
       focusCharacter: {

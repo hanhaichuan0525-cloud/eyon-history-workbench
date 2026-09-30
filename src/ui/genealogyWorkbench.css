@@ -334,7 +334,15 @@ select:disabled {
   max-height: 680px;
   overflow: auto;
   scrollbar-color: var(--line-strong) var(--surface-2);
+  touch-action: pan-x pan-y pinch-zoom;
+  overscroll-behavior-x: contain;
+  cursor: grab;
+  -webkit-overflow-scrolling: touch;
 }
+.kinship-scroll:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.kinship-scroll .kin-node { cursor: grab; }
+.kinship-scroll[data-panning], .kinship-scroll[data-panning] * { cursor: grabbing; user-select: none; }
+.board-pan-hint { margin: 0; padding: 0 16px 10px; color: var(--muted); font-size: 11px; line-height: 1.6; }
 
 .kinship-stage {
   position: relative;
@@ -637,8 +645,13 @@ select:disabled {
     margin: 3px 0 0;
   }
 
-  .kinship-scroll,
+  .kinship-scroll {
+    height: 55vh;
+    height: 55dvh;
+    min-height: 240px;
+    max-height: 480px;
+  }
   .empty-state {
-    min-height: 480px;
+    min-height: 280px;
   }
 }

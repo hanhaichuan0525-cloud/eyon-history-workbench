@@ -61,6 +61,35 @@ function withWorldbookKeys(source: SourceSnapshot, uid: number, keys: string[]):
   return source;
 }
 
+test('同一人物主档与无纪元补充条目合并身份胶囊，顺序变化不再产生相互冲突的 required', async () => {
+  const main = snapshot('worldbook:mimo-main', '[角色]美墨珊奈', '身份: 咒法学派学徒/Pretty Holic创始人\n出生: 复兴纪元470年\n别名: 珊奈\n复兴纪元482年获得分身能力。');
+  const habits = snapshot('worldbook:mimo-habits', '[角色]美墨珊奈', '姓名: 美墨珊奈\n购物必须砍价，第三刀总是特别用力。');
+  const company = snapshot('worldbook:mimo-company', '[角色]美墨珊奈', '成员: 美墨珊奈\nPretty Holic 的所有员工均为其分身。');
+  for (const sources of [[main, habits, company], [company, habits, main]]) {
+    const catalog = buildWorldKnowledgeCatalog(sources, []);
+    const people = catalog.entities.filter(entity => entity.canonicalName === '美墨珊奈');
+    assert.equal(people.length, 1);
+    assert.deepEqual(people[0]?.identities, ['咒法学派学徒/Pretty Holic创始人']);
+    assert.deepEqual(people[0]?.kinds, ['person']);
+    assert.equal(people[0]?.sourceSnapshotIds.length, 3);
+    const result = await new UnifiedShadowRetrievalEngine(sources).retrieve({
+      requestId: 'mimo-supplements', taskType: 'ruin', mode: 'active',
+      query: '复兴纪元 美墨珊奈尚未建立分身的本体，在大漩涡前的经历',
+    });
+    const actors = result.bundle.castManifest?.entries.filter(entry => entry.identity.canonicalName === '美墨珊奈' && entry.disposition === 'required');
+    assert.equal(actors?.length, 1);
+    assert.deepEqual(actors?.[0]?.identity.identities, ['咒法学派学徒/Pretty Holic创始人']);
+  }
+});
+
+test('跨纪元同名与出生冲突不能靠无日期补充条目强行合并', () => {
+  const older = snapshot('worldbook:old-namesake', '[角色]同名祭司', '身份: 古代祭司\n出生: 神明纪元430年');
+  const later = snapshot('worldbook:new-namesake', '[角色]同名祭司', '身份: 当代学徒\n出生: 复兴纪元470年');
+  const unknown = snapshot('worldbook:unknown-namesake', '[角色]同名祭司', '习惯记录，人物所处时代不详。');
+  const catalog = buildWorldKnowledgeCatalog([older, later, unknown], []);
+  assert.equal(catalog.entities.filter(entity => entity.canonicalName === '同名祭司').length, 3);
+});
+
 test('检索查询会剔除时间碎片、流程缩写与纯标点噪声', async () => {
   const source = withWorldbookKeys(snapshot(
     'worldbook:meaningful-anchor',

@@ -2,10 +2,27 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
+import { WORKBENCH_VERSION, WORKBENCH_VERSION_LABEL } from '../src/core/version.ts';
 
 const root = resolve(import.meta.dirname, '..');
 const artifactPath = resolve(root, 'release/酒馆助手脚本-伊雍历史工作台-β1.json');
 const remoteLoaderPath = resolve(root, 'extension/auto-loader.js');
+
+test('发行版本：界面名与清单一致，β1 固定加载器继续使用数字更新协议', async () => {
+  const manifest = JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8'));
+  const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
+  const artifact = JSON.parse(await readFile(artifactPath, 'utf8'));
+  assert.match(WORKBENCH_VERSION, /^\d+\.\d+\.\d+$/u);
+  assert.equal(manifest.version, WORKBENCH_VERSION);
+  assert.equal(pkg.version, WORKBENCH_VERSION);
+  assert.equal(manifest.displayVersion, WORKBENCH_VERSION_LABEL);
+  assert.ok(artifact.info.includes(WORKBENCH_VERSION_LABEL));
+  assert.ok(artifact.info.includes(WORKBENCH_VERSION));
+  assert.equal(artifact.id, 'eyon-history-workbench-auto-loader');
+  assert.deepEqual(artifact.button, { enabled: true, buttons: [] });
+  assert.deepEqual(artifact.data, {});
+  assert.deepEqual(artifact.export_with, { data: true, button: true });
+});
 
 /**
  * β1（internal.89）：加载器契约。

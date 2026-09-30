@@ -12,6 +12,7 @@ import {
 import { WorkbenchUiClient } from './workbenchClient.ts';
 import genealogyCss from './genealogyWorkbench.css?raw';
 import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
+import { installScrollPan } from './scrollPan.ts';
 import {
   createGenealogyBoardConnectors,
   createGenealogyBoardLayout,
@@ -61,6 +62,7 @@ export function mountGenealogyWorkbench(
 ): GenealogyWorkbenchHandle {
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
+  const stopScrollPan = installScrollPan(root, '[data-board-scroll]', 'both');
   container.replaceChildren(host);
   let theme = options.theme ?? 'light';
 
@@ -385,6 +387,7 @@ export function mountGenealogyWorkbench(
                 <button class="icon-button" data-refresh title="重新读取当前变量">↻</button>
               </div>
             </header>
+            ${record ? '<p class="board-pan-hint">拖动画布查看谱系 · 点击人物查看详情 · ◎ 回到本人</p>' : ''}
             ${record && layout
               ? renderBoard(
                 record,
@@ -496,6 +499,7 @@ export function mountGenealogyWorkbench(
     },
     dispose() {
       state.disposed = true;
+      stopScrollPan();
       offStatus();
       offReady();
       offDataChanged();
@@ -569,7 +573,8 @@ function renderBoard(
     return `<path class="kin-edge-${connector.kind}" d="${connector.path}"><title>${escapeHtml(title)}</title></path>`;
   }).join('');
   return `
-    <div class="kinship-scroll" data-board-scroll>
+    <div class="kinship-scroll" data-board-scroll tabindex="0" role="region"
+      aria-label="宗族谱系画布，可上下左右滑动或使用方向键查看">
       <div class="kinship-stage"
         style="width:${layout.width * zoom}px;height:${layout.height * zoom}px">
         <div class="kinship-board"

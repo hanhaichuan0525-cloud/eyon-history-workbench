@@ -2,6 +2,8 @@ import type { WorkbenchNamespace } from './namespace.ts';
 import type { EvidenceBundle } from '../retrieval/contracts.ts';
 import type { CurrentSceneSnapshot } from './currentSceneReference.ts';
 import type { ContinuityView } from './continuityAnchors.ts';
+import type { RuinActorPolicy } from '../runtime/ruinActorPolicy.ts';
+import type { RuinGenerationInput } from '../schemas/ruin.ts';
 
 export interface ContextSource {
   sourceId: string;
@@ -78,6 +80,7 @@ export interface RuinContextBundle {
   continuityView?: ContinuityView;
   /** 重点参考人物的完整人物卡（原始全文，仅供 prompt 整条注入；不参与检索）。 */
   characterCards?: ContextSource[];
+  actorPolicy?: RuinActorPolicy;
   warnings: string[];
   sourceHash: string;
 }
@@ -106,6 +109,7 @@ export interface RuinContextAssembler {
      */
     eraAnchor?: string;
     customEra?: boolean;
+    actorSelection?: Pick<RuinGenerationInput, 'autoGenealogy' | 'location' | 'selectedCharacters' | 'supplementaryDirection'>;
   }): Promise<RuinContextBundle>;
 }
 

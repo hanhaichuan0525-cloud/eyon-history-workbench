@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { ContextSource, GenealogyContextBundle } from '../src/core/context.ts';
-import { parseTextCommand } from '../src/core/commands.ts';
+import { createButtonCommand, parseTextCommand } from '../src/core/commands.ts';
 import {
   extractGenealogyFocusName,
   TavernGenealogyInputProvider,
@@ -589,7 +589,7 @@ test('宗族结果将 living 或在世死亡状态统一为无死亡日期的 al
 
 test('宗族生成只落当前聊天仓库，不写MVU、正文或墟境状态', async () => {
   const repository = new MemoryGenealogyRepository();
-  const command = parseTextCommand('对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系');
+  const command = createButtonCommand('genealogy.generate', '对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系');
   assert.ok(command);
   const workflow = new GenealogyWorkflow({
     contextAssembler: { async assemble() { return makeContext(); } },
@@ -634,7 +634,7 @@ test('GB-07 坏引用局部降级，精确名册恢复真实来源，不额外�
     repository: new MemoryGenealogyRepository(), rules: { generationContract: '测试合同' },
     createRequestId: () => requestId, now: () => 1, async assertCurrent() {},
   });
-  const record = await workflow.generate(parseTextCommand('对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系')!, input,
+  const record = await workflow.generate(createButtonCommand('genealogy.generate', '对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系'), input,
     { namespace, triggerMessageId: 8, triggerTextHash: 'hash', triggerSwipeId: 0, lifecycleEpoch: 0 });
   assert.equal(calls, 1);
   assert.equal(record.result.nodes.length, 2);
@@ -747,7 +747,7 @@ test('GB-10 historyRefs 从已校验候选建立，模型漏写/乱写不触发�
 
 test('宗族旧式返回会触发一次严格 v2 纠正生成', async () => {
   const repository = new MemoryGenealogyRepository();
-  const command = parseTextCommand('对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系');
+  const command = createButtonCommand('genealogy.generate', '对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系');
   assert.ok(command);
   const prompts: string[] = [];
   const workflow = new GenealogyWorkflow({
@@ -826,7 +826,7 @@ test('宗族提示词只发送专用契约与限额只读资料，不携带通�
 
 test('宗族资料包回显会触发一次干净纠正，纠正请求不复述错误回答', async () => {
   const repository = new MemoryGenealogyRepository();
-  const command = parseTextCommand('对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系');
+  const command = createButtonCommand('genealogy.generate', '对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系');
   assert.ok(command);
   const prompts: string[] = [];
   const workflow = new GenealogyWorkflow({
@@ -888,13 +888,13 @@ test('文本入口必须给出当前MVU人物，不能靠模糊关系词猜中�
     sources,
     { getGenealogyDepth: () => input.depth },
   );
-  const command = parseTextCommand('对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系');
+  const command = createButtonCommand('genealogy.generate', '对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系');
   assert.ok(command);
   assert.deepEqual(await provider.getInput(command), {
     ...input,
     focusCharacter: { ...input.focusCharacter, aliases: [] },
   });
-  const missing = parseTextCommand('对不存在的人生成宗族谱系');
+  const missing = createButtonCommand('genealogy.generate', '对不存在的人生成宗族谱系');
   assert.ok(missing);
   await assert.rejects(() => provider.getInput(missing), /没有找到人物/u);
 });
@@ -943,7 +943,7 @@ test('宗族生成期间允许聊天自然推进，但原始锚点必须保持�
   );
 });
 
-test('严格宗族命令只路由宗族工作流，不触发传记或墟境', async () => {
+test('宗族谱系不再有文本入口，聊天提及不路由任何工作流（β1.1）', async () => {
   const runtime = new GenealogyRuntime();
   const calls: string[] = [];
   const lifecycle = new WorkbenchLifecycle({
@@ -983,11 +983,10 @@ test('严格宗族命令只路由宗族工作流，不触发传记或墟境', as
       },
     },
   });
-  assert.equal(await lifecycle.beforeGeneration('normal'), true);
-  assert.deepEqual(calls, [
-    'input:genealogy.generate',
-    'genealogy:对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系',
-  ]);
+  // β1.1：宗族谱系不再有文本入口——聊天里提到它不会请求输入、不会路由任何工作流，
+  // 只由角色卡把玩家引导到工作台的宗族谱系面板。
+  assert.equal(await lifecycle.beforeGeneration('normal'), false);
+  assert.deepEqual(calls, []);
 });
 
 test('R-01：同一「神明纪元 + 后世帝国」夹具下，谱系 prompt 含活跃时间规则且 validator 能本地检出违规', () => {

@@ -413,12 +413,18 @@ button:focus-visible {
   * { scroll-behavior: auto !important; }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1000px) {
   .status-toast { top: 12px; width: calc(100vw - 24px); }
-  .app { display: block; height: 100%; }
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas: "workspace" "navigation";
+  }
+  .workspace { grid-area: workspace; min-height: 0; }
   .rail {
-    position: fixed;
-    inset: auto 0 0;
+    grid-area: navigation;
+    position: relative;
+    inset: auto;
     z-index: 50;
     display: block;
     width: 100%;
@@ -451,9 +457,9 @@ button:focus-visible {
   .top-copy p { display: none; }
   .top-copy h2 { font-size: 15px; }
   .icon-button { width: 40px; height: 40px; }
-  .content { padding: 28px 14px calc(92px + env(safe-area-inset-bottom, 0px)); }
+  .content { padding: 28px 14px 24px; }
   .module-intro { margin-bottom: 20px; }
-  .module-intro h1 { font-size: 30px; }
+  .module-intro h1 { font-size: 24px; line-height: 1.3; }
   .module-intro p { font-size: 12px; }
   .module-ledger { grid-template-columns: 1fr; }
   .ledger-cell, .ledger-cell + .ledger-cell { padding: 9px 0; }

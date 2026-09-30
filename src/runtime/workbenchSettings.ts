@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 z.config({ jitless: true });
 import type { WorkbenchCommand } from '../core/commands.ts';
+import { WorkbenchGuidanceError } from '../core/workbenchGuidance.ts';
 import { namespaceKey, type WorkbenchNamespace } from '../core/namespace.ts';
 import {
   RuinGenerationInputSchema,
@@ -286,7 +287,8 @@ implements GenerationSettingsProvider, RuinGenerationInputProvider {
   async getInput(_command: WorkbenchCommand): Promise<RuinGenerationInput> {
     const draft = this.read().ruinDraft;
     if (!draft) {
-      throw new Error('请先在伊雍历史工作台中填写墟境生成条件');
+      // 引导类问题：不能走 fail-closed，否则会掐掉整楼生成（见 workbenchGuidance.ts）。
+      throw new WorkbenchGuidanceError('请先在伊雍历史工作台中填写墟境生成条件');
     }
     return draft;
   }

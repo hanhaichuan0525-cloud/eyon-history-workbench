@@ -208,7 +208,7 @@ export function mountSettingsWorkbench(
         <div class="launcher-copy">
           <div class="launcher-kicker">EYON HISTORY WORKBENCH · CONTROL</div>
           <h1>伊雍历史工作台 <span class="launcher-version">${WORKBENCH_VERSION_LABEL}</span></h1>
-          <p>当前版本 ${WORKBENCH_VERSION_LABEL}（内部版本 ${WORKBENCH_VERSION}）。工作台由角色卡悬浮球打开，更新只在你点击按钮后执行，不会自动联网。</p>
+          <p>当前版本 ${WORKBENCH_VERSION_LABEL}（更新协议 ${WORKBENCH_VERSION}）。工作台由角色卡悬浮球打开。本页检查更新只在点击按钮后联网；自动更新脚本在每次重新载入时另行读取远端版本。</p>
           <small class="launcher-update-status">${escapeHtml(updateState.message)}</small>
         </div>
         <div class="launcher-actions">

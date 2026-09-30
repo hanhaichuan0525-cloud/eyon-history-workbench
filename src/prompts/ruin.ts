@@ -467,7 +467,7 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
     input.automaticTimeRange
       ? 'span contains start, end and label. Dates contain year, month and day. generationRequest.start/end is an automatically computed feasible envelope, not a demand to start at a person’s birth. Choose each candidate’s exact, distinct span inside that envelope by reasoning from the event prerequisites, dated deeds and life stage; keep the chosen chronology consistent across the whole candidate.'
       : 'span contains start, end and label. Dates contain year, month and day. generationRequest contains the player’s binding concrete range; copy explicit calendar dates inside it.',
-    'shift contains from, to and explanation. from is the era state at the start of this candidate, to is the era state at its end; they are era shifts, not a label of the whole period, and they must differ (stable/transition/turbulent). Never make from equal to to or equal to periodType. Example: stable → turbulent. Keep explanation within 20-45 Chinese characters.',
+    'shift contains from, to and explanation. from is the state at the start of this candidate, to is the state at its end. They must differ (stable/transition/turbulent). Either endpoint may equal the dominant periodType; it is NOT a fourth forbidden value. Example: a stable-dominant candidate may turn stable → transition. Keep explanation within 20-45 Chinese characters.',
     'cast is the actual cast, not a reference list. It contains only shared actors and indispensable local actors who visibly participate in this candidate as {name, kind, identity, role}. Every listed member must appear in at least one node and genuinely act in the final prose. kind must be person, family, organization, faction or community; keep the total at five or fewer.',
     'nodes contains exactly 4 chronological items, one each in this order: origin, process, anomaly, result. The anomaly machine key is the player-visible 高潮 stage and remains for old-record compatibility. Each item contains only id, kind, time, location, title, summary, visibleTrace and participants. participants is a short array using names copied from this candidate.cast.',
     'All four stages are playable entry points: origin explores or changes the cause, process affects accumulation, anomaly is the causal climax, and result explores evidence, rescue and downstream consequences. Keep motives, branches, texture and secondary actors for the later expansion stage.',
@@ -940,6 +940,7 @@ function buildReferenceDataSection(
       location: input.generationInput.location,
       supplementaryDirection: input.generationInput.supplementaryDirection,
       selectedCharacters: input.generationInput.selectedCharacters,
+      autoGenealogy: input.generationInput.autoGenealogy === true,
       wave: input.generationInput.wave,
     },
     ...(targetMaterial
@@ -956,6 +957,14 @@ function buildReferenceDataSection(
     passages: passages.map(({ content: _content, ...passage }) => passage),
   };
   return [
+    ...(input.context.actorPolicy ? [
+      '<RUIN_ACTOR_POLICY_READ_ONLY>',
+      JSON.stringify(input.context.actorPolicy),
+      'requestedSubjects 是完整方向明确指定的事件主体；genealogyActors 只是可出场名单，不是人数配额。blockedGenealogy 只可用于远处亲缘、引用或辨识，不得放入 cast、节点 participants 或让其在现场行动。referenceNames 是资料参照，不得仅凭提及将本人变成演员。',
+      '指名亲属只指向该亲属，不连带本人、同族或其他亲属。原籍、血缘、种族与效忠不可重写；明确要求的跨境活动可补合理到场渠道。主体在事件年未出生或已故时，调整未指定的历史跨度，或保留为缺席主体，不伪造生卒。',
+      '身份资料可有多个人生阶段、别名和组织关系；当前身份标签不等于童年已经担任该职位。描述当年的角色与能力，不把未来创始人、掌印官等地位提前。',
+      '</RUIN_ACTOR_POLICY_READ_ONLY>',
+    ] : []),
     ...renderContinuityView(continuityProjection.view, { includeRelations: true }),
     ...renderRuinHistoricalAmbiguityGuidance(
       input.context.continuityView,

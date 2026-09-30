@@ -120,6 +120,7 @@ export class RuinWorkflow {
       ].map(value => value.trim()).filter(Boolean).join('\n'),
       eraAnchor: input.era,
       customEra: !KNOWN_EYON_ERAS.includes(input.era as typeof KNOWN_EYON_ERAS[number]),
+      actorSelection: input,
     });
     if (
       namespaceKey(context.scope) !== namespaceKey(identity.namespace)

@@ -3,8 +3,23 @@ import test from 'node:test';
 
 import { createButtonCommand, parseTextCommand } from '../src/core/commands.ts';
 
-test('墟境探索只生成候选，不等于进入节点', () => {
-  assert.equal(parseTextCommand('墟境探索')?.type, 'ruin.generate');
+test('墟境探索与宗族谱系没有文本入口，只能由工作台界面发起（β1.1）', () => {
+  // 真机病历：聊天里输入「我要墟境探索」→ 卡片以为要探索、脚本不认；精确输入
+  // 「墟境探索」又因工作台草稿为空而掐掉整楼生成。两条链路现在都撤销。
+  assert.equal(parseTextCommand('墟境探索'), null);
+  assert.equal(parseTextCommand('请墟境探索'), null);
+  assert.equal(parseTextCommand('我要墟境探索'), null);
+  assert.equal(parseTextCommand('关于墟境探索的规则仍有争议。'), null);
+  assert.equal(parseTextCommand('宗族谱系'), null);
+  assert.equal(parseTextCommand('对维奥莱塔·马克西姆·奥古斯塔生成宗族谱系'), null);
+  assert.equal(parseTextCommand('我要宗族谱系'), null);
+  // 界面按钮路径不受影响。
+  assert.equal(createButtonCommand('ruin.generate', '墟境探索').type, 'ruin.generate');
+  assert.equal(
+    createButtonCommand('genealogy.generate', '维奥莱塔').type,
+    'genealogy.generate',
+  );
+  // 进入节点仍是文本指令（需要工作台给出的进入契约）。
   assert.equal(parseTextCommand('进入节点：候选02')?.type, 'ruin.enter');
 });
 

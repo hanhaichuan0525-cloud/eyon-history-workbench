@@ -37,6 +37,65 @@ button {
   color: inherit;
 }
 
+.reference-field-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 12px;
+  margin-bottom: 7px;
+}
+
+.reference-field-heading > strong {
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.genealogy-policy-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.field .genealogy-policy-toggle > input[type="checkbox"] {
+  position: absolute;
+  width: 32px;
+  height: 20px;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+}
+
+.genealogy-policy-track {
+  position: relative;
+  flex: 0 0 32px;
+  height: 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.genealogy-policy-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.genealogy-policy-toggle input:checked + .genealogy-policy-track { border-color: var(--teal); background: var(--teal); }
+.genealogy-policy-toggle input:checked + .genealogy-policy-track::after { left: 15px; background: var(--bg); }
+.genealogy-policy-toggle input:focus-visible + .genealogy-policy-track { outline: 2px solid var(--teal); outline-offset: 3px; }
+.genealogy-policy-toggle:has(input:disabled) { opacity: .54; cursor: not-allowed; }
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -1806,24 +1865,41 @@ textarea:focus-visible {
 }
 .chronology-toolbar { min-height: 46px; padding: 12px 16px; border-color: var(--editor-line); background: transparent; }
 .scale-state strong { color: var(--editor-ink); font-family: var(--serif); }
-.scale-state span { color: var(--editor-ink-faint); }
-.chronology-toolbar > .period-tag { margin: 0; border-color: var(--editor-line); color: var(--editor-gold); }
+.scale-state { flex-wrap: wrap; min-width: 0; gap: 4px 10px; }
+.scale-state span { color: var(--editor-ink-faint); line-height: 1.5; }
+.chronology-scroll-tools { display: flex; flex-shrink: 0; align-items: center; gap: 4px; }
+.chronology-scroll-tools .period-tag { margin: 0 4px 0 0; border-color: var(--editor-line); color: var(--editor-gold); }
+.chronology-scroll-tools button {
+  width: 44px; height: 44px; border: 1px solid var(--editor-line); border-radius: 12px;
+  color: var(--editor-ink-soft); background: var(--editor-paper-strong); font-size: 22px;
+}
+.chronology-scroll-tools button:hover { border-color: var(--editor-teal); color: var(--editor-teal); }
 .chronology-viewport {
   height: auto;
   min-height: 0;
-  overflow-y: visible;
+  overflow-y: hidden;
   padding: 0;
   background: transparent;
+  touch-action: pan-x pan-y pinch-zoom;
+  overscroll-behavior: auto;
+  overscroll-behavior-x: contain;
+  cursor: grab;
+  -webkit-overflow-scrolling: touch;
+}
+.chronology-viewport:focus-visible { outline: 2px solid var(--editor-teal); outline-offset: -2px; }
+.chronology-viewport[data-panning], .chronology-viewport[data-panning] * {
+  cursor: grabbing; user-select: none;
 }
 .chronology-track {
-  min-width: max(100%, calc(var(--node-count) * 170px));
+  min-width: max(100%, calc(var(--node-count) * 184px + 14px));
   height: auto;
   min-height: 112px;
   display: grid;
   grid-template-columns: repeat(var(--node-count), minmax(0, 1fr));
   align-items: stretch;
-  gap: 0;
-  padding: 0;
+  gap: 10px;
+  padding: 12px;
+  background: none;
 }
 .chronology-track::before,
 .chronology-track::after { display: none; }
@@ -1835,30 +1911,33 @@ textarea:focus-visible {
   height: auto;
   min-height: 112px;
   margin: 0;
-  padding: 20px 16px 15px;
-  border-right: 1px solid var(--editor-line);
+  padding: 0;
+  border: 1px solid var(--editor-line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--editor-paper-strong);
   transform: none;
 }
-.timeline-event:last-child { border-right: 0; }
-.timeline-event::before { content: ""; position: absolute; top: 0; left: 16px; right: 16px; height: 2px; background: var(--editor-line-strong); }
+.timeline-event::before { display: none; }
 .timeline-event::after { display: none; }
 .timeline-event.selected {
+  border-color: var(--editor-teal);
   background: color-mix(in srgb, var(--editor-teal) 5%, var(--editor-paper-strong));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--editor-teal) 20%, transparent);
 }
-.timeline-event.selected::before { background: var(--editor-teal); }
-.event-kind { color: var(--editor-ink-faint); font-size: 9px; }
-.history-node { width: 100%; margin: 3px 0 0; padding: 0; border: 0; background: transparent; text-align: left; }
+.event-kind { display: block; margin-bottom: 15px; color: var(--editor-ink-faint); font-size: 11px; }
+.history-node { width: 100%; height: 100%; min-height: 112px; margin: 0; padding: 16px; border: 0; border-radius: 13px; background: transparent; text-align: left; cursor: grab; }
 .history-node:hover { transform: none; }
 .history-node.selected { box-shadow: none; }
 .history-node:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--editor-teal) 62%, transparent);
-  outline-offset: 6px;
+  outline-offset: -3px;
 }
 .history-node::before,
 .history-node::after { display: none; }
-.history-node small { color: var(--editor-ink-faint); font-size: 9px; }
+.history-node small { color: var(--editor-ink-faint); font-size: 11px; }
 .history-node strong { display: block; margin: 5px 0 3px; overflow: hidden; color: var(--editor-ink); font-family: var(--serif); text-overflow: ellipsis; white-space: nowrap; }
+.chronology-pan-hint { margin: 0; padding: 0 16px 10px; color: var(--editor-ink-faint); font-size: 10px; line-height: 1.5; }
 .timeline-summary { border-color: var(--editor-line); color: var(--editor-ink-soft); background: transparent; }
 .timeline-summary strong { color: var(--editor-gold); }
 
@@ -1902,6 +1981,7 @@ textarea:focus-visible {
 @media (max-width: 760px) {
   .ruin-app { border-radius: 0; }
   .ruin-page-head { padding: 25px 20px; }
+  .ruin-page-copy h1 { font-size: 22px; line-height: 1.4; }
   .ruin-stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 0; }
   .generator-layout { display: block; }
   .section.form-section { border-right: 0; border-bottom: 1px solid var(--editor-line); }
@@ -1914,6 +1994,9 @@ textarea:focus-visible {
 }
 
 @media (max-width: 430px) {
+  .ruin-page-copy h1 { font-size: 20px; }
+  .chronology-toolbar { flex-wrap: wrap; gap: 6px; }
+  .chronology-scroll-tools { margin-left: auto; }
   .parameter-heading { padding: 20px 17px 0; }
   .form-section .section-body { padding: 16px 17px 22px; }
   .history-canvas-tools { align-items: stretch; }

@@ -24,6 +24,7 @@ import type { RuinTaskReviewSnapshot } from '../workflows/ruinTask.ts';
 import type { RuinTaskInterpretation, RuinTaskScale } from '../schemas/ruinTask.ts';
 import ruinCss from './ruinWorkbench.css?raw';
 import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
+import { installScrollPan } from './scrollPan.ts';
 import {
   formatRuinNodeExactTime,
   fullRuinStageIntroduction,
@@ -69,6 +70,7 @@ interface RuinDraft {
   end: DateDraft;
   location: string;
   supplementaryDirection: string;
+  autoGenealogy: boolean;
   candidateCount: 3 | 4 | 5;
 }
 
@@ -88,6 +90,7 @@ export function mountRuinWorkbench(
 ): RuinWorkbenchHandle {
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
+  const stopScrollPan = installScrollPan(root, '[data-timeline]', 'x');
   root.addEventListener('click', event => {
     if (!(event.target instanceof Element) || !event.target.closest('button')) return;
     event.preventDefault();
@@ -117,6 +120,7 @@ export function mountRuinWorkbench(
       end: { ...EMPTY_DATE },
       location: '',
       supplementaryDirection: '',
+      autoGenealogy: false,
       candidateCount: 3,
     },
     busy: false,
@@ -266,6 +270,7 @@ export function mountRuinWorkbench(
       end: { ...EMPTY_DATE },
       location: '',
       supplementaryDirection: '',
+      autoGenealogy: false,
       candidateCount: 3,
     };
     state.selectedCharacterIds.clear();
@@ -509,6 +514,14 @@ export function mountRuinWorkbench(
   }
 
   function bind(): void {
+    root.querySelector<HTMLInputElement>('[data-auto-genealogy]')
+      ?.addEventListener('change', event => {
+        state.draft.autoGenealogy = (event.currentTarget as HTMLInputElement).checked;
+        if (client.isReady()) {
+          const draft = client.facade().getSettings().ruinDraft;
+          if (draft) client.facade().setRuinDraft({ ...draft, autoGenealogy: state.draft.autoGenealogy });
+        }
+      });
     root.querySelector<HTMLSelectElement>('[data-era]')
       ?.addEventListener('change', event => {
         const value = (event.currentTarget as HTMLSelectElement).value;
@@ -616,6 +629,15 @@ export function mountRuinWorkbench(
           render();
         });
       });
+    root.querySelectorAll<HTMLButtonElement>('[data-timeline-scroll]').forEach(button => {
+      button.addEventListener('click', () => {
+        const timeline = root.querySelector<HTMLElement>('[data-timeline]');
+        timeline?.scrollBy({
+          left: Number(button.dataset.timelineScroll) * timeline.clientWidth * 0.8,
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        });
+      });
+    });
     root.querySelectorAll<HTMLButtonElement>('[data-node-id]').forEach(button => {
       button.addEventListener('click', () => {
         // 同步所属候选:防止异步刷新替换 records 后 activeCandidateId 与节点错位
@@ -688,6 +710,7 @@ export function mountRuinWorkbench(
     },
     dispose() {
       state.disposed = true;
+      stopScrollPan();
       offStatus();
       offReady();
       offReferences();
@@ -910,7 +933,16 @@ function renderForm(state: RuinState): string {
           <span class="field-error">必须填写地点，才能检索并生成墟境。</span>
         </label>
         <div class="field">
-          <strong>重点参考人物（可选）</strong>
+          <div class="reference-field-heading">
+            <strong>重点参考人物（可选）</strong>
+            <label class="genealogy-policy-toggle" title="自动关联宗族人物；默认关闭，仅关联有当地活动依据的人物">
+              <input type="checkbox" role="switch" aria-label="自动关联宗族人物"
+                data-auto-genealogy ${state.draft.autoGenealogy ? 'checked' : ''}
+                ${state.busy ? 'disabled' : ''}>
+              <span class="genealogy-policy-track" aria-hidden="true"></span>
+              <span>关联宗族</span>
+            </label>
+          </div>
           <div class="token-row">
             ${state.characters.length
               ? state.characters.map(character => {
@@ -929,6 +961,7 @@ function renderForm(state: RuinState): string {
               }).join('')
               : '<span class="field-note">尚未加入重点参考人物；此项可以留空。</span>'}
           </div>
+          <span class="field-note">默认关闭。开启后只关联有本地活动依据的人物；手选和方向指定本人或亲属不受影响。</span>
         </div>
         <div class="field">
           <strong>重点参考传记（可选）</strong>
@@ -1101,23 +1134,30 @@ function renderChronology(
           <strong>因果节点</strong>
           <span>${escapeHtml(candidate.span.label)}</span>
         </div>
-        <span class="period-tag">${candidate.nodes.length}个节点</span>
+        <div class="chronology-scroll-tools">
+          <span class="period-tag">${candidate.nodes.length}个节点</span>
+          <button type="button" data-timeline-scroll="-1" aria-label="向左查看历史节点">‹</button>
+          <button type="button" data-timeline-scroll="1" aria-label="向右查看历史节点">›</button>
+        </div>
       </header>
-      <div class="chronology-viewport" data-timeline>
+      <div class="chronology-viewport" data-timeline tabindex="0" role="region"
+        aria-label="历史节点，左右滑动或使用方向键查看">
         <div class="chronology-track" style="--node-count:${candidate.nodes.length}">
           ${candidate.nodes.map(node => `
               <div class="timeline-event ${selected?.id === node.id ? 'selected' : ''}"
                 style="--lane-top:88px;--stem-height:34px">
-                <span class="event-kind">${nodeKind(node.kind)}</span>
                 <button type="button" class="history-node ${selected?.id === node.id ? 'selected' : ''}"
                   data-node-id="${escapeAttribute(node.id)}"
-                  data-candidate-id="${escapeAttribute(candidate.id)}">
+                  data-candidate-id="${escapeAttribute(candidate.id)}"
+                  aria-pressed="${selected?.id === node.id}">
+                   <span class="event-kind">${nodeKind(node.kind)}</span>
                    <small>${escapeHtml(formatRuinNodeExactTime(era, node.time))}</small>
                    <strong>${escapeHtml(node.title)}</strong>
                  </button>
               </div>`).join('')}
         </div>
       </div>
+      <p class="chronology-pan-hint">左右滑动查看 · 点击卡片选择阶段</p>
       <div class="timeline-summary">
         <strong>长期演变</strong>
         <span>${escapeHtml(candidate.fusion.historicalResult)}</span>
@@ -1197,6 +1237,7 @@ function buildInput(state: RuinState): RuinGenerationInput | null {
       end: parseDate(state.draft.end, '结束时间'),
       location,
       supplementaryDirection: state.draft.supplementaryDirection.trim(),
+      autoGenealogy: state.draft.autoGenealogy,
       selectedCharacters: state.characters.filter(character =>
         state.selectedCharacterIds.has(ruinCharacterReferenceIdentity(character))),
       wave: waveForCandidateCount(candidateCount),
@@ -1239,6 +1280,7 @@ function inputToDraft(input: RuinGenerationInput): RuinDraft {
     end: dateToDraft(input.end),
     location: input.location,
     supplementaryDirection: input.supplementaryDirection,
+    autoGenealogy: input.autoGenealogy === true,
     candidateCount: input.wave.candidateCount as 3 | 4 | 5,
   };
 }

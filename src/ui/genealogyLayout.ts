@@ -29,7 +29,7 @@ export interface GenealogyBoardLayout {
 export interface GenealogyBoardConnector {
   edgeIds: string[];
   path: string;
-  kind: 'family';
+  kind: 'family' | 'source' | 'social';
   familyId: string;
   parentIds: string[];
   childIds: string[];
@@ -112,7 +112,9 @@ export function createGenealogyBoardLayout(result: GenealogyResult): GenealogyBo
   for (const [rowIndex, row] of rows.entries()) {
     const y = rowYs[rowIndex] ?? GENERATION_TOP;
     generationLabels.push({
-      label: generationLabel(row.generation - focus.generation),
+      label: focus.identity?.lineageKind === 'creation'
+        ? row.generation === 0 ? '关联人物' : row.generation < 0 ? `源流 · ${Math.abs(row.generation)}层` : `传承 · ${row.generation}层`
+        : generationLabel(row.generation - focus.generation),
       y,
     });
     for (const node of row.nodes) {
@@ -138,7 +140,7 @@ export function createGenealogyBoardConnectors(
   const families = buildFamilyGroups(result, positions);
   assignConnectorLanes(families, positions);
 
-  return families.flatMap(family => {
+  const familyConnectors = families.flatMap(family => {
     const parents = family.parents
       .map(id => positions.get(id))
       .filter((value): value is PositionedGenealogyNode => !!value);
@@ -175,6 +177,40 @@ export function createGenealogyBoardConnectors(
       lane: family.lane,
     }];
   });
+  const special = new Set(['creator', 'creation', 'predecessor', 'successor', 'sameSource', 'owner', 'owned', 'soulOrigin', 'incarnation']);
+  // These are separate relations, not co-parents sharing a family bus.
+  const seen = new Set<string>();
+  const sourceConnectors: GenealogyBoardConnector[] = [];
+  for (const edge of result.edges) {
+    if (!special.has(edge.relationType)) continue;
+    const from = positions.get(edge.from), to = positions.get(edge.to);
+    if (!from || !to) continue;
+    const kind = ['owner', 'owned', 'sameSource'].includes(edge.relationType) ? 'social' as const : 'source' as const;
+    const key = [edge.from, edge.to].sort().join('|');
+    if (seen.has(key)) {
+      const connector = sourceConnectors.find(item => item.familyId === key)!;
+      connector.edgeIds.push(edge.id);
+      if (kind === 'source') connector.kind = kind;
+      continue;
+    }
+    seen.add(key);
+    let path: string;
+    if (from.y === to.y) {
+      const left = from.x < to.x ? from : to, right = left === from ? to : from;
+      const y = left.y + GENEALOGY_NODE_HEIGHT / 2;
+      const blocked = layout.positions.some(item => item.y === left.y && item.x > left.x && item.x < right.x);
+      const bottom = left.y + GENEALOGY_NODE_HEIGHT;
+      path = blocked
+        ? `M${round(left.x)} ${round(bottom)} V${round(bottom + 22)} H${round(right.x)} V${round(bottom)}`
+        : `M${round(left.x + GENEALOGY_NODE_WIDTH / 2)} ${round(y)} H${round(right.x - GENEALOGY_NODE_WIDTH / 2)}`;
+    } else {
+      const top = from.y < to.y ? from : to, bottom = top === from ? to : from;
+      const startY = top.y + GENEALOGY_NODE_HEIGHT, midY = (startY + bottom.y) / 2;
+      path = `M${round(top.x)} ${round(startY)} V${round(midY)} H${round(bottom.x)} V${round(bottom.y)}`;
+    }
+    sourceConnectors.push({ edgeIds: [edge.id], path, kind, familyId: key, parentIds: [edge.from], childIds: [edge.to], lane: 0 });
+  }
+  return [...familyConnectors, ...sourceConnectors];
 }
 
 export function displayGenealogyDateLabel(label: string): string {
@@ -328,6 +364,7 @@ function buildFamilyGroups(
 ): FamilyGroup[] {
   const childParents = new Map<string, ParentChildEdge[]>();
   for (const edge of result.edges) {
+    if (!['parent', 'child', 'adoptiveParent', 'adoptiveChild'].includes(edge.relationType)) continue;
     const normalized = normalizeParentChild(edge);
     if (!normalized || !positions.has(normalized.parentId) || !positions.has(normalized.childId)) continue;
     const parents = childParents.get(normalized.childId) ?? [];
@@ -431,10 +468,10 @@ function collectRelations(
 }
 
 function normalizeParentChild(edge: GenealogyResult['edges'][number]): ParentChildEdge | null {
-  if (['parent', 'adoptiveParent'].includes(edge.relationType)) {
+  if (['parent', 'adoptiveParent', 'creator', 'predecessor', 'soulOrigin'].includes(edge.relationType)) {
     return { edgeId: edge.id, parentId: edge.from, childId: edge.to };
   }
-  if (['child', 'adoptiveChild'].includes(edge.relationType)) {
+  if (['child', 'adoptiveChild', 'creation', 'successor', 'incarnation'].includes(edge.relationType)) {
     return { edgeId: edge.id, parentId: edge.to, childId: edge.from };
   }
   return null;

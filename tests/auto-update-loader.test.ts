@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { WORKBENCH_VERSION, WORKBENCH_VERSION_LABEL } from '../src/core/version.ts';
 
 const root = resolve(import.meta.dirname, '..');
-const artifactPath = resolve(root, 'release/酒馆助手脚本-伊雍历史工作台-β1.json');
+const originalArtifactPath = resolve(root, 'release/酒馆助手脚本-伊雍历史工作台-β1.json');
+const artifactPath = existsSync(originalArtifactPath) ? originalArtifactPath
+  : resolve(root, 'release/酒馆助手脚本-伊雍历史工作台 自动更新.json');
 const remoteLoaderPath = resolve(root, 'extension/auto-loader.js');
 
 test('发行版本：界面名与清单一致，β1 固定加载器继续使用数字更新协议', async () => {
@@ -22,6 +26,13 @@ test('发行版本：界面名与清单一致，β1 固定加载器继续使用�
   assert.deepEqual(artifact.button, { enabled: true, buttons: [] });
   assert.deepEqual(artifact.data, {});
   assert.deepEqual(artifact.export_with, { data: true, button: true });
+});
+
+test('β1.6 远端更新兼容已安装的β1.5加载器：代码逐字节保持不变', async () => {
+  const loader = await readFile(remoteLoaderPath);
+  // 固定β1.5发布时loader 0.3.1的哈希；本次只更换清单和bundle，不要求重新导入。
+  assert.equal(createHash('sha256').update(loader).digest('hex'),
+    'ebd436749781c8de62d91bc371d703a658c3df0683a53f30d56d925c26abab25');
 });
 
 /**

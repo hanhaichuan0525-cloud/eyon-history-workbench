@@ -245,7 +245,8 @@ export function genealogyBindingUnits(
       const fromName = nodeNames.get(edge.from) ?? edge.from;
       const toName = nodeNames.get(edge.to) ?? edge.to;
       const relation = roster.relations.find(item =>
-        normalizeName(item.fromName) === normalizeName(fromName)
+        edge.track !== 'soul'
+        && normalizeName(item.fromName) === normalizeName(fromName)
         && normalizeName(item.toName) === normalizeName(toName)
         && item.relationType === edge.relationType);
       return {

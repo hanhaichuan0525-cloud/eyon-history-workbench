@@ -104,6 +104,7 @@ export function parseAndNormalizeRuinOutlines(
   // 节点 ID 唯一性（大纲端早拦，报错可操作化 + repair 结构指引闭环，internal.77 三轮覆盖）。
   for (const candidate of candidates) {
     validateNodes(candidate.nodes, candidate.title);
+    reconcileCandidateSpan(candidate, expected.input);
   }
   // 未来时间硬门：穿越只能进入当前剧情时间或更早（玩家显式填到未来的范围同样受上限约束）。
   for (const candidate of candidates) {
@@ -1217,8 +1218,8 @@ function normalizedSpan(
   const source = readRecord(value);
   const first = nodes[0].time;
   const last = nodes[nodes.length - 1].time;
-  const start = normalizeDate(source.start, first, input);
-  const end = normalizeDate(source.end, last, input);
+  const start = normalizeDate(source.start, first);
+  const end = normalizeDate(source.end, last);
   const boundedStart = compareTuple(lowerDateTuple(start), lowerDateTuple(first)) > 0
     ? nodeDate(nodes[0])
     : start;
@@ -1240,7 +1241,7 @@ function normalizeNodeTime(
   automaticTimeRange = false,
 ) {
   const source = readRecord(value);
-  const date = normalizeDate(source, fallback, input);
+  const date = normalizeDate(source, fallback);
   const hour = nullableInteger(source.hour) ?? (automaticTimeRange ? [8, 11, 15, 19][index % 4] : null);
   const minute = nullableInteger(source.minute) ?? (automaticTimeRange ? [0, 20, 40, 0][index % 4] : null);
   return {
@@ -1287,25 +1288,19 @@ function utcDate(year: number, month: number, day: number): Date {
 function normalizeDate(
   value: unknown,
   fallback: { year: number | null; month: number | null; day: number | null } | null,
-  input: RuinGenerationInput,
 ) {
   const source = readRecord(value);
   const rawYear = source.year === null || source.year === undefined || source.year === ''
     ? fallback?.year ?? null
     : integerValue(source.year, fallback?.year ?? null);
-  let date = {
+  // 只归一化格式/缺省值；不得把模型明确的史实日期偷偷钳进请求窗口。
+  // 越界交给既有范围校验与修复，避免生日事件被脚本搬到错误年份。
+  return {
     // 纪元从 1 年开始：0/负数不是合法年份，模型爱用 0 当「未详」占位 → 归一化为 null。
     year: rawYear === null || rawYear <= 0 ? null : rawYear,
     month: calendarPart(source.month, fallback?.month ?? null, 12),
     day: calendarPart(source.day, fallback?.day ?? null, 31),
   };
-  if (input.start && compareTuple(lowerDateTuple(date), lowerDateTuple(input.start)) < 0) {
-    date = { ...input.start };
-  }
-  if (input.end && compareTuple(upperDateTuple(date), upperDateTuple(input.end)) > 0) {
-    date = { ...input.end };
-  }
-  return date;
 }
 
 function makeCandidateTitlesDistinct(candidates: RuinCandidate[]): void {

@@ -156,6 +156,11 @@ export function projectCanonCausalRebase(branch: CanonBranch): CanonCausalRebase
       operationByFactId.set(entry.currentFactId, entry.operationRef);
     }
   }
+  // A deleted intervention fact is not an unpersisted BaseCanon fact. Keep its
+  // producer address so fact supports evaluate to reverted/orphaned, not satisfied.
+  for (const entry of entries) {
+    if (!operationByFactId.has(entry.currentFactId)) operationByFactId.set(entry.currentFactId, entry.operationRef);
+  }
 
   const explicitSuperseded = new Set<string>();
   const activeRetiredFacts = new Set<string>();

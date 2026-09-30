@@ -28,6 +28,7 @@ import {
   mergeArtifactCanonBindings,
 } from '../core/artifactCanonBinding.ts';
 import { currentBranchActiveStateFacts } from '../runtime/butterflyContext.ts';
+import { previousContinuousState, projectContinuousStates } from '../retrieval/continuousState.ts';
 import { reconcileCanonIntervention } from './canonReconcile.ts';
 
 type CanonStateEvidence = Pick<
@@ -333,7 +334,7 @@ async function commitButterflyCanon(
       fallbackCarriers.push(effect.subject);
     }
     const predicate = effect.predicate;
-    const originalFactIds = replaceableDirectPredicates.has(predicate)
+    const originalFactIds = !effect.continuousState && replaceableDirectPredicates.has(predicate)
       ? matchingCanonFactIds(stateEvidence, subjectEntityId, predicate)
       : [];
     const time = effect.time || record.request.anchors.ruinExit.time;
@@ -354,13 +355,15 @@ async function commitButterflyCanon(
       sourceSpans: [],
       revisionIntroduced: 0,
       revisionRetired: null,
+      ...(effect.continuousState ? { continuousState: effect.continuousState } : {}),
     };
     return {
       op: originalFactIds.length > 0 ? 'replace' : 'assert',
       factKey: [
         subjectEntityId,
         predicate,
-        predicate === 'historical_change' ? normalizeStable(time) : 'world',
+        effect.continuousState ? `${normalizeStable(effect.continuousState.start)}:${index}`
+          : predicate === 'historical_change' ? normalizeStable(time) : 'world',
       ].join('|'),
       originalFactIds,
       current: fact,
@@ -400,14 +403,37 @@ async function commitButterflyCanon(
     };
   });
   const operations = [...directOperations, ...causalOperations];
+  const stateIntervals = projectContinuousStates([
+    ...(stateEvidence.personCanonViews ?? []).flatMap(person => person.facts),
+    ...(stateEvidence.activeCanonStateFacts ?? []).filter(fact => fact.continuousState).map(fact => ({
+      ...fact, object: fact.continuousState!.value, statement: fact.continuousState!.value,
+      temporalScope: fact.continuousState!.start, spatialScope: null,
+      epistemicStatus: fact.epistemicStatus ?? 'inferred', confidence: fact.confidence ?? 'low',
+      sourceRefs: [], sourceSnapshotIds: [], sourceSpans: [], revisionIntroduced: 0, revisionRetired: null,
+    })),
+    ...directOperations.map(operation => operation.current),
+  ]);
+  const stateSupports = directOperations.flatMap(operation => {
+    const current = stateIntervals.find(item => item.factId === operation.current.factId);
+    const previous = current && previousContinuousState(stateIntervals, current);
+    if (!previous) return [];
+    const local = directOperations.find(item => item.current.factId === previous.factId);
+    return [{ outputFactKey: operation.factKey,
+      inputRefs: local ? [{ kind: 'operation' as const, factKey: local.factKey }]
+        : [{ kind: 'fact' as const, factId: previous.factId }],
+      claimText: `同一时间轨状态承接：${previous.value} → ${current!.value}`,
+      sourceRefs: [...record.result.sourceIds],
+    }];
+  });
   // P3-A：不再让后续代码从叙事正文猜因果。直接变化与因果链首段记为根，
   // 后续阶段只承接模型已经明确给出的 causalStages 顺序；不新增模型调用。
   const causalPlan = {
     directOperationFactKeys: [
-      ...directOperations.map(operation => operation.factKey),
+      ...directOperations.filter(operation => !stateSupports.some(support => support.outputFactKey === operation.factKey))
+        .map(operation => operation.factKey),
       ...(causalOperations[0] ? [causalOperations[0].factKey] : []),
     ],
-    supports: causalOperations.slice(1).map((operation, index) => {
+    supports: [...stateSupports, ...causalOperations.slice(1).map((operation, index) => {
       const previousOperation = causalOperations[index];
       const previousStage = record.result.causalStages[index];
       const currentStage = record.result.causalStages[index + 1];
@@ -421,7 +447,7 @@ async function commitButterflyCanon(
           ...currentStage.sourceIds,
         ])],
       };
-    }),
+    })],
   };
   // internal.82（F-01）：归并留痕（只记录不阻断）。命中稳定实体越多，
   // 干涉越能被后续任务 canon 视图消费；兜底越多说明模型命名与史料脱节。
@@ -551,7 +577,7 @@ function dedupeDirectEffects(
   for (const effect of directEffects) {
     const record = directEffectRecord(effect, linkingIndex, activeEvidence);
     // 同一对象、同一状态维度只落一条最终状态；模型若重复，后项覆盖前项但不报错。
-    byState.set(`${record.subjectEntityId}|${record.predicate}`, record);
+    byState.set(`${record.subjectEntityId}|${record.predicate}|${record.continuousState?.start ?? ''}`, record);
   }
   return [...byState.values()];
 }
@@ -561,7 +587,8 @@ function directEffectRecord(
   linkingIndex: readonly EntityLinkCandidate[],
   activeEvidence?: CanonStateEvidence,
 ) {
-  const predicate = directEffectPredicate(effect.stateHint);
+  const predicate = effect.continuousState
+    ? `continuous:${effect.continuousState.dimension}` : directEffectPredicate(effect.stateHint);
   const catalogEntityId = linkCarrier(effect.subject, linkingIndex);
   // catalog 未命中时，只在当前 active Canon 的同一状态维度里寻找唯一 generated
   // 对象。这样「玲山」与「玲山·哈姆斯沃思」可承接为 replace；重名/多命中仍

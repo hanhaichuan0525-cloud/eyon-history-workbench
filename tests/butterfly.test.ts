@@ -33,6 +33,8 @@ import { MemoryCanonRepository } from '../src/storage/canon.ts';
 import { reconcileCanonOrphans } from '../src/runtime/canonOrphanReconcile.ts';
 import { syncButterflyCanonStatuses } from '../src/runtime/canonRecordStatus.ts';
 import type { CanonFact } from '../src/retrieval/contracts.ts';
+import { resolveCanon } from '../src/retrieval/canonResolver.ts';
+import { continuousStateAt } from '../src/retrieval/continuousState.ts';
 import { fingerprintText } from '../src/runtime/transactionIdentity.ts';
 
 test('蝴蝶档案删除同时清理同轮待结算快照，且重复删除幂等', async () => {
@@ -2108,6 +2110,26 @@ function linkingSettleHarness(overrides: {
   };
   return { repository, canon, workflow, pending };
 }
+
+test('G-01B：同一结算的三次状态转变分开提交，后续状态留有因果支持', async () => {
+  const harness = linkingSettleHarness({
+    carriers: [{ carrier: '旧堡', time: '复兴纪元450年', change: '旧堡保留记录' }, { carrier: '账簿', time: '复兴纪元488年', change: '记录流传' }],
+    directEffects: ['监禁', '越狱', '赦免'].map((value, index) => ({ subject: '尤娜', time: `复兴纪元${450 + index}年3月1日`, stateHint: value, change: `尤娜${value}`,
+      continuousState: { dimension: '拘束', value, start: `复兴纪元${450 + index}年3月1日` } })),
+    linkingIndex: [{ entityId: 'entity:yuna', names: ['尤娜'] }],
+  });
+  await harness.repository.savePending(harness.pending);
+  const committed = await harness.workflow.settle(harness.pending);
+  const branch = await harness.canon.getBranch(namespace);
+  const delta = branch.deltas.find(item => item.deltaId === committed.deltaRef)!;
+  const states = delta.operations.filter(op => op.current.continuousState);
+  assert.equal(states.length, 3); assert.ok(states.every(op => op.op === 'assert'));
+  assert.equal(new Set(states.map(op => op.factKey)).size, 3);
+  assert.equal(delta.causalBasis?.filter(basis => basis.basis === 'supported').length, 3);
+  const view = resolveCanon({ ...branch, baseCanon: { facts: [], personViews: [], sourceSnapshots: [], passages: [], eventRelations: [] } }, branch.headRevision,
+    { subjectEntityIds: ['entity:yuna'], temporalScopes: ['复兴纪元453年'], spatialScopes: [], sourceIds: ['chat:8'] });
+  assert.equal(continuousStateAt(view.continuousStates!, 'entity:yuna', '拘束', '复兴纪元453年3月1日').value, '赦免');
+});
 
 test('结算提交把命中稳定实体的载体归并进 canon（internal.82 F-01）', async () => {
   const harness = linkingSettleHarness({

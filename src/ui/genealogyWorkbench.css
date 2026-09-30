@@ -149,7 +149,7 @@ select {
   font-size: 12px;
 }
 
-.field select {
+.field select, .field textarea {
   width: 100%;
   min-height: 38px;
   padding: 0 34px 0 10px;
@@ -160,10 +160,11 @@ select {
   outline: none;
 }
 
-.field select:focus-visible {
+.field select:focus-visible, .field textarea:focus-visible {
   border-color: var(--teal);
   box-shadow: 0 0 0 2px rgba(82, 184, 173, .15);
 }
+.field textarea { min-height: 62px; padding: 10px; font: inherit; resize: vertical; }
 
 .character-brief,
 .focus-detail {
@@ -310,6 +311,20 @@ select:disabled {
   flex: 0 0 auto;
   gap: 6px;
 }
+
+.family-switch { display: flex; flex-wrap: wrap; gap: 4px; }
+.family-switch button {
+  min-height: 44px; padding: 7px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer;
+}
+.family-switch button[aria-pressed="true"] { color: var(--teal-2); border-color: var(--teal-line); background: rgba(82,184,173,.08); }
+.family-switch button:focus-visible { outline: 2px solid var(--teal-2); outline-offset: 2px; }
+.identity-supplement summary { color: var(--muted); cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.identity-supplement .field { margin-top: 6px; }
+.kinship-board path.kin-edge-source, .kinship-board path.kin-edge-social {
+  fill: none; stroke: var(--gold-2); stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; opacity: .65;
+}
+.kinship-board path.kin-edge-social { stroke: var(--teal-2); stroke-dasharray: 5 4; }
 
 .icon-button {
   width: 34px;
@@ -603,6 +618,8 @@ select:disabled {
 }
 
 @media (max-width: 700px) {
+  .kinship-toolbar { flex-wrap: wrap; }
+  .family-switch { order: 3; flex-basis: 100%; }
   .genealogy-app {
     padding: 10px;
   }

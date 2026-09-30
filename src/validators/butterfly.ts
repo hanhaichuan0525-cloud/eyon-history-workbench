@@ -60,6 +60,7 @@ export function parseAndValidateButterfly(
       time: effect.time.trim(),
       stateHint: effect.stateHint.trim(),
       change: effect.change.trim(),
+      ...(effect.continuousState ? { continuousState: effect.continuousState } : {}),
     }))
     // 直接对象与变化句是唯一必要字段；时间和状态提示缺失时仍可安全降级。
     .filter(effect => effect.subject.length > 0 && effect.change.length > 0);

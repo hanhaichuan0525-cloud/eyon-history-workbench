@@ -114,6 +114,7 @@ export interface CanonFact {
   sourceSpans: KnowledgeSpan[];
   revisionIntroduced: number;
   revisionRetired: number | null;
+  continuousState?: import('./continuousState.ts').ContinuousState;
 }
 
 /** 只表达有证据支持的事件关系；未列出的事件对保持未决。 */
@@ -462,6 +463,7 @@ export interface CanonResolvedView {
   resolvedRevision: number;
   queryScopeHash: string;
   activeFacts: CanonFact[];
+  continuousStates?: import('./continuousState.ts').ContinuousStateInterval[];
   inactiveFacts: CanonInactiveFact[];
   uncertainItems: string[];
   eventRelations: CanonEventRelation[];
@@ -580,6 +582,8 @@ export interface KnowledgeEntity {
    * ageBased 表示来自年龄换算（基准见 basedOnEra/Year），谱系硬门只用显式生卒。
    */
   lifespan?: {
+    originKind?: 'birth' | 'arrival' | 'activation' | 'incarnation';
+    identityTracks?: import('../schemas/genealogy.ts').GenealogyNode['identity'];
     born?: { era: string; year: number } | null;
     died?: { era: string; year: number } | null;
     /** 年龄换算来源：当前记录年龄（基准 = basedOn*） */

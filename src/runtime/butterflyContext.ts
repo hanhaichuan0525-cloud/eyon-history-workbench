@@ -84,6 +84,8 @@ export function currentBranchActiveStateFacts(
         factId: fact.factId,
         subjectEntityId: fact.subjectEntityId,
         predicate: fact.predicate,
+        ...(fact.continuousState ? { continuousState: fact.continuousState,
+          epistemicStatus: fact.epistemicStatus, confidence: fact.confidence } : {}),
       }));
   } catch {
     return [];

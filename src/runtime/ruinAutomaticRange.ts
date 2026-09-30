@@ -82,6 +82,14 @@ export function resolveAutomaticRuinRange(
   const evidenceCenter = evidenceYears.length
     ? evidenceYears[Math.floor(evidenceYears.length / 2)]
     : null;
+  // 有明确探讨方向时，资料中的事件由模型从完整原文理解；不再让无关传记的
+  // 年份中位数和骰材哈希把已知往事排除。参考身份不因此升级为现场演员，
+  // 也不拿被点名子女的出生年限制其父辈史。这里不新增事件抽取/必填结构。
+  const focusedHistory = Boolean(input.supplementaryDirection.trim())
+    || input.selectedCharacters.length > 0
+    || selectedPersons.length > 0
+    || (context.evidenceBundle.personTimeline ?? [])
+      .some(entry => mentionTexts.some(text => personMentionedIn(text, entry.name)));
 
   let startYear: number;
   let endYear: number;
@@ -94,12 +102,12 @@ export function resolveAutomaticRuinRange(
     endYear = startYear + durationYears;
   } else {
     const maximum = capYear;
-    const shortLifeWindow = personFloor !== null
+    const shortLifeWindow = focusedHistory || (personFloor !== null
       && maximum >= minimumEffective
-      && maximum - minimumEffective <= 80;
+      && maximum - minimumEffective <= 80);
     if (shortLifeWindow) {
-      // 点名普通人物且其可用生涯本身不长时，自动范围是“可行包络”，
-      // 不再用哈希把人物硬塞进出生后 3–12 年。具体故事发生在包络中的
+      // 明确历史方向的自动范围是“可行包络”，不是随机的 3–12 年窗口。
+      // 具体故事发生在包络中的
       // 哪一段，交给模型依据事件前提、经历和世界书作出一次一致判断。
       startYear = minimumEffective;
       endYear = maximum;
@@ -116,10 +124,21 @@ export function resolveAutomaticRuinRange(
     }
   }
 
-  const startMonth = 1 + ((hash >>> 8) % 12);
-  const startDay = 1 + ((hash >>> 16) % 28);
-  let endMonth = 1 + ((hash >>> 4) % 12);
-  let endDay = 1 + ((hash >>> 12) % 28);
+  // 年份包络包含完整首尾年，不能再用随机月日切掉同年的生日/已知事件。
+  const fullYearEnvelope = focusedHistory && capYear !== null;
+  const startMonth = fullYearEnvelope ? 1 : 1 + ((hash >>> 8) % 12);
+  const startDay = fullYearEnvelope ? 1 : 1 + ((hash >>> 16) % 28);
+  let endMonth = fullYearEnvelope ? 12 : 1 + ((hash >>> 4) % 12);
+  let endDay = fullYearEnvelope ? 31 : 1 + ((hash >>> 12) % 28);
+  // 剧情现在有明确月日时，包络到该日为止；只有年份则保留月份未知的宽限。
+  if (fullYearEnvelope && endYear === capYear) {
+    const currentMonth = Number(context.currentWorld.time.match(/(\d{1,2})\s*月/u)?.[1]);
+    const currentDay = Number(context.currentWorld.time.match(/(\d{1,2})\s*日/u)?.[1]);
+    if (currentMonth >= 1 && currentMonth <= 12) {
+      endMonth = currentMonth;
+      endDay = currentDay >= 1 && currentDay <= 31 ? currentDay : 31;
+    }
+  }
   // 防御：窗口被上界压到同一年时，月/日不得倒置（start ≤ end 的硬不变量）。
   if (endYear === startYear) {
     if (endMonth < startMonth) {

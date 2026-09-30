@@ -404,7 +404,7 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
     'A great ruin manuscript: era-credible (location, institutions, peoples fit the era), characters independent and vivid (every named person carries their own identity, motive and price), events with causality and reversal (not a mechanical war report), ending with resonance. History is history, the present is the present: never arrange a historical predecessor for anything contemporary.',
     'Treat explicit LOCKED facts in EVIDENCE_LEDGER_READ_ONLY as immutable canon. QUALIFIED_EVIDENCE_VIEW decides whether a related passage may serve as stage, actor, cause, background, aftermath or reference; only then invent missing connective history.',
     'Build one shared historical stage first, then create different causal branches from it. Reuse only a small canonical anchor cast; each branch must still have its own indispensable local actors and must not merely rename the same roles.',
-    'The candidates must be genuinely different historical events, not the same incident moved to another year or rewritten with cosmetic details. Dates, renamed local actors and changed adjectives never count as branch differentiation.',
+    'For open history, candidates must be genuinely different events, not cosmetic redating. For one requested canonical incident, preserve that incident across evidence-compatible alternative interpretations; differentiate only genuinely unknown causes, mechanisms or perspectives, never its established date, age, participants or outcome.',
     'Fuse each material set into natural in-world history. Never expose dice labels, seed names, writing stages, or phrases such as background/conflict/trigger.',
     'Source and worldbook titles are script labels, not in-world names: never write a book name, character-card name or worldbook version (e.g. a title containing an era name plus a work name, or "v4.2") into the manuscript, and never use such a label as an item, technique or organization name.',
     'Use the requested location, focus references, supplementary direction and relevant sources. A related external place or later relic is not automatically the event stage. Inference may freely fill OPEN local gaps, but may not rewrite an established fact.',
@@ -460,21 +460,22 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
     'candidates must follow generationRequest.materials one-to-one and in the same order.',
     'Dice/material may shape how the requested history unfolds but cannot become its subject. The player request remains the center of actor selection, event design and historical result.',
     'branchSignature is a machine-only event identity object with exactly actor, action, object, mechanism, outcome (all concise strings). Describe what is actually done, to what, by what mechanism, and what concrete result follows; omit dates and decorative wording. It will not be shown to players.',
-    'Across candidates, branchSignature must differ in the substantive action/mechanism/outcome. The same event with a different date, title, place-name detail or actor alias will be rejected and the whole outline batch regenerated.',
+    'Across candidates, branchSignature must differ in the substantive action/mechanism/outcome. For alternative interpretations of one known incident, vary only evidence-compatible open mechanisms or actions; an established outcome stays fixed. Different dates, titles, place-name details or actor aliases never count as substantive difference.',
     'canonInterpretation is the machine-readable reasoning receipt. It contains mode, hypothesis, evidenceFactRefs, evidencePassageRefs, eventUsages and assumptions. Copy only handles literally listed in TASK_CITATION_CONTRACT_V2. An empty allowed list requires an empty output list.',
     'eventUsages items contain eventRef, usage and explanation. eventRef is SELF for this candidate\'s genuinely open local event, or one supplied F/E handle for a canonical fact/event. A canonical event may use occurs in only one independent-event candidate. Reusing it across candidates is allowed only when every such candidate declares alternative-interpretation and presents genuinely different, evidence-compatible hypotheses—not cosmetic redating.',
     'assumptions contain claim, evidenceFactRefs, evidencePassageRefs, confidence and alternatives. Facts/source order is never chronology: respect eventRelations and dates, and use cross-entry location/relationship/current-state prerequisites to choose a coherent explanation. When chronology remains ambiguous, keep at least one plausible alternative instead of silently promoting the chosen hypothesis to immutable canon. reported/contested facts remain claims, not sole objective truth.',
     input.automaticTimeRange
-      ? 'span contains start, end and label. Dates contain year, month and day. generationRequest.start/end is an automatically computed feasible envelope, not a demand to start at a person’s birth. Choose each candidate’s exact, distinct span inside that envelope by reasoning from the event prerequisites, dated deeds and life stage; keep the chosen chronology consistent across the whole candidate.'
+      ? 'span contains start, end and label. Dates contain year, month and day. generationRequest.start/end is an automatically computed feasible envelope, not a demand to start at a person’s birth or spread nodes across the envelope. Choose the event’s exact span from the original evidence and life stage. Alternative interpretations of the same known incident may share the same span and central date; never redate it to distinguish candidates. Keep the chronology consistent across the whole candidate.'
       : 'span contains start, end and label. Dates contain year, month and day. generationRequest contains the player’s binding concrete range; copy explicit calendar dates inside it.',
     'shift contains from, to and explanation. from is the state at the start of this candidate, to is the state at its end. They must differ (stable/transition/turbulent). Either endpoint may equal the dominant periodType; it is NOT a fourth forbidden value. Example: a stable-dominant candidate may turn stable → transition. Keep explanation within 20-45 Chinese characters.',
     'cast is the actual cast, not a reference list. It contains only shared actors and indispensable local actors who visibly participate in this candidate as {name, kind, identity, role}. Every listed member must appear in at least one node and genuinely act in the final prose. kind must be person, family, organization, faction or community; keep the total at five or fewer.',
     'nodes contains exactly 4 chronological items, one each in this order: origin, process, anomaly, result. The anomaly machine key is the player-visible 高潮 stage and remains for old-record compatibility. Each item contains only id, kind, time, location, title, summary, visibleTrace and participants. participants is a short array using names copied from this candidate.cast.',
     'All four stages are playable entry points: origin explores or changes the cause, process affects accumulation, anomaly is the causal climax, and result explores evidence, rescue and downstream consequences. Keep motives, branches, texture and secondary actors for the later expansion stage.',
     'time contains year, month, day, hour, minute and label. Keep every node inside the player time range when one was supplied. Never place any node or span at or after the current story time shown in currentWorld.time — time travel reaches the past only; the latest allowed instant is the current story time, and everything must stay before it.',
-    'Node dates must be explicit, distinct and chronologically ordered inside generationRequest.start/end. Never use relative chronology, null calendar parts, “未详”, or 0 as a date placeholder. Include hour and minute for every node.',
+    'Node timestamps must be explicit and chronologically ordered inside generationRequest.start/end. Several nodes may occur on the same calendar day at successive hours/minutes; an evening incident need not become a multi-day or multi-year event. Never use relative chronology, null calendar parts, “未详”, or 0 as a date placeholder. Include hour and minute for every node.',
     'Keep premise, summary and historicalResult within 20-50 Chinese characters each; each node summary within 20-45; each visibleTrace within 10-30. The entire response must remain compact.',
     '<PRE_SUBMISSION_CHECK>',
+    'First re-read the exact known-incident sentences in CHARACTER_CARDS_FULL, including supplementary habit/background entries. Compute a birthday incident from the explicit birth date plus the stated incident age, not from the automatic window or a different relative’s event. Preserve that one central date, time, age and outcome across every interpretation. Cast identity, summaries and node times must agree, not just the final prose. Do not transplant the origin of another habit or broaden an “当晚” request into later case closure; later aftermath may be described briefly without stretching the playable incident.',
     'Before responding, silently read any selected biography as a chronology rather than an actor quota. For each candidate date, distinguish what already exists from what is only established in a later biography stage. Do not move a later named person, unique object, ritual, institution, construction or final closure into an earlier period, and do not permanently end something that the later biography still records as active. An earlier local precursor remains allowed when historically plausible, but give it its own local identity instead of borrowing the later proper name or claiming the later event has already happened. For every known person retained in cast, calculate that event-year age from CHARACTER_TIME_ANCHORS and make the role and agency fit that life stage.',
     'If a draft conflicts with an earlier or later biography state, correct the outline itself before sending. Keep uncertain gaps open to plausible invention; do not add fields, explanations or a printed checklist.',
     '</PRE_SUBMISSION_CHECK>',
@@ -643,7 +644,7 @@ export function buildRuinKnownPersonReviewPrompt(
     'The first answer already passed structural validation. Perform one narrow natural-language correction only.',
     `Known people whose explicit written age conflicts with their supplied time window: ${[...new Set(conflictNames)].join('、')}`,
     'Keep the selected outline, cast, identities, dates, locations, nodes, causal direction and player subject unchanged.',
-    'Correct the conflicting explicit age in historyProse, or remove the unnecessary precise age. Do not add new fields, new actors or new history.',
+    'Correct the conflicting explicit age in historyProse from the original evidence and the exact birthday when available. Never erase a known incident age to conceal a chronological conflict or replace it with a different relative’s event. Do not add new fields, new actors or new history.',
     'Return only the same single JSON object required below. Do not explain the correction.',
     '</RUIN_KNOWN_PERSON_LOCAL_REVIEW>',
     originalPrompt,
@@ -816,6 +817,15 @@ export function buildCompactRuinExpansionRecoveryPrompt(
     originalPrompt,
     'HISTORICAL_AMBIGUITY_NARRATIVE_READ_ONLY',
   );
+  const knownEventFaithfulness = extractTaggedBlock(originalPrompt, 'KNOWN_EVENT_FAITHFULNESS_READ_ONLY');
+  const characterTimeAnchors = extractTaggedBlock(originalPrompt, 'CHARACTER_TIME_ANCHORS');
+  // 恢复只缩减输出，不裁掉生成已消费的原文。否则生日/对应经历会在恢复时消失。
+  const sourceBlocks = ['CHARACTER_CARDS_FULL', 'HISTORICAL_AUTHORITY_READ_ONLY',
+    'HISTORICAL_REFERENCE_FACTS_READ_ONLY', 'REFERENCE_DATA_READ_ONLY']
+    .flatMap(tag => {
+      const content = extractTaggedBlock(originalPrompt, tag);
+      return content ? [`<${tag}>`, content, `</${tag}>`] : [];
+    });
   if (!fixedHeader || !selectedOutline) return null;
 
   return [
@@ -847,6 +857,13 @@ export function buildCompactRuinExpansionRecoveryPrompt(
           '</HISTORICAL_AMBIGUITY_NARRATIVE_READ_ONLY>',
         ]
       : []),
+    ...(knownEventFaithfulness ? [
+      '<KNOWN_EVENT_FAITHFULNESS_READ_ONLY>', knownEventFaithfulness, '</KNOWN_EVENT_FAITHFULNESS_READ_ONLY>',
+    ] : []),
+    ...(characterTimeAnchors ? [
+      '<CHARACTER_TIME_ANCHORS>', characterTimeAnchors, '</CHARACTER_TIME_ANCHORS>',
+    ] : []),
+    ...sourceBlocks,
     '<SELECTED_OUTLINE_READ_ONLY>',
     selectedOutline,
     '</SELECTED_OUTLINE_READ_ONLY>',
@@ -977,9 +994,17 @@ function buildReferenceDataSection(
     renderActiveEvidenceBlock(buildActiveEvidenceView(
       input.context.evidenceBundle,
       requestedEraFromText(input.generationInput.era),
-    ), { citationRegistry }),
+    ), { citationRegistry, atTimes: [input.generationInput.start, input.generationInput.end]
+      .filter(point => point?.year != null)
+      .map(point => `${input.generationInput.era}${point!.year}年${point!.month ? `${point!.month}月` : ''}${point!.day ? `${point!.day}日` : ''}`) }),
     ...renderCharacterTimeAnchors(input),
     ...renderCharacterCardsFull(input),
+    '<KNOWN_EVENT_FAITHFULNESS_READ_ONLY>',
+    '先从人物完整条目、有效Canon与史料原句判断玩家是否在探讨一个已知事件。已知事件的当事人、亲属关系、事件年龄、日期、时刻、先后及结果先固定，骰材和候选差异只能补未知部分；不得为了制造不同候选给同一已知事件重排年份或改写年龄。补充习惯中的“对应经历”也是事件证据，不只是性格装饰。',
+    '年龄属于紧邻的具体事件，不是人物当前年龄，不能把兄弟姐妹的不同经历互相挪用。“N岁生日当天/当晚”结合显式出生年月日，应落在出生年加N的同月同日；原句时刻同样保留。仅有“某岁时”则保留年龄窗口，未知月日可合理补齐，不伪称原文已有日期。生日月日前后的周岁要据原文校准，年差只是年份级参考。',
+    '已知事件日期优先于自动可行时间带内的自由选日。若玩家明确范围与已知事件不相容，只能探索该范围内的前因/后果，不能把事件搬入范围。多个候选可解释同一事件尚未说明的原因、行动与视角，但共有的已知事实不变；采用alternative-interpretation，不用改名或改日期伪造不同事件。原文未说明的细节仍可自由创作。',
+    '规划提交前先核对已知事件，再把正确日期与事实写入现有span/nodes/summary，沿用现有字段，无须新增年表或检查单。扩写只能承接这些已核对的冻结事实；若发现既定大纲与原文冲突，不可通过删除年龄、模糊日期或编造另一段经历掩盖冲突。未求值EJS分支仍是条件材料，不执行模板、不把各分支合并为硬事实。',
+    '</KNOWN_EVENT_FAITHFULNESS_READ_ONLY>',
     '<HISTORICAL_AUTHORITY_READ_ONLY>',
     'These passages are qualified to describe the requested geographic stage. They are factual anchors, not examples. A passage with temporal.fit=unknown may support stable geography or background, but its named rulers, offices, families and organizations are not automatically contemporary actors. Never echo this block.',
     '以下原文已取得本轮目标地点的舞台资格。它们是事实锚点，不是示例。年代资格为 unknown 时，只可先使用稳定地理与背景；其中具名统治者、官职、家族和组织未经同时代证据确认，不得直接当作本纪元演员。不得回显本区块。',
@@ -1237,7 +1262,12 @@ export function renderCharacterTimeAnchors(input: RuinPromptInput): string[] {
     const entry = findPersonTimelineEntry(entries, name);
     const lifespan = entry?.lifespan;
     const born = lifespan?.born;
-    if (!entry || !born?.era || born.year === null || born.year === undefined) continue;
+    if (!entry) continue;
+    if (lifespan?.originKind && lifespan.originKind !== 'birth' && !born) {
+      lines.push(`【${name}】${assessStagePerson(entry, eventSpan ?? { start: {}, end: {} }, input.generationInput.era).guidance}`);
+      continue;
+    }
+    if (!born?.era || born.year === null || born.year === undefined) continue;
     const eventEvidence = entry.lifeAnchors?.length
       ? `\n　事件证据（列出顺序不是时间线）：${entry.lifeAnchors.map(anchor => {
         const status = anchor.epistemicStatus === 'reported' ? '／转述' : '';
@@ -1254,7 +1284,9 @@ export function renderCharacterTimeAnchors(input: RuinPromptInput): string[] {
       ? assessStagePerson(entry, eventSpan, input.generationInput.era).guidance
       : '';
     const eventAgeLine = eventAgeGuidance ? `本轮事件年由脚本核算：${eventAgeGuidance}` : '';
-    if (lifespan?.arrivalBased) {
+    if (lifespan?.originKind && lifespan.originKind !== 'birth') {
+      lines.push(`【${name}】${eventAgeLine || entry.narrative}${chronology}`);
+    } else if (lifespan?.arrivalBased) {
       const hardFact = lifespan.ageAtRecord !== undefined
         ? `硬事实：基准${lifespan.basedOnEra ?? ''}${lifespan.basedOnYear ?? ''}年时${lifespan.ageAtRecord}岁，界外来客`
         : '界外来客';
@@ -1263,12 +1295,9 @@ export function renderCharacterTimeAnchors(input: RuinPromptInput): string[] {
         : '';
       lines.push(
         `【${name}】${hardFact}，但穿越/抵达时间世界书未记载。`
-        + `脚本推断线：按年龄线性外推，其在场/抵达约${born.era}${born.year}年起`
-        + `（事件在场年龄 = 事件年份 − ${born.year}，「抵达时0岁」假说）${died}。`
-        + '若剧情需要描写其抵达/初来场景：抵达时间与抵达时年龄必须自洽'
-        + `（如${born.era}45X年抵达则当时约 5X 岁），且全文与各史稿保持一致——`
+        + `旧年龄外推线约${born.era}${born.year}年，只是年龄参考，不是抵达日期，更不代表抵达时0岁${died}。`
+        + '抵达时间待考，不能据此硬判其在本界缺席。若剧情需要描写其抵达/初来场景：标明任务局部假设，抵达时间与原世界年龄分别记录，且全文与各史稿保持一致——'
         + '禁止同一人物同时出现「已在此地数十年」与「初来乍到」两条互相矛盾的抵达线。'
-        + eventAgeLine
         + chronology,
       );
       continue;
@@ -1281,7 +1310,8 @@ export function renderCharacterTimeAnchors(input: RuinPromptInput): string[] {
       : '；在世';
     lines.push(
       `【${name}】出生${born.era}${born.year}年${origin}${died}；`
-      + `事件在场年龄 = 事件年份 − ${born.year}；未出生/已故时段禁止其在场；`
+      + `事件在场年龄 = 事件年份 − ${born.year}（年份级参考，明确生日月日前后按周岁校准）；未出生/已故时段禁止其在场；`
+      + '减法只适用于相同纪年；跨纪元长度未知时不计算精确年龄，不把纪元序号差当成年龄；'
       + '出场时必须按该年龄安排可信的生命阶段、权限、职业与自主行动，不得把其后来成年后的身份倒灌进童年或少年期；'
       + `若资料明确说明长寿种、生长差异或特殊社会制度，则按原资料处理。${eventAgeLine}${chronology}`,
     );
@@ -1334,12 +1364,15 @@ function renderCharacterCardsFull(input: RuinPromptInput): string[] {
   }
   if (names.size === 0) return [];
   const lines: string[] = [];
+  const delivered = new Set<string>();
   for (const name of names) {
     const matchedAttachments = attachments.filter(item =>
       personNameMatches(item.canonicalName, name)
       || personNameMatches(item.title, name));
     if (matchedAttachments.length > 0) {
       for (const attachment of matchedAttachments) {
+        if (delivered.has(attachment.attachmentId)) continue;
+        delivered.add(attachment.attachmentId);
         lines.push(
           `【${attachment.canonicalName}｜attachmentId=${attachment.attachmentId}｜sha256=${attachment.contentHash}】`,
           attachment.content,

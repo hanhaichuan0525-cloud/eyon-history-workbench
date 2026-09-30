@@ -15,6 +15,8 @@ import type {
   TaskAnchorAttachment,
 } from './contracts.ts';
 import { stableSha256 } from './sourceSnapshot.ts';
+import { characterDocumentOwner } from './sourceOwnership.ts';
+import { ContinuousStateSchema } from './continuousState.ts';
 
 const IDENTITY_FIELDS: Readonly<Record<string, string>> = {
   身份: 'identity',
@@ -165,6 +167,7 @@ export function buildCharacterCanonFacts(
   for (const snapshotId of entity.sourceSnapshotIds) {
     const snapshot = snapshotsById.get(snapshotId);
     if (!snapshot || !isCharacterEntry(snapshot, entity)) continue;
+    if (/<%[\s\S]*?\b(?:if|else|switch)\b[\s\S]*?%>/u.test(snapshot.content)) continue;
     extractFieldFacts(entity, snapshot, facts);
     extractEventFacts(entity, snapshot, facts);
   }
@@ -180,7 +183,7 @@ export function buildCharacterCanonFacts(
       'departed_from', 'person_selected_for_duty', 'arrived_at', 'received_from',
     ].includes(fact.predicate)),
     currentStateFactIds: idsFor(unique, fact =>
-      Object.values(CURRENT_STATE_FIELDS).includes(fact.predicate)
+      Boolean(fact.continuousState) || Object.values(CURRENT_STATE_FIELDS).includes(fact.predicate)
       || ['identity', 'occupation'].includes(fact.predicate)),
     eventRelations,
     facts: unique,
@@ -226,13 +229,13 @@ export async function buildTaskPersonArtifacts(input: {
     .map(entry => entry.entityId));
   const normalizedQuery = normalizeRetrievalText(input.query);
   const people = input.entities.filter(entity => {
-    if (!entity.kinds.includes('person') || !entity.characterFacts?.facts.length) return false;
+    if (!entity.kinds.includes('person')) return false;
     return directIds.has(entity.entityId)
       || castIds.has(entity.entityId)
       || [entity.canonicalName, ...entity.aliases]
         .some(name => normalizedQuery.includes(normalizeRetrievalText(name)));
   }).slice(0, 16);
-  const personCanonViews = people.map(entity => buildPersonCanonView(
+  const personCanonViews = people.filter(entity => entity.characterFacts?.facts.length).map(entity => buildPersonCanonView(
     entity,
     input.taskType,
     normalizedQuery,
@@ -240,12 +243,18 @@ export async function buildTaskPersonArtifacts(input: {
   ));
   const snapshotsById = new Map(input.snapshots.map(snapshot => [snapshot.snapshotId, snapshot]));
   const taskAnchorAttachments: TaskAnchorAttachment[] = [];
-  for (const view of personCanonViews) {
-    const entity = people.find(candidate => candidate.entityId === view.entityId)!;
+  for (const entity of people) {
     const direct = directIds.has(entity.entityId)
       || [entity.canonicalName, ...entity.aliases]
         .some(name => normalizedQuery.includes(normalizeRetrievalText(name)));
-    for (const snapshotId of view.sourceSnapshotIds) {
+    // 原文交付不依赖机器提取到几个字段；定位成功的散文人设也必须交给模型。
+    // 阅读归属可以跨条目，但不把角色经营的组织身份并进该角色，也不添加演员。
+    const names = [entity.canonicalName, ...entity.aliases].map(normalizeRetrievalText);
+    const ownedIds = input.snapshots.filter(snapshot => {
+      const owner = characterDocumentOwner(snapshot);
+      return owner && names.includes(normalizeRetrievalText(owner));
+    }).map(snapshot => snapshot.snapshotId);
+    for (const snapshotId of uniqueStrings([...entity.sourceSnapshotIds, ...ownedIds])) {
       const snapshot = snapshotsById.get(snapshotId);
       if (!snapshot || !['worldbook', 'mvu'].includes(snapshot.sourceType)) continue;
       if (!isCharacterEntry(snapshot, entity)) continue;
@@ -330,6 +339,23 @@ function extractFieldFacts(entity: KnowledgeEntity, snapshot: SourceSnapshot, ou
   for (const match of snapshot.content.matchAll(fieldPattern)) {
     const label = match[1]!.trim();
     const value = match[2]!.trim();
+    // Explicit authored metadata only. Ordinary prose remains open evidence for the model.
+    if (label === '持续状态') {
+      try {
+        const state = ContinuousStateSchema.safeParse(JSON.parse(value));
+        if (state.success) {
+          const fact = makeFact(entity, snapshot, `continuous:${state.data.dimension}`, state.data.value,
+            `${state.data.start}：${state.data.value}`, {
+              snapshotId: snapshot.snapshotId, startOffset: match.index!, endOffset: match.index! + match[0].length,
+            });
+          fact.factId += `:${compactStableId(value)}`;
+          fact.temporalScope = state.data.start;
+          fact.continuousState = state.data;
+          output.push(fact);
+        }
+      } catch { /* Bad optional metadata cannot hide the underlying source passage. */ }
+      continue;
+    }
     if (GENERIC_RELATION_FIELD.test(label) && value) {
       output.push(...extractGenericRelationFacts(entity, snapshot, value, match.index!));
       continue;

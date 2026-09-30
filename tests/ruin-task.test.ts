@@ -119,6 +119,38 @@ test('任务货币不唯一时明确拒绝，不回退到当地通货', () => {
   }), /唯一确定实体货币/u);
 });
 
+test('无归属海域使用世界书明确的通用价值单位，不将Z伪装成实体币', () => {
+  const sources = economySources('圣羽币');
+  sources[0].content = sources[0].content.replace('货币体系:', '货币体系:\n  单位: Z — 全大陆通用抽象计价单位（非实体货币）');
+  const input = { sources, location: '无尽海东部海域-碎星群岛外缘-虚海乱流漩涡区-捕雾船甲板', mode: '个人' as const, difficulty: 'D' as const, scale: '即时互动' as const };
+  const fallback = resolveRuinTaskEconomy(input);
+  assert.equal(fallback.reward, '425Z（通用价值结算）');
+  assert.equal(fallback.guideSourceId, sources[0].sourceId);
+  assert.equal(resolveRuinTaskEconomy({ ...input, location: '梵尼亚/圣纹工坊' }).reward, '425Z 圣羽币');
+  const record = materializeRuinTask(parseRuinTaskDraft(draftJson), fallback.reward);
+  assert.match(buildRuinTaskPanel(record), /425Z（通用价值结算）/u);
+  assert.match(buildRuinTaskContract(record, '追回账册', 'run-1', 'request-fallback'), /425Z（通用价值结算）/u);
+});
+
+test('明确通用实体币实时跟随世界书改名，地域歧义也可兜底', () => {
+  for (const name of ['星海币', '潮汐币']) {
+    const sources = economySources('圣羽币');
+    sources[0].content = sources[0].content.replace('货币体系:', `货币体系:\n  通用实体货币: ${name}`);
+    const result = resolveRuinTaskEconomy({ sources, location: '未知海域', mode: '个人', difficulty: 'D', scale: '短程目标' });
+    assert.equal(result.reward, `550Z ${name}`);
+  }
+});
+
+test('关闭的经济条目与地点条目不参与奖励解析', () => {
+  const sources = economySources('圣羽币');
+  sources[0].worldbook.enabled = false;
+  assert.throws(() => resolveRuinTaskEconomy({ sources, location: '梵尼亚', mode: '个人', difficulty: 'D', scale: '即时互动' }), /缺少可解析/u);
+  sources[0].worldbook.enabled = true;
+  sources.push(worldbookSource('无名码头', '无名码头坐落于翼民圣国梵尼亚。'));
+  sources[2].worldbook.enabled = false;
+  assert.throws(() => resolveRuinTaskEconomy({ sources, location: '无名码头', mode: '个人', difficulty: 'D', scale: '即时互动' }), /唯一确定实体货币/u);
+});
+
 test('任务编译提示与正文契约不把 API 结构冒充正文，并精确锁定一个 MVU 路径', () => {
   const record = materializeRuinTask(parseRuinTaskDraft(draftJson), '90000Z 帝冕币');
   const prompt = buildRuinTaskPrompt({

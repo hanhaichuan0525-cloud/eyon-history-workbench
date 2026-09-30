@@ -3,6 +3,8 @@ import type {
   WorkbenchStatusDetail,
 } from '../runtime/facade.ts';
 import type { GenealogyNode } from '../schemas/genealogy.ts';
+import { genealogyDisplayDates, genealogyEdgeDescription, genealogyFamilyView, genealogyMilestone,
+  genealogyRelationText, hasOriginFamily, lineageKindLabels, type GenealogyFamilyTrack } from '../core/genealogyIdentity.ts';
 import { genealogyUnitLabel } from '../core/genealogyLocalView.ts';
 import type { GenealogyRecord } from '../storage/genealogies.ts';
 import {
@@ -37,7 +39,9 @@ interface GenealogyState {
   records: GenealogyRecord[];
   ruinReferences: RuinSelectedCharacter[];
   selectedMvuId: string;
+  identityByCharacter: Map<string, { kind: keyof typeof lineageKindLabels; note: string }>;
   selectedNodeId: string;
+  familyTracks: Map<string, GenealogyFamilyTrack>;
   contextMenu: { nodeId: string; x: number; y: number } | null;
   ancestors: number;
   descendants: number;
@@ -74,7 +78,9 @@ export function mountGenealogyWorkbench(
     records: [],
     ruinReferences: [],
     selectedMvuId: '',
+    identityByCharacter: new Map(),
     selectedNodeId: '',
+    familyTracks: new Map(),
     contextMenu: null,
     ancestors: configuredDepth.ancestors,
     descendants: configuredDepth.descendants,
@@ -162,6 +168,12 @@ export function mountGenealogyWorkbench(
     character: GenealogyCharacterOption | null,
   ): void {
     if (!character) return;
+    const identityRecord = newestRecordForCharacter(state.records, character);
+    if (!state.identityByCharacter.has(character.mvuId) && identityRecord) {
+      state.identityByCharacter.set(character.mvuId, {
+        kind: identityRecord.input.lineageKind ?? 'auto', note: identityRecord.input.identityNote ?? '',
+      });
+    }
     const saved = state.depthByCharacter.get(character.mvuId);
     if (saved) {
       state.ancestors = saved.ancestors;
@@ -271,6 +283,8 @@ export function mountGenealogyWorkbench(
           aliases: character.aliases,
         },
         depth: generationDepth,
+        lineageKind: state.identityByCharacter.get(character.mvuId)?.kind ?? 'auto',
+        identityNote: state.identityByCharacter.get(character.mvuId)?.note ?? '',
       });
       state.records = [
         ...state.records.filter(item => item.key !== record.key),
@@ -300,8 +314,13 @@ export function mountGenealogyWorkbench(
     const scrollTop = previousScroll?.scrollTop ?? 0;
     const character = selectedCharacter();
     const record = selectedRecord();
-    const node = selectedNode(record);
-    const layout = record ? createGenealogyBoardLayout(record.result) : null;
+    const track = record ? state.familyTracks.get(record.requestId) ?? 'body' : 'body';
+    const viewRecord = record ? { ...record, result: genealogyFamilyView(record.result, track) } : null;
+    const node = selectedNode(viewRecord);
+    const dates = node ? genealogyDisplayDates(node, track) : null;
+    const milestone = node ? genealogyMilestone(node) : null;
+    const isCreation = record?.result.nodes.find(item => item.isFocus)?.identity?.lineageKind === 'creation';
+    const layout = viewRecord ? createGenealogyBoardLayout(viewRecord.result) : null;
     root.innerHTML = `
       <style>${genealogyCss}</style>
       <main class="genealogy-app" data-theme="${theme}">
@@ -327,6 +346,20 @@ export function mountGenealogyWorkbench(
                   : '<option value="">当前聊天没有可用的 MVU 人物</option>'}
               </select>
             </label>
+            <label class="field">
+              <strong>身份与谱系方式</strong>
+              <select data-identity-kind ${state.busy ? 'disabled' : ''}>
+                ${Object.entries(lineageKindLabels).map(([kind, label]) => `<option value="${kind}" ${kind === (state.identityByCharacter.get(character?.mvuId ?? '')?.kind ?? 'auto') ? 'selected' : ''}>${label}</option>`).join('')}
+              </select>
+            </label>
+            <details class="identity-supplement">
+              <summary>身份补充（可选）</summary>
+            <label class="field">
+              <textarea data-identity-note maxlength="240" rows="2" ${state.busy ? 'disabled' : ''}
+                placeholder="如：灵魂来自异界，保留宿主血缘；启动时间不是出生">${escapeHtml(state.identityByCharacter.get(character?.mvuId ?? '')?.note ?? '')}</textarea>
+              <small>只约束本次谱系，不修改世界书或 MVU；来源不详时保留待考。</small>
+            </label>
+            </details>
             <div class="character-brief">
               <dl>
                 <dt>种族</dt><dd>${escapeHtml(character?.race || '未记录')}</dd>
@@ -336,11 +369,11 @@ export function mountGenealogyWorkbench(
               </dl>
             </div>
             <div class="field">
-              <strong>祖辈追溯</strong>
+              <strong>${isCreation ? '源流追溯' : '祖辈追溯'}</strong>
               ${renderStepper('ancestors', state.ancestors, 1, 8, false)}
             </div>
             <div class="field">
-              <strong>后代追溯</strong>
+              <strong>${isCreation ? '传承追溯' : '后代追溯'}</strong>
               ${renderStepper('descendants', state.descendants, 0, 6, false)}
             </div>
             <div class="field">
@@ -362,8 +395,11 @@ export function mountGenealogyWorkbench(
               <span>选中人物</span>
               <strong>${escapeHtml(node?.name || '尚无谱系记录')}</strong>
               <dl>
-                <dt>关系</dt><dd>${escapeHtml(node?.relationToFocus || '等待生成')}</dd>
-                <dt>生卒</dt><dd>${escapeHtml(node ? lifeSpan(node, node.isFocus ? character : null) : '等待生成')}</dd>
+                <dt>关系</dt><dd>${escapeHtml(node && record ? genealogyRelationText(record.result, node, track) : '等待生成')}</dd>
+                <dt>${dates?.title ?? '生卒'}</dt><dd>${escapeHtml(node ? lifeSpan(node, node.isFocus ? character : null, track) : '等待生成')}</dd>
+                ${node?.identities.length ? `<dt>身份</dt><dd>${escapeHtml(joinSummary(node.identities))}</dd>` : ''}
+                ${node?.isFocus && track === 'soul' && node.identity?.soul?.name ? `<dt>曾用名</dt><dd>${escapeHtml(node.identity.soul.name)}</dd>` : ''}
+                ${milestone && track !== 'soul' ? `<dt>${milestone.title}</dt><dd>${escapeHtml(displayGenealogyDateLabel(milestone.label))}</dd>` : ''}
                 <dt>职业</dt><dd>${escapeHtml(node ? joinSummary(node.professions) : '等待生成')}</dd>
                 <dt>性格</dt><dd>${escapeHtml(node?.profile.personality || '等待生成')}</dd>
                 <dt>经历</dt><dd>${escapeHtml(node?.profile.lifeExperience || '等待生成')}</dd>
@@ -375,8 +411,12 @@ export function mountGenealogyWorkbench(
             <header class="kinship-toolbar">
               <div>
                 <strong>谱系人物</strong>
-                <span>${record ? `${record.result.nodes.length} 人` : '尚未构建'}</span>
+                <span>${viewRecord ? `${viewRecord.result.nodes.length} 人` : '尚未构建'}</span>
               </div>
+              ${record && hasOriginFamily(record.result) ? `<div class="family-switch" role="group" aria-label="选择家族">
+                <button type="button" data-family-track="body" aria-pressed="${track === 'body'}">肉身家族</button>
+                <button type="button" data-family-track="soul" aria-pressed="${track === 'soul'}">原身份家族</button>
+              </div>` : ''}
               <div class="toolbar">
                 <button class="icon-button" data-zoom="-0.1" title="缩小谱系"
                   ${!record ? 'disabled' : ''}>−</button>
@@ -388,14 +428,15 @@ export function mountGenealogyWorkbench(
               </div>
             </header>
             ${record ? '<p class="board-pan-hint">拖动画布查看谱系 · 点击人物查看详情 · ◎ 回到本人</p>' : ''}
-            ${record && layout
+            ${viewRecord && layout
               ? renderBoard(
-                record,
+                viewRecord,
                 layout,
                 state.zoom,
                 state.selectedNodeId,
                 new Set(state.ruinReferences.map(ruinCharacterReferenceIdentity)),
                 character,
+                track,
               )
               : renderEmptyState(state.characters.length > 0)}
           </section>
@@ -412,6 +453,29 @@ export function mountGenealogyWorkbench(
   }
 
   function bind(layout: GenealogyBoardLayout | null): void {
+    root.querySelectorAll<HTMLButtonElement>('[data-family-track]').forEach(button => {
+      button.addEventListener('click', () => {
+        const record = selectedRecord();
+        const track = button.dataset.familyTrack;
+        if (!record || (track !== 'body' && track !== 'soul')) return;
+        state.familyTracks.set(record.requestId, track);
+        state.selectedNodeId = record.result.nodes.find(node => node.isFocus)?.id ?? '';
+        state.contextMenu = null;
+        render();
+        root.querySelector<HTMLButtonElement>(`[data-family-track="${track}"]`)?.focus();
+        root.querySelector<HTMLButtonElement>('[data-center]')?.click();
+      });
+    });
+    const updateIdentityDraft = (): void => {
+      if (!state.selectedMvuId) return;
+      const kind = root.querySelector<HTMLSelectElement>('[data-identity-kind]')?.value as keyof typeof lineageKindLabels;
+      if (!Object.hasOwn(lineageKindLabels, kind)) return;
+      state.identityByCharacter.set(state.selectedMvuId, {
+        kind, note: root.querySelector<HTMLTextAreaElement>('[data-identity-note]')?.value.slice(0, 240) ?? '',
+      });
+    };
+    root.querySelector('[data-identity-kind]')?.addEventListener('change', updateIdentityDraft);
+    root.querySelector('[data-identity-note]')?.addEventListener('input', updateIdentityDraft);
     root.querySelector<HTMLSelectElement>('[data-character]')
       ?.addEventListener('change', event => {
         state.selectedMvuId = (event.currentTarget as HTMLSelectElement).value;
@@ -559,6 +623,7 @@ function renderBoard(
   selectedNodeId: string,
   ruinReferenceIds: Set<string>,
   focusCharacter: GenealogyCharacterOption | null,
+  track: GenealogyFamilyTrack,
 ): string {
   const edgesById = new Map(record.result.edges.map(edge => [edge.id, edge]));
   const edges = createGenealogyBoardConnectors(record.result, layout).map(connector => {
@@ -569,7 +634,7 @@ function renderBoard(
     const units = connector.edgeIds.map(edgeId =>
       record.localView?.units.find(item => item.unitType === 'edge' && item.unitId === edgeId));
     const title = edgeRecords.map((edge, index) =>
-      `${edge.label}：${genealogyUnitLabel(units[index])}`).join('；');
+      `${genealogyEdgeDescription(edge)}：${genealogyUnitLabel(units[index])}`).join('；');
     return `<path class="kin-edge-${connector.kind}" d="${connector.path}"><title>${escapeHtml(title)}</title></path>`;
   }).join('');
   return `
@@ -593,9 +658,9 @@ function renderBoard(
               data-node-id="${escapeAttribute(node.id)}"
               aria-pressed="${nodeIsReferenced(record, node, ruinReferenceIds)}"
               title="${escapeAttribute(genealogyUnitLabel(record.localView?.units.find(unit => unit.unitType === 'node' && unit.unitId === node.id)))}；右键选择墟境参考">
-              <small>${escapeHtml(node.relationToFocus)}</small>
+              <small>${escapeHtml(genealogyRelationText(record.result, node, track))}</small>
               <strong>${escapeHtml(node.name)}</strong>
-              <em>${escapeHtml(lifeSpan(node, node.isFocus ? focusCharacter : null))}</em>
+              <em>${escapeHtml(lifeSpan(node, node.isFocus ? focusCharacter : null, track))}</em>
               ${nodeIsReferenced(record, node, ruinReferenceIds)
                 ? '<i class="ruin-reference-mark">墟境参考</i>'
                 : ''}
@@ -651,7 +716,9 @@ function nodeIsReferenced(
 function lifeSpan(
   node: GenealogyNode,
   focusCharacter: GenealogyCharacterOption | null = null,
+  track: GenealogyFamilyTrack = 'body',
 ): string {
+  if (node.identity) return displayGenealogyDateLabel(genealogyDisplayDates(node, track).label);
   const birth = displayGenealogyDateLabel(node.birth.label);
   const death = node.death.status === 'alive' ? '在世' : displayGenealogyDateLabel(node.death.label);
   if (node.birth.status === 'unknown' && node.isFocus) {

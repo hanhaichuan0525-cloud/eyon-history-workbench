@@ -4602,7 +4602,7 @@ test('未来硬门：节点晚于当前剧情时间（488年）报 NODE_IN_FUTUR
   const input = makeInput();
   input.start = { year: 490, month: 1, day: 1 };
   input.end = { year: 500, month: 12, day: 31 };
-  const result = makeCandidates();
+  const result = makeCandidatesWithinRange(input);
   result.candidates[0]!.span = {
     start: { year: 495, month: 1, day: 1 },
     end: { year: 498, month: 1, day: 1 },
@@ -4690,7 +4690,7 @@ test('未来硬门：当前剧情时间解析失败时不拦截（避免误伤�
   const input = makeInput();
   input.start = { year: 490, month: 1, day: 1 };
   input.end = { year: 500, month: 12, day: 31 };
-  const result = makeCandidates();
+  const result = makeCandidatesWithinRange(input);
   result.candidates[0]!.span = {
     start: { year: 495, month: 1, day: 1 },
     end: { year: 498, month: 1, day: 1 },
@@ -5050,11 +5050,12 @@ test('场景A：未写时间时自动时间范围下界不低于选中人物出�
   assert.equal(resolved.input.end!.year, 488, '短生涯自动范围应延伸到当前剧情时间');
 });
 
-test('未点名人物时仍保留短而可复现的自动历史窗口', () => {
+test('未指定方向或人物时仍保留短而可复现的自动历史窗口', () => {
   const input = makeInput();
   input.start = null;
   input.end = null;
   input.selectedCharacters = [];
+  input.supplementaryDirection = '';
   const context = makeContext();
   context.currentWorld.time = '复兴纪元488年-1月-1日';
   const first = resolveAutomaticRuinRange(input, context);
@@ -5069,7 +5070,7 @@ test('场景A2：寿命相容判定接引擎换算——「27岁」解析为出�
   input.start = { year: 258, month: 1, day: 1 };
   input.end = { year: 269, month: 12, day: 31 };
   input.selectedCharacters = [makeLingshanSelectedCharacter()];
-  const result = makeCandidates();
+  const result = makeCandidatesWithinRange(input);
   result.candidates[0]!.span = {
     start: { year: 258, month: 1, day: 1 },
     end: { year: 269, month: 12, day: 31 },
@@ -5263,6 +5264,30 @@ test('墟境 prompt 注入完整人物卡、缺席叙事模式与未排序事件
   assert.doesNotMatch(prompt, /既定事件链|离开梵尼亚 → 抵达帝国/u);
 });
 
+test('墟境规划和冻结扩写均先保留已知事件年龄/生日/时刻，不以候选差异改写', () => {
+  const context = makeContext();
+  const input = makeInput();
+  const promptInput = { requestId, directive: '墟境探索', generationInput: input, context,
+    rules: { generationContract: '契约' } };
+  const response = makeOutlineResponse(input);
+  const outline = parseAndNormalizeRuinOutlines(JSON.stringify(response), { requestId, directive: '墟境探索', input, context }).candidates[0]!;
+  const prompts = [buildRuinOutlineBatchApiPrompt(promptInput),
+    buildRuinExpansionApiPrompt(promptInput, input.materials[0]!, outline)];
+  for (const prompt of prompts) {
+    assert.match(prompt, /<KNOWN_EVENT_FAITHFULNESS_READ_ONLY>/u);
+    assert.match(prompt, /不得为了制造不同候选给同一已知事件重排年份或改写年龄/u);
+    assert.match(prompt, /出生年加N的同月同日/u);
+    assert.match(prompt, /原句时刻同样保留/u);
+    assert.match(prompt, /不能把兄弟姐妹的不同经历互相挪用/u);
+    assert.match(prompt, /不能把事件搬入范围/u);
+    assert.match(prompt, /不可通过删除年龄、模糊日期/u);
+  }
+  assert.match(prompts[0]!, /For one requested canonical incident/u);
+  assert.match(prompts[1]!, /SELECTED_OUTLINE_READ_ONLY/u);
+  const recovery = buildCompactRuinExpansionRecoveryPrompt(prompts[1]!);
+  assert.match(recovery!, /KNOWN_EVENT_FAITHFULNESS_READ_ONLY/u);
+});
+
 test('不判错：界外来客（arrivalBased）自洽抵达线不参与不兼容硬判定（推断抵达年只是假说）', () => {
   // 梅薇娜：界外来客，推断抵达 400 年（基准 488 时 88 岁）。候选时段 380 年——
   // 模型若写「她 370 年穿越、380 年在场」是契约允许的自洽抵达线（internal.54 语义），
@@ -5298,7 +5323,7 @@ test('不判错：界外来客（arrivalBased）自洽抵达线不参与不兼�
       },
     }],
   };
-  const result = makeCandidates();
+  const result = makeCandidatesWithinRange(input);
   result.candidates[0]!.span = {
     start: { year: 380, month: 1, day: 1 },
     end: { year: 385, month: 12, day: 31 },
@@ -5404,7 +5429,7 @@ test('点名即进入：候选实际出现未选中的玲山（出生 461）在 
   input.end = { year: 269, month: 12, day: 31 };
   input.selectedCharacters = []; // 未选
   input.supplementaryDirection = '玲山·哈姆斯沃思与妹妹铃羽在梵尼亚遭遇的困苦之事';
-  const result = makeCandidates();
+  const result = makeCandidatesWithinRange(input);
   result.candidates[0]!.span = {
     start: { year: 258, month: 1, day: 1 },
     end: { year: 269, month: 12, day: 31 },
@@ -5445,7 +5470,10 @@ test('点名即进入：候选实际出现未选中的玲山（出生 461）在 
 
 /** 构造「候选在 X-Y 年 + 玲山出现在 cast/节点」的候选集（供在场校验路径测试）。 */
 function makeLingshanPresentCandidateSet(startYear: number, endYear: number): RuinCandidates {
-  const result = makeCandidates();
+  const fixtureInput = makeInput();
+  fixtureInput.start = { year: startYear, month: 1, day: 1 };
+  fixtureInput.end = { year: endYear, month: 12, day: 31 };
+  const result = makeCandidatesWithinRange(fixtureInput);
   result.candidates[0]!.span = {
     start: { year: startYear, month: 1, day: 1 },
     end: { year: endYear, month: 12, day: 31 },
@@ -5464,7 +5492,7 @@ function makeLingshanPresentCandidateSet(startYear: number, endYear: number): Ru
   result.candidates[0]!.nodes = result.candidates[0]!.nodes.map((node, index) => ({
     ...node,
     time: {
-      year: startYear + index,
+      year: Math.min(startYear + index, endYear),
       month: 1,
       day: 1,
       hour: 12,
@@ -5475,6 +5503,45 @@ function makeLingshanPresentCandidateSet(startYear: number, endYear: number): Ru
   }));
   return result;
 }
+
+/** 原夹具只改候选0，其余候选仍在145年；过去靠日期钳制掩盖了这些越界。 */
+function makeCandidatesWithinRange(input: RuinGenerationInput): RuinCandidates {
+  const result = makeCandidates();
+  for (const candidate of result.candidates) {
+    candidate.span.start = { ...input.start! };
+    candidate.span.end = { ...input.end! };
+    for (const [index, node] of candidate.nodes.entries()) {
+      node.time = { ...input.start!, hour: 8 + index * 3, minute: 0, label: '' };
+    }
+  }
+  return result;
+}
+
+test('0.14.3: 大纲的明确越界日期不再被静默改成年内日期', () => {
+  const input = makeInput();
+  const result = makeCandidates();
+  result.candidates[0]!.nodes[0]!.time.year = 144;
+  assert.throws(() => parseAndNormalizeRuinOutlines(JSON.stringify(result), {
+    requestId, directive: '墟境探索', input, context: makeContext(),
+  }), (error: unknown) => error instanceof RuinValidationError && error.code === 'NODE_OUT_OF_REQUEST_RANGE');
+  assert.equal(result.candidates[0]!.nodes[0]!.time.year, 144);
+});
+
+test('0.14.3: 同一事件候选可共享日期，四阶段可在同日不同小时推进', () => {
+  const input = makeInput();
+  input.start = { year: 478, month: 7, day: 15 };
+  input.end = { year: 478, month: 7, day: 15 };
+  const result = makeCandidatesWithinRange(input);
+  const parsed = parseAndNormalizeRuinOutlines(JSON.stringify(result), {
+    requestId, directive: '墟境探索', input, context: makeContext(),
+  });
+  for (const candidate of parsed.candidates) {
+    assert.deepEqual(candidate.span.start, input.start);
+    assert.deepEqual(candidate.span.end, input.end);
+    assert.equal(new Set(candidate.nodes.map(node => node.time.hour)).size, 4);
+    for (const node of candidate.nodes) assert.equal(node.time.day, 15);
+  }
+});
 
 function withLingshanTimelineOf(
   context: RuinContextBundle,

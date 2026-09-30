@@ -20,6 +20,7 @@ import {
   operationRebaseState,
   projectCanonCausalRebase,
 } from '../core/causalRebase.ts';
+import { projectContinuousStates } from './continuousState.ts';
 import {
   assessPersonTimeline,
   describePersonLifespanWindow,
@@ -83,11 +84,15 @@ export function resolveCanon(
       continue;
     }
     const scopeMatch = deltaMatchesQuery(delta.cascadeScope, queryScope);
-    if (scopeMatch === 'outside') {
+    // State intervals outlive an occurrence window. Keep the entity/place gate,
+    // and expose only dated state operations outside that occurrence window.
+    const stateOnly = scopeMatch !== 'inside' && delta.operations.some(op => !!op.current.continuousState)
+      && deltaMatchesQuery({ ...delta.cascadeScope, time: undefined }, queryScope) === 'inside';
+    if (scopeMatch === 'outside' && !stateOnly) {
       skippedDeltaIds.push(delta.deltaId);
       continue;
     }
-    if (scopeMatch === 'unknown') {
+    if (scopeMatch === 'unknown' && !stateOnly) {
       skippedDeltaIds.push(delta.deltaId);
       uncertainItems.push(`${delta.deltaId}: undecidable-query-scope`);
       continue;
@@ -96,6 +101,7 @@ export function resolveCanon(
     const action = branch.actions.find(item => item.actionId === delta.actionRef);
     let appliedOperations = 0;
     for (const [operationIndex, operation] of delta.operations.entries()) {
+      if (stateOnly && !operation.current.continuousState) continue;
       const label = `${delta.deltaId}/operation-${operationIndex + 1}`;
       const rebaseState = causalRebase.status === 'bounded-overflow'
         ? legacyOperationState(delta.status)
@@ -209,6 +215,7 @@ export function resolveCanon(
       fact.temporalScope,
       fact.spatialScope,
       fact.revisionIntroduced,
+      fact.continuousState,
     ]),
     inactiveFacts: inactiveFacts.map(item => [
       item.fact.factId,
@@ -220,7 +227,8 @@ export function resolveCanon(
   // F-02 v5：本次命中干涉的行动摘要（actionRecord 人话断言）——事实卡之外的
   // 「谁在何时何地做了什么」，注入视图供模型采用。
   const appliedDeltaByRef = new Map(branch.deltas
-    .filter(delta => appliedDeltaIds.includes(delta.deltaId))
+    .filter(delta => appliedDeltaIds.includes(delta.deltaId)
+      && deltaMatchesQuery(delta.cascadeScope, queryScope) === 'inside')
     .map(delta => [delta.actionRef, delta]));
   const interventionSummaries = branch.actions
     .filter(action => appliedDeltaByRef.has(action.actionId))
@@ -243,6 +251,7 @@ export function resolveCanon(
     resolvedRevision: revision,
     queryScopeHash,
     activeFacts: sortedActiveFacts,
+    continuousStates: projectContinuousStates(sortedActiveFacts),
     inactiveFacts: inactiveFacts
       .sort((left, right) => left.fact.factId.localeCompare(right.fact.factId)),
     uncertainItems: receipt.uncertainItems,
@@ -433,8 +442,8 @@ function lifespanFacts(view: PersonCanonView): CanonFact[] {
   const lifespan = view.lifespan;
   if (!lifespan) return [];
   const points = [
-    ['birth_time', lifespan.born] as const,
-    ['death_time', lifespan.died] as const,
+    [lifespan.originKind && lifespan.originKind !== 'birth' ? `${lifespan.originKind}_time` : 'birth_time', lifespan.born] as const,
+    [lifespan.originKind && lifespan.originKind !== 'birth' ? 'identity_end_time' : 'death_time', lifespan.died] as const,
   ];
   return points.flatMap(([predicate, point]) => {
     if (!point?.era || !Number.isFinite(point.year)) return [];
@@ -446,7 +455,7 @@ function lifespanFacts(view: PersonCanonView): CanonFact[] {
       subjectEntityId: view.entityId,
       predicate,
       object: label,
-      statement: `${view.canonicalName}${predicate === 'birth_time' ? '出生于' : '逝世于'}${label}`,
+      statement: `${view.canonicalName}${predicate === 'birth_time' ? '出生于' : predicate === 'death_time' ? '逝世于' : `（${lifespan.originKind ?? '身份'}时间原点）`}${label}`,
       temporalScope: label,
       spatialScope: null,
       epistemicStatus: lifespan.ageBased ? 'inferred' as const : 'structural' as const,
@@ -531,8 +540,9 @@ function projectLifespan(
   facts: CanonFact[],
 ): PersonCanonView['lifespan'] {
   const result = base ? structuredClone(base) : {};
-  const birth = latestFact(facts, 'birth_time');
-  const death = latestFact(facts, 'death_time');
+  const special = base?.originKind && base.originKind !== 'birth';
+  const birth = latestFact(facts, special ? `${base.originKind}_time` : 'birth_time');
+  const death = latestFact(facts, special ? 'identity_end_time' : 'death_time');
   if (birth) {
     result.born = timePointFromFact(birth);
     // 新 revision 的明确出生原点已经取代旧的“基准年龄反推”；保留旧 ageBased

@@ -13,7 +13,9 @@ import {
   buildCharacterCanonFacts,
   lifeAnchorsFromCharacterFacts,
 } from './characterFacts.ts';
-import { buildTemporalEligibilityLedger } from './temporal.ts';
+import { buildTemporalEligibilityLedger, parseWorldTime } from './temporal.ts';
+import { GenealogyIdentitySchema } from '../schemas/genealogy.ts';
+import { characterDocumentOwner, templateIndependentText } from './sourceOwnership.ts';
 
 interface EntitySeed {
   name: string;
@@ -144,8 +146,14 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
     || cleanTitle.startsWith(`${taggedName}(`)
     || cleanTitle.startsWith(`${taggedName}（`)
   );
-  const titleName = taggedNameOwnsTitle ? taggedName : cleanTitle || taggedName;
-  const explicitKind = explicitTitleKind(titleParts);
+  const owner = characterDocumentOwner(snapshot);
+  const heading = templateIndependentText(snapshot.content).match(/^\s*#{1,6}\s+(.{2,50}?)\s*$/mu)?.[1]?.trim();
+  // 同一人的习惯/背景补充不能被标题误造为另一个人；但其经营的商会仍是独立实体。
+  const separateTopic = Boolean(owner && heading && heading !== owner && cleanTitle === heading);
+  const titleName = separateTopic ? heading! : owner || (taggedNameOwnsTitle ? taggedName : cleanTitle || taggedName);
+  const explicitKind = separateTopic
+    ? (/^\s*(?:总部|势力标识)\s*[:：]/mu.test(snapshot.content) ? 'organization' : null)
+    : explicitTitleKind(titleParts);
   // MVU 源（stat_data.关系列表）条目天然是人物：标题就是角色名（通常无「[角色]」标签），
   // 不能因名字里没有类型线索就判 unknown——否则年龄/生卒提取（仅 person 类型）会整链失效。
   // 只有人物资料自己的字段才能成为“记录时年龄”。传记、蝴蝶日志与聊天正文中的
@@ -201,6 +209,7 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
     if (!field) continue;
     const label = field[1].trim();
     const value = field[2].trim();
+    if (hasUnresolvedBranches(snapshot.content)) continue;
     const relationField = /^(?:所属|所属组织|所属势力|归属|家族|神系|地点|位置|所在地|活动地点|活跃于)$/u.test(label);
     if (/^(?:身份|职务)$/u.test(label) && titleName && value) {
       entities.push({
@@ -219,8 +228,9 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
     // 人物时间资格：显式生卒年（「复兴纪元400年 - 复兴纪元479年」）或当前年龄（「年龄: 88岁」）。
     // 年龄换算的基准年由运行时 baselineWorldTime 提供（resolveLifespanFromBaseline），
     // 这里只提取原始事实（ageAtRecord / 显式 born/died），不在此做换算。
-    if (titleName && titleKind === 'person') {
-      const explicit = extractExplicitLifespan(value);
+    if (titleName && titleKind === 'person' && !hasUnresolvedBranches(snapshot.content)) {
+      const explicit = /^(?:生卒(?:年)?|寿命|出生(?:时间|日期|年份)?|诞生)$/u.test(label)
+        ? extractExplicitLifespan(value) : undefined;
       if (explicit) {
         entities.push({
           ...entitySeed(snapshot, titleName, titleKind, true),
@@ -237,6 +247,7 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
             ...entitySeed(snapshot, titleName, titleKind, true),
             lifespan: {
               ageAtRecord: age,
+              ...recordedAgeBaseline(value),
               ...(arrivalBased ? { arrivalBased: true } : {}),
             },
             temporal: titleTemporal,
@@ -381,6 +392,15 @@ function extractStructuredSeeds(snapshot: SourceSnapshot): {
 function structuredGenealogyLifespan(
   value: Record<string, unknown>,
 ): KnowledgeEntity['lifespan'] | undefined {
+  const parsedIdentity = GenealogyIdentitySchema.safeParse(value.identity);
+  if (parsedIdentity.success && !['native', 'adoption'].includes(parsedIdentity.data.lineageKind)) {
+    const identity = parsedIdentity.data;
+    const originKind = identity.lineageKind === 'creation' ? 'activation'
+      : ['possession', 'reincarnation'].includes(identity.lineageKind) ? 'incarnation' : 'arrival';
+    const born = structuredGenealogyLifePoint(identity[originKind]);
+    const died = structuredGenealogyLifePoint(identity.identityEnd);
+    return { originKind, identityTracks: identity, ...(born ? { born } : {}), ...(died ? { died } : {}) };
+  }
   const birth = structuredGenealogyLifePoint(value.birth);
   if (!birth) return undefined;
   const death = isRecord(value.death) ? value.death : null;
@@ -466,41 +486,43 @@ function entitySeed(
  * 非行首的年龄字段）由这里兜底。显式生卒优先，年龄其次（与行级口径一致）。
  */
 function extractLifespanAnywhere(content: string): KnowledgeEntity['lifespan'] | undefined {
+  content = templateIndependentText(content);
   // 只在明确的人物生卒字段中解释日期；正文中的历史事件日期绝不能冒充出生年。
   const explicitWindow = content.match(
-    /(?:生卒(?:年)?|寿命|出生(?:时间|日期|年份)?|诞生)[:："\s]*((?:(?:创世纪元|神明纪元|混乱纪元|英雄纪元|复兴纪元)(?:前)?\s*\d+\s*年).{0,80})/u,
+    /(?:^|[\n\r,{，]|\\n)\s*["']?(?:生卒(?:年)?|寿命|出生(?:时间|日期|年份)?|诞生|生日)["']?\s*[:：]\s*["']?([^"'\n\r,，}]{1,120})/u,
   )?.[1];
-  const datePattern = /(创世纪元|神明纪元|混乱纪元|英雄纪元|复兴纪元)(前)?\s*(\d+)\s*年/gu;
-  const matches = explicitWindow ? [...explicitWindow.matchAll(datePattern)] : [];
-  if (matches.length > 0) {
-    const first = matches[0];
-    const born = {
-      era: first[1],
-      year: first[2] ? -Number(first[3]) : Number(first[3]),
-    };
-    const second = matches[1];
-    const died = second
-      ? { era: second[1], year: second[2] ? -Number(second[3]) : Number(second[3]) }
-      : /在世|存活|alive|至今/iu.test(explicitWindow ?? '')
-        ? null
-        : undefined;
-    return died === undefined ? { born } : { born, died };
-  }
+  const explicit = explicitWindow ? extractExplicitLifespan(explicitWindow) : undefined;
+  if (explicit) return explicit;
   // 年龄只能来自字段形态（Markdown/YAML 的「年龄：」或 MVU JSON 的
   // `"年龄":"..."`），不扫描自由叙事中的裸「N岁」。裸年龄仍可由公开
   // extractRecordedAge() 在明确字段值上调用，但不再作为全文兜底。
   const ageField = content.match(
-    /(?:^|[\n\r,{，]|\\n)\s*["']?(?:实际年龄|年龄)["']?\s*[:：]\s*["']?([^"'\n\r,，}]{1,40})/u,
+    /(?:^|[\n\r,{，]|\\n)\s*["']?(?:实际年龄|实龄|年龄)["']?\s*[:：]\s*["']?([^"'\n\r,，}]{1,80})/u,
   )?.[1];
-  const age = ageField ? extractRecordedAge(ageField) : undefined;
+  // 只在人物介绍类字段内接受明确“实龄/实际年龄”；不扫描背景中的事件年龄。
+  const description = content.match(
+    /(?:^|[\n\r,{，]|\\n)\s*["']?(?:外貌|外观|介绍|简介)["']?\s*[:：]\s*["']?([^"'\n\r}]{1,180})/u,
+  )?.[1];
+  const actualAge = description?.match(/(?:实际(?:年龄)?|实龄)\s*[:：]?\s*\d+\s*岁/u)?.[0];
+  const age = ageField ? extractRecordedAge(ageField) : actualAge ? extractRecordedAge(description!) : undefined;
   if (age !== undefined) {
     const arrivalBased = /界外来客|来自异界|穿越|异乡|书页.*门|另一.*世界|地球/u.test(content);
     return {
       ageAtRecord: age,
+      ...recordedAgeBaseline(ageField ?? description!),
       ...(arrivalBased ? { arrivalBased: true } : {}),
     };
   }
   return undefined;
+}
+
+/** 只有年龄字段自身明确标出的记录年才覆盖开局基准；不借背景事件日期。 */
+function recordedAgeBaseline(value: string): Partial<NonNullable<KnowledgeEntity['lifespan']>> {
+  const annotation = value.match(/[（(]\s*([^）)]+)[）)]/u)?.[1] ?? '';
+  if (!/(?:记录|记载|截至|截止|年时)|^[^\d\s]{2,32}前?\s*\d+年$/u.test(annotation)) return {};
+  const recorded = parseWorldTime(annotation.replace(/^(?:截至|截止|记录于|记载于)\s*/u, ''));
+  return recorded.era && recorded.year !== null
+    ? { basedOnEra: recorded.era, basedOnYear: recorded.year } : {};
 }
 
 /**
@@ -511,31 +533,36 @@ function extractLifespanAnywhere(content: string): KnowledgeEntity['lifespan'] |
  *    硬门放行（不判死），原始文本仍在人物卡全文里交给模型自行理解（不猜）。
  */
 export function extractRecordedAge(text: string): number | undefined {
-  const explicit = text.match(/实际[^\d]{0,6}(\d{1,3})\s*岁/u);
-  if (explicit) return Number(explicit[1]);
+  const explicit = [...text.matchAll(/(?:实际(?:年龄)?|实龄)\s*[:：]?\s*(\d+)\s*岁/gu)];
+  if (explicit.length === 1 && !/(?:岁\s*或|\d\s*[-~～至]\s*\d)/u.test(text)) {
+    const age = Number(explicit[0]![1]);
+    return Number.isSafeInteger(age) ? age : undefined;
+  }
+  if (explicit.length > 1 || /不详|未知|可能|或许|大约|大概|将近|接近|约|\d\s*[-~～至]\s*\d/u.test(text)) return undefined;
   const cleaned = text.replace(
-    /(?:外貌|心理|生理|视觉|看起来|约|大概|将近|接近)[^\d]{0,6}\d{1,3}\s*岁/gu,
+    /(?:外貌|外观|心理|生理|视觉|看起来)[^\d]{0,6}\d+\s*岁/gu,
     '',
   );
-  const plain = cleaned.match(/(\d{1,3})\s*岁/u);
-  if (!plain) return undefined;
-  const number = Number(plain[1]);
-  return Number.isInteger(number) && number >= 0 && number <= 999 ? number : undefined;
+  const plain = [...cleaned.matchAll(/(?<![\d.])(\d+)\s*岁/gu)];
+  if (plain.length !== 1) return undefined;
+  const number = Number(plain[0]![1]);
+  return Number.isSafeInteger(number) && number >= 0 ? number : undefined;
+}
+
+/** 原始 EJS 不执行；未求值分支只能作为原文资料，不能被拼成同一时点的硬事实。 */
+export function hasUnresolvedBranches(content: string): boolean {
+  return /<%[\s\S]*?\b(?:if|else|switch)\b[\s\S]*?%>/u.test(content);
 }
 
 /** 解析「复兴纪元400年 - 复兴纪元479年」/「复兴纪元400年-在世」式显式生卒。 */
 function extractExplicitLifespan(value: string): KnowledgeEntity['lifespan'] | undefined {
-  const datePattern = /(创世纪元|神明纪元|混乱纪元|英雄纪元|复兴纪元)(前)?\s*(\d+)\s*年/gu;
-  const matches = [...value.matchAll(datePattern)];
-  if (matches.length === 0) return undefined;
-  const first = matches[0];
-  const born = {
-    era: first[1],
-    year: first[2] ? -Number(first[3]) : Number(first[3]),
-  };
-  const second = matches[1];
-  const died = second
-    ? { era: second[1], year: second[2] ? -Number(second[3]) : Number(second[3]) }
+  const parts = value.trim().split(/\s*(?:[-–—~～]|至)\s*/u);
+  const first = parseWorldTime(parts[0]);
+  if (!first.era || first.year === null) return undefined;
+  const born = { era: first.era, year: first.year };
+  const second = parseWorldTime(parts[1]);
+  const died = second.era && second.year !== null
+    ? { era: second.era, year: second.year }
     : /在世|存活|alive|至今/iu.test(value)
       ? null
       : undefined;
@@ -625,6 +652,7 @@ function mergeSeeds(seeds: EntitySeed[]): KnowledgeEntity[] {
 
 /** lifespan 信息完整度评分：显式生卒 > 只有出生 > 只有年龄 > 无。 */
 function lifespanInfoScore(lifespan: NonNullable<KnowledgeEntity['lifespan']>): number {
+  if (lifespan.identityTracks) return 5;
   let score = 0;
   if (lifespan.born?.era && lifespan.born.year !== null && lifespan.born.year !== undefined) score += 2;
   if (lifespan.died?.era && lifespan.died.year !== null && lifespan.died.year !== undefined) score += 1;

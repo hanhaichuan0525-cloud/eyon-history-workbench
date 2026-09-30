@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ContinuousStateSchema } from '../retrieval/continuousState.ts';
 
 z.config({ jitless: true });
 
@@ -73,6 +74,7 @@ export const ButterflyDirectEffectSchema = z.object({
   time: z.preprocess(value => typeof value === 'string' ? value : '', z.string()),
   stateHint: z.preprocess(value => typeof value === 'string' ? value : '', z.string()),
   change: z.preprocess(value => typeof value === 'string' ? value : '', z.string()),
+  continuousState: ContinuousStateSchema.optional().catch(undefined),
 });
 
 export const ButterflyResultSchema = z.strictObject({

@@ -42,21 +42,24 @@ const GENERIC_POLITY_WORDS = new Set([
  * 从当前角色已绑定的世界书中解析币制与委托价格。
  *
  * 世界书是唯一数值真源；脚本只识别「势力→货币」与「难度→范围」的
- * 结构，不保存任何币名或价格表。无法唯一确定时明确拒绝，避免「当地通货」
- * 这类模糊占位进入已封缄任务。
+ * 结构，不保存任何币名或价格表。无法唯一确定地域时先读通用实体币；
+ * 没有实体币时只允许世界书明确声明的通用计价单位，不假造「当地通货」。
  */
 export function resolveRuinTaskEconomy(
   input: RuinTaskEconomyInput,
 ): RuinTaskEconomyResolution {
-  const guide = selectEconomyGuide(input.sources);
+  const sources = input.sources.filter(source => source.worldbook.enabled);
+  const guide = selectEconomyGuide(sources);
   if (!guide) {
     throw new Error('当前角色卡世界书缺少可解析的经济价格指南，无法确定任务货币');
   }
   const mappings = parseCurrencyMappings(guide.content);
-  if (mappings.length === 0) {
+  const general = parseGeneralCurrency(guide.content);
+  if (mappings.length === 0 && !general) {
     throw new Error('经济价格指南未提供可解析的势力货币对照');
   }
-  const mapping = resolveCurrencyMapping(input.location, mappings, input.sources);
+  const mapping = resolveCurrencyMapping(input.location, mappings, sources)
+    ?? general;
   if (!mapping) {
     throw new Error(
       `无法从当前角色卡世界书为「${input.location || '未知地点'}」唯一确定实体货币；请在经济指南或地点条目中补明所属势力`,
@@ -70,10 +73,22 @@ export function resolveRuinTaskEconomy(
   return {
     amount,
     currencyName: mapping.currencyName,
-    reward: `${amount}Z ${mapping.currencyName}`,
+    reward: mapping.polity === '通用价值结算'
+      ? `${amount}${mapping.currencyName}（通用价值结算）` : `${amount}Z ${mapping.currencyName}`,
     polity: mapping.polity,
     guideSourceId: guide.sourceId,
   };
+}
+
+function parseGeneralCurrency(content: string): CurrencyMapping | null {
+  const name = content.match(/^\s*(?:[-*]\s*)?(?:通用(?:实体)?货币|通用币种|默认(?:实体)?货币)\s*[:：]\s*([^\n]+)/mu)?.[1]?.trim();
+  if (name && isConcreteCurrency(name)) return { polity: '通用结算', aliases: [], currencyName: name };
+  // Z 在本体书中明确是抽象计价单位：保留其语义，不将其命名为实体币。
+  const unit = content.match(/^\s*单位\s*[:：]\s*([A-Za-z]{1,8})\s*[—–-]\s*([^\n]+)/mu);
+  if (unit && /(?:全大陆|全球|世界|跨势力).*通用.*(?:计价|价值)/u.test(unit[2]!)) {
+    return { polity: '通用价值结算', aliases: [], currencyName: unit[1]! };
+  }
+  return null;
 }
 
 function selectEconomyGuide(sources: RuntimeWorldbookSource[]): RuntimeWorldbookSource | null {

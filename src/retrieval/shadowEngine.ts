@@ -39,6 +39,7 @@ import {
   assessPersonTimeline,
   describePersonLifespanWindow,
   entityTemporallyEligible,
+  parseWorldTime,
   resolveLifespanFromBaseline,
 } from './temporal.ts';
 import { buildTaskCitationRegistry } from './citations.ts';
@@ -219,8 +220,18 @@ export class UnifiedShadowRetrievalEngine {
       ...directlyNamedSnapshotIds,
       ...castSnapshotIds,
     ]);
+    // 唯一人物的整条目可能同时记载多个时代。原文保留不等于允许人物越过生卒约束；
+    // 同名跨时代的不同实体仍走原来的来源门，避免把两个身份合成一个人。
+    const personNameCounts = new Map<string, number>();
+    for (const entity of this.index.catalog.entities) {
+      if (entity.kinds.includes('person')) personNameCounts.set(entity.normalizedName, (personNameCounts.get(entity.normalizedName) ?? 0) + 1);
+    }
+    const personRawSnapshotIds = new Set(this.index.catalog.entities.flatMap(entity =>
+      entity.kinds.includes('person')
+      && personNameCounts.get(entity.normalizedName) === 1
+        ? entity.sourceSnapshotIds.filter(id => temporallyEssentialSnapshotIds.has(id)) : []));
     for (const item of ranked) {
-      applyTemporalSourceGate(item, eventFrame.temporalTerms, temporallyEssentialSnapshotIds);
+      applyTemporalSourceGate(item, eventFrame.temporalTerms, temporallyEssentialSnapshotIds, personRawSnapshotIds);
     }
 
     const requiredAuthoritySnapshotIds = new Set<string>();
@@ -581,12 +592,17 @@ function applyTemporalSourceGate(
   item: RankedSource,
   temporalTerms: string[],
   essentialSnapshotIds: Set<string>,
+  personRawSnapshotIds: Set<string>,
 ): void {
   if (!item.eligible) return;
   const requestedEras = extractEraTerms(temporalTerms.join('\n'));
   if (!requestedEras.length) return;
   const sourceEras = extractEraTerms(`${item.snapshot.title}\n${item.snapshot.content}`);
   if (requestedEras.some(era => sourceEras.includes(era))) return;
+  if (personRawSnapshotIds.has(item.snapshot.snapshotId)) {
+    item.reasons.push('person-raw-temporal-reference');
+    return;
+  }
   if (sourceEras.length > 0) {
     item.eligible = false;
     item.rejectionReason = 'temporal-scope-incompatible';
@@ -803,10 +819,9 @@ function buildPersonTimeline(
   query: string,
 ): NonNullable<EvidenceBundle['personTimeline']> {
   // 从查询提取目标纪元的具体年份（如「复兴纪元310年」→ 310），用于 in-era 判定。
-  const yearMatch = query.match(
-    /(?:创世纪元|神明纪元|混乱纪元|英雄纪元|复兴纪元)(?:前)?\s*(\d+)\s*年/u,
-  );
-  const targetYear = yearMatch ? Number(yearMatch[1]) : null;
+  const requestedPoint = requestedEra
+    ? parseWorldTime(query.slice(query.indexOf(requestedEra))) : { era: null, year: null };
+  const targetYear = requestedPoint.era === requestedEra ? requestedPoint.year : null;
   const output: NonNullable<EvidenceBundle['personTimeline']> = [];
   for (const entity of entities) {
     if (!entity.kinds.includes('person')) continue;

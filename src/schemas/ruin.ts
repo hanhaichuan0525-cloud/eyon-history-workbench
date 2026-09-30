@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { GenealogyIdentitySchema } from './genealogy.ts';
 
 z.config({ jitless: true });
 
@@ -427,6 +428,7 @@ export const RuinCandidatesErrorSchema = z.strictObject({
 });
 
 export const RuinSelectedCharacterSchema = z.strictObject({
+  identity: GenealogyIdentitySchema.optional(),
   referenceId: z.string().min(1).optional(),
   mvuId: z.string().min(1),
   name: z.string().min(1),

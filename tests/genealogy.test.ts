@@ -26,6 +26,13 @@ import { fingerprintText } from '../src/runtime/transactionIdentity.ts';
 import { WorkbenchLifecycle } from '../src/runtime/workbenchLifecycle.ts';
 import { buildGenealogyApiPrompt } from '../src/prompts/genealogy.ts';
 import type { GenealogyResult } from '../src/schemas/genealogy.ts';
+import { GenealogyResultSchema } from '../src/schemas/genealogy.ts';
+import { genealogyDisplayDates, genealogyEdgeDescription, genealogyFamilyView, genealogyRelationText, hasOriginFamily } from '../src/core/genealogyIdentity.ts';
+import { createGenealogyBoardConnectors, createGenealogyBoardLayout } from '../src/ui/genealogyLayout.ts';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import { WorkbenchSettingsSchema } from '../src/runtime/workbenchSettings.ts';
+import { WorkbenchUiClient } from '../src/ui/workbenchClient.ts';
 import { buildGenealogyEvidenceRoster } from '../src/core/genealogyEvidence.ts';
 import { genealogyBindingUnits } from '../src/core/artifactCanonBinding.ts';
 import {
@@ -293,6 +300,250 @@ function makeResult() {
     },
   };
 }
+
+test('特殊谱系：异界肉身原点与本界抵达分开，不倒推现世界父母', () => {
+  const context = makeContext();
+  const result: GenealogyResult = makeResult();
+  result.nodes = [result.nodes[0]]; result.edges = [];
+  result.nodes[0].identity = { lineageKind: 'cross-world-travel',
+    body: { world: '地球', birth: { ...life('known', 1950, '公元1950年'), era: '公元' } },
+    arrival: life('known', 480, '复兴纪元480年'), originAge: { years: 60, at: life('known', 480, '复兴纪元480年') } };
+  context.evidenceBundle.personCanonViews![0].facts = [];
+  const before = JSON.stringify(context);
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input: { ...input, lineageKind: 'cross-world-travel' }, context });
+  assert.equal(parsed.nodes[0].birth.era, '公元');
+  assert.equal(parsed.nodes[0].identity?.arrival?.year, 480);
+  assert.equal(parsed.edges.length, 0); assert.equal(JSON.stringify(context), before);
+});
+test('特殊谱系：机器人可保留创造者，不套生父年龄差，也不强造血亲', () => {
+  const context = makeContext(); context.evidenceBundle.personCanonViews = [];
+  const result: GenealogyResult = makeResult();
+  result.nodes[0].identity = { lineageKind: 'creation', activation: life('known', 485, '复兴纪元485年') };
+  result.nodes[1].name = '铸造师'; result.nodes[1].birth = life('known', 484, '复兴纪元484年'); result.nodes[1].death = life('alive', null, '在世');
+  result.nodes[1].sourceRefs = [];
+  result.edges[0].relationType = 'creator'; result.edges[0].track = 'creation'; result.edges[0].label = '创造者'; result.edges[0].sourceRefs = [];
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input: { ...input, lineageKind: 'creation' }, context });
+  assert.equal(parsed.nodes.find(node => node.isFocus)?.birth.status, 'unknown');
+  assert.equal(parsed.edges[0].relationType, 'creator'); assert.equal(parsed.nodes.length, 2);
+});
+test('特殊谱系的可选说明损坏不丢失身份类别，也不逼迫重写长传', () => {
+  const context = makeContext(); context.evidenceBundle.personCanonViews = [];
+  const result: GenealogyResult = makeResult(); result.nodes = [result.nodes[0]]; result.edges = [];
+  result.nodes[0].identity = { lineageKind: 'creation', activation: life('known', 480, '复兴纪元480年'), note: '冗长说明'.repeat(100) };
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input, context });
+  assert.equal(parsed.nodes[0].identity?.lineageKind, 'creation');
+  assert.equal(parsed.nodes[0].identity?.activation?.year, 480);
+  assert.equal(parsed.nodes[0].identity?.note, undefined);
+  assert.equal(parsed.nodes[0].profile.lifeExperience, result.nodes[0].profile.lifeExperience);
+});
+test('特殊谱系：灵魂源年与宿主肉身生卒分开，收养不受血亲年龄差限制', () => {
+  const context = makeContext();
+  const result: GenealogyResult = makeResult();
+  result.nodes[0].identity = { lineageKind: 'possession', soul: { world: '原界', birth: { ...life('known', 100, '神明纪元100年'), era: '神明纪元' } }, incarnation: life('known', 487, '复兴纪元487年') };
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input: { ...input, lineageKind: 'possession' }, context });
+  assert.equal(parsed.nodes[0].identity?.body?.birth?.year, 464);
+  assert.equal(parsed.nodes[0].identity?.soul?.birth?.year, 100);
+  const adopted: GenealogyResult = makeResult(); context.evidenceBundle.personCanonViews = [];
+  adopted.nodes[0].identity = { lineageKind: 'adoption' };
+  adopted.nodes[1].name = '养父'; adopted.nodes[1].birth = life('known', 480, '复兴纪元480年'); adopted.nodes[1].death = life('alive', null, '在世'); adopted.nodes[1].sourceRefs = [];
+  adopted.edges[0].relationType = 'adoptiveParent'; adopted.edges[0].track = 'social'; adopted.edges[0].sourceRefs = [];
+  assert.equal(parseAndValidateGenealogy(JSON.stringify(adopted), { requestId, input, context }).nodes.length, 2);
+});
+
+test('特殊源流：创造者兼主人一个节点两条边，前代个体单独成线', () => {
+  const context = makeContext(); context.evidenceBundle.personCanonViews = [];
+  const result: GenealogyResult = makeResult();
+  result.nodes[0].identity = { lineageKind: 'creation', activation: life('known', 485, '复兴纪元485年') };
+  result.nodes[1].name = '工匠'; result.nodes[1].sourceRefs = []; result.nodes[1].birth = life('known', 484, '复兴纪元484年');
+  result.nodes[1].death = life('alive', null, '在世');
+  const previous = structuredClone(result.nodes[1]); previous.id = 'previous'; previous.name = '艾琳零号';
+  previous.identity = { lineageKind: 'creation', activation: life('known', 483, '复兴纪元483年') };
+  result.nodes.push(previous);
+  result.edges = [
+    { id: 'creator', from: 'father', to: 'focus', relationType: 'creator', track: 'creation', label: '创造者', sourceRefs: [] },
+    { id: 'owner', from: 'father', to: 'focus', relationType: 'owner', track: 'social', label: '主人', sourceRefs: [] },
+    { id: 'previous', from: 'previous', to: 'focus', relationType: 'predecessor', track: 'creation', label: '前代个体', sourceRefs: [] },
+  ];
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input: { ...input, lineageKind: 'creation' }, context });
+  assert.equal(parsed.nodes.length, 3); assert.equal(parsed.edges.length, 3);
+  const creator = parsed.nodes.find(node => node.name === '工匠')!;
+  assert.equal(creator.birth.year, 484);
+  assert.equal(genealogyRelationText(parsed, creator), '创造者 · 主人');
+  const layout = createGenealogyBoardLayout(parsed), lines = createGenealogyBoardConnectors(parsed, layout);
+  assert.ok(layout.generationLabels.some(row => row.label === '源流 · 1层'));
+  assert.equal(lines.length, 2); assert.equal(lines.find(line => line.edgeIds.length === 2)?.kind, 'source');
+});
+
+test('特殊源流：主人与同源个体横向关联，不画父母线', () => {
+  const result: GenealogyResult = makeResult();
+  result.nodes[0].identity = { lineageKind: 'creation' };
+  result.nodes[1].generation = 0;
+  result.edges[0].relationType = 'owner'; result.edges[0].track = 'social';
+  const layout = createGenealogyBoardLayout(result), lines = createGenealogyBoardConnectors(result, layout);
+  assert.equal(lines.length, 1); assert.equal(lines[0].kind, 'social');
+  assert.match(lines[0].path, / H/u); assert.doesNotMatch(lines[0].path, / V/u);
+  assert.equal(genealogyDisplayDates(result.nodes[0]).label, '启动时间不详—运行中');
+});
+
+test('原界无纪年：中心与亲属保留相对文本，不被本界年龄锚覆盖', () => {
+  const context = makeContext(); context.evidenceBundle.personCanonViews = [];
+  const result: GenealogyResult = makeResult();
+  const relative = { ...life('unknown', null, '穿越前约24年'), era: '' };
+  result.nodes[0].identity = { lineageKind: 'cross-world-travel', body: { world: '原界', birth: relative }, arrival: life('known', 480, '复兴纪元480年') };
+  result.nodes[1].name = '原界父亲'; result.nodes[1].birth = { ...relative, label: '穿越前约50年' }; result.nodes[1].death = life('unknown', null, '去向不详');
+  result.nodes[1].sourceRefs = []; result.edges[0].sourceRefs = [];
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input: { ...input, lineageKind: 'cross-world-travel' }, context });
+  assert.equal(parsed.nodes.length, 2);
+  assert.equal(parsed.nodes[0].birth.label, '穿越前约24年'); assert.equal(parsed.nodes[0].birth.year, null);
+  assert.equal(parsed.nodes[1].birth.label, '穿越前约50年'); assert.equal(parsed.nodes[1].birth.era, '');
+});
+
+test('夺舍两家族：分别计数，不混父母、不改中心、不修改存档', () => {
+  const context = makeContext(); const result: GenealogyResult = makeResult();
+  const originParent = structuredClone(result.nodes[1]);
+  originParent.id = 'origin-father'; originParent.name = '原身份父亲'; originParent.sourceRefs = [];
+  originParent.birth = { ...life('unknown', null, '原界早年'), era: '' }; originParent.death = life('unknown', null, '卒年不详');
+  result.nodes.push(originParent);
+  result.nodes[0].identity = { lineageKind: 'possession', body: { birth: result.nodes[0].birth },
+    soul: { name: '原界旅人', birth: { ...life('unknown', null, '原界幼年'), era: '' }, death: { ...life('deceased', 2010, '公元2010年'), era: '公元' } },
+    incarnation: life('known', 487, '复兴纪元487年') };
+  result.edges[0].track = 'body';
+  result.edges.push({ id: 'original-parent', from: originParent.id, to: 'focus', relationType: 'parent', track: 'soul', label: '原身份父亲', sourceRefs: [] });
+  const scopedInput = { ...input, lineageKind: 'possession' as const, depth: { ...input.depth, maxPerGeneration: 1 } };
+  result.depth = scopedInput.depth;
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input: scopedInput, context });
+  const before = JSON.stringify(parsed), body = genealogyFamilyView(parsed, 'body'), soul = genealogyFamilyView(parsed, 'soul');
+  assert.equal(parsed.nodes.length, 3); assert.ok(hasOriginFamily(parsed));
+  assert.deepEqual(body.nodes.map(node => node.name), [input.focusCharacter.name, '马克西姆三世']);
+  assert.deepEqual(soul.nodes.map(node => node.name), [input.focusCharacter.name, '原身份父亲']);
+  assert.equal(soul.nodes.find(node => node.isFocus)?.id, 'focus');
+  assert.equal(genealogyDisplayDates(parsed.nodes[0], 'soul').label, '原界幼年—公元2010年');
+  assert.equal(genealogyDisplayDates(parsed.nodes[0], 'body').label, '复兴纪元464年—在世');
+  assert.equal(JSON.stringify(parsed), before);
+});
+
+test('身体死亡与原身份死亡不直接宣告当前人格终止', () => {
+  const node: GenealogyResult['nodes'][number] = makeResult().nodes[0];
+  node.death = life('deceased', 479, '复兴纪元479年');
+  node.identity = { lineageKind: 'possession', body: { birth: node.birth, death: node.death },
+    incarnation: life('known', 487, '复兴纪元487年') };
+  assert.doesNotMatch(genealogyDisplayDates(node).label, /479/u);
+  assert.match(genealogyDisplayDates(node).label, /状态不详/u);
+  node.identity.identityEnd = life('deceased', 490, '复兴纪元490年');
+  assert.match(genealogyDisplayDates(node).label, /490/u);
+});
+
+test('第二套家族没有可显示关系时不出空切换，旧v2无需迁移', () => {
+  const old: GenealogyResult = makeResult();
+  assert.ok(GenealogyResultSchema.safeParse(old).success);
+  assert.equal(genealogyFamilyView(old, 'body'), old);
+  old.nodes[0].identity = { lineageKind: 'possession', soul: { world: '原界' } };
+  assert.equal(hasOriginFamily(old), false);
+  assert.equal(genealogyFamilyView(old, 'soul'), old);
+});
+
+test('两套家族同一对人物也不能借肉身亲缘事实证明原身份亲缘', () => {
+  const context = makeContext(), result: GenealogyResult = makeResult();
+  result.nodes[0].identity = { lineageKind: 'possession' };
+  result.edges[0].track = 'body';
+  result.edges.push({ ...result.edges[0], id: 'soul-parent', track: 'soul', label: '原身份父亲' });
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input, context });
+  assert.equal(parsed.edges.length, 2);
+  const soul = parsed.edges.find(edge => edge.track === 'soul')!;
+  assert.deepEqual(soul.sourceRefs, []);
+  const units = genealogyBindingUnits(parsed, buildGenealogyEvidenceRoster(input, context));
+  assert.deepEqual(units.find(unit => unit.unitId === soul.id)?.factIds, []);
+  assert.ok(units.find(unit => unit.unitId === parsed.edges.find(edge => edge.track === 'body')?.id)?.factIds?.length);
+});
+
+test('同名纪年但明确不同世界的出生日期不相减', () => {
+  const context = makeContext(); context.evidenceBundle.personCanonViews = [];
+  const result: GenealogyResult = makeResult();
+  result.nodes[0].identity = { lineageKind: 'cross-world-travel', body: { world: '原界', birth: life('known', 480, '复兴纪元480年') } };
+  result.nodes[1].name = '本界后裔'; result.nodes[1].generation = 1; result.nodes[1].birth = life('known', 481, '复兴纪元481年'); result.nodes[1].death = life('alive', null, '在世'); result.nodes[1].sourceRefs = [];
+  result.nodes[1].identity = { lineageKind: 'native', body: { world: '本界' } };
+  result.edges = [{ id: 'child', from: 'focus', to: 'father', relationType: 'parent', track: 'body', label: '子女', sourceRefs: [] }];
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input, context });
+  assert.equal(parsed.nodes.find(node => node.name === '本界后裔')?.birth.year, 481);
+});
+
+test('可选原点和关系时期损坏只局部略去，不截断整图', () => {
+  const context = makeContext(); context.evidenceBundle.personCanonViews = [];
+  const result: GenealogyResult = makeResult();
+  result.nodes[0].identity = { lineageKind: 'creation', body: { birth: { ...life('unknown', null, '不详'), year: 500 } }, activation: life('known', 485, '复兴纪元485年') };
+  result.nodes[1].name = '匠人'; result.nodes[1].sourceRefs = [];
+  result.edges[0].relationType = 'creator'; result.edges[0].track = 'creation'; result.edges[0].sourceRefs = [];
+  result.edges[0].period = { from: life('known', 488, '复兴纪元488年'), to: life('deceased', 480, '复兴纪元480年') };
+  const warnings: string[] = [];
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input, context, onWarning: warning => warnings.push(warning) });
+  assert.equal(parsed.nodes.length, 2); assert.equal(parsed.nodes[0].identity?.activation?.year, 485);
+  assert.equal(parsed.nodes[0].identity?.body?.birth, undefined); assert.equal(parsed.edges[0].period, undefined);
+  assert.ok(warnings.some(warning => warning.startsWith('optional-identity-date-omitted')));
+});
+
+test('关系成立时期与原身份归属保留到参考文本', () => {
+  const edge: GenealogyResult['edges'][number] = { ...makeResult().edges[0], relationType: 'spouse', track: 'body', label: '宿主旧配偶',
+    period: { from: life('known', 478, '复兴纪元478年'), to: life('deceased', 486, '复兴纪元486年') } };
+  assert.equal(genealogyEdgeDescription(edge), '宿主旧配偶 · 肉身家族 · 复兴纪元478年—复兴纪元486年');
+});
+
+test('专用规则与附加提示一致：特殊源流不逼父母、不强制本体纪年', () => {
+  const generationContract = readFileSync(new URL('../rules/09_宗族谱系生成规则-API.txt', import.meta.url), 'utf8');
+  const prompt = buildGenealogyApiPrompt({ requestId, directive: '整理源流', generationInput: input, context: makeContext(), rules: { generationContract } });
+  assert.match(prompt, /默认整理原世界家族/u); assert.match(prompt, /默认追溯原世界/u);
+  assert.match(prompt, /原身份家族另用 soul/u); assert.match(prompt, /抽象型号.*不伪造人物/u);
+  assert.match(prompt, /记忆继承不等于身份连续/u); assert.match(prompt, /双魂共存不编一方消灭/u);
+  assert.doesNotMatch(prompt, /era` 只允许|分类只用于推理，不新增Schema字段|只有玩家明确要求追溯原世界/u);
+});
+
+test('默认自动识别消费MVU、上下文和世界书，不要求手动类型或额外调用', () => {
+  const context = makeContext(); context.evidenceBundle.personCanonViews = [];
+  const additions: ContextSource[] = [
+    { ...context.characterContext[0], content: '{"介绍":"人工铸造的档案管理机仆，主人不是生父"}' },
+    { sourceId: 'worldbook:core:identity', sourceType: 'worldbook', title: input.focusCharacter.name, authority: 100, content: '前代型号只是设计来源，并非血缘。' },
+    { sourceId: 'chat:7', sourceType: 'chat', title: '近期正文', authority: 80, content: '她确认保留独立人格，并未继承前代的意识。' },
+  ];
+  context.sourceIndex = additions;
+  const prompt = buildGenealogyApiPrompt({ requestId, directive: '构建谱系', generationInput: { ...input, lineageKind: 'auto' }, context, rules: { generationContract: '宗族规则' } });
+  assert.match(prompt, /自动辨明中心人物身份/u); assert.match(prompt, /不额外请求分类API/u);
+  for (const source of additions) assert.ok(prompt.includes(source.content.replaceAll('"', '\\"')) || prompt.includes(source.content));
+  const result: GenealogyResult = makeResult(); result.nodes = [result.nodes[0]]; result.edges = [];
+  result.nodes[0].identity = { lineageKind: 'creation', activation: life('known', 485, '复兴纪元485年') };
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input: { ...input, lineageKind: 'auto' }, context });
+  assert.equal(parsed.nodes[0].identity?.lineageKind, 'creation');
+  assert.equal(parsed.nodes[0].birth.status, 'unknown');
+});
+
+test('玩家详情保持简约，家族切换有键盘与移动热区，不输出技术身份轨', () => {
+  const source = readFileSync(new URL('../src/ui/genealogyWorkbench.ts', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../src/ui/genealogyWorkbench.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /身份时间轨|genealogyIdentityLines\(node\)|本次原创/u);
+  assert.match(source, /肉身家族/u); assert.match(source, /原身份家族/u);
+  assert.match(source, /escapeHtml\(node.identity.soul.name\)/u);
+  assert.match(css, /\.family-switch button\s*\{\s*min-height: 44px/u);
+  assert.match(css, /family-switch button:focus-visible/u);
+});
+
+test('正式组件预览的特殊谱系夹具沿用当前设置与外观契约', async () => {
+  const page = readFileSync(new URL('../prototype/workbench-runtime.html', import.meta.url), 'utf8');
+  const script = page.match(/<script>\s*([\s\S]+?)<\/script>/u)?.[1];
+  assert.ok(script);
+  for (const lineage of ['creation', 'possession', 'cross-world-travel']) {
+    const globals: Record<string, unknown> = {};
+    runInNewContext(script, {
+      window: globals, URLSearchParams, structuredClone,
+      location: { search: `?view=genealogy&lineage=${lineage}&mode=dark` },
+      document: { querySelector: () => ({ dataset: {}, addEventListener() {} }) },
+    });
+    const client = new WorkbenchUiClient(globals, new EventTarget());
+    assert.equal(client.isReady(), true);
+    const snapshot = await client.readSnapshot();
+    assert.equal(WorkbenchSettingsSchema.parse(snapshot.settings).appearance.mode, 'dark');
+    assert.equal(snapshot.settings.retries.genealogy, 2);
+    assert.equal(typeof snapshot.settings.generation.genealogy.apiurl, 'string');
+    assert.equal(GenealogyResultSchema.parse(snapshot.genealogies[0].result).nodes[0].identity?.lineageKind, lineage);
+  }
+});
 
 class GenealogyRuntime implements TavernRuntime {
   chatId = namespace.chatId;
@@ -813,11 +1064,11 @@ test('宗族提示词只发送专用契约与限额只读资料，不携带通�
   assert.match(prompt, /<MANDATORY_FINAL_OUTPUT_CONTRACT>/u);
   assert.match(prompt, /宗族专用契约/u);
   assert.match(prompt, new RegExp(input.focusCharacter.mvuId, 'u'));
-  assert.match(prompt, /同世界原肉身时间穿越者/u);
-  assert.match(prompt, /每代尽量达到的目标，也是绝不能超过的硬上限/u);
+  assert.match(prompt, /原肉身穿越者默认追溯原世界/u);
+  assert.match(prompt, /每套家族每层的硬上限/u);
   assert.match(prompt, /authoritative-kinship-locks-with-generated-fill/u);
   assert.match(prompt, /事实锁.*不是人物准入白名单/u);
-  assert.match(prompt, /至少兼顾父系和母系/u);
+  assert.match(prompt, /普通生物\/原界生物兼顾父系母系/u);
   assert.match(prompt, /generated 人物与原创关系必须使用空 sourceRefs/u);
   assert.doesNotMatch(prompt, /"taskType":"genealogy"/u);
   assert.doesNotMatch(prompt, /"scope":/u);

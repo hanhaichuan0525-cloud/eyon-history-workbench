@@ -11,6 +11,7 @@ import {
   renderTaskCitationContract,
   taskCitationRegistry,
 } from '../retrieval/citations.ts';
+import { projectContinuousStates, renderContinuousStateContract, renderContinuousStatesAtTimes, type ContinuousStateInterval } from '../retrieval/continuousState.ts';
 import {
   activeTemporalEligibilityRules,
   assessPersonTimeline,
@@ -26,6 +27,7 @@ import {
  */
 
 export interface ActiveEvidenceView {
+  continuousStates?: ContinuousStateInterval[];
   /** Citation Contract v2：同一顶层任务/冻结快照内的唯一句柄表。 */
   citationRegistry?: TaskCitationRegistry;
   /** P1 当前分支/版本在本任务 scope 内的只读投影。 */
@@ -63,6 +65,9 @@ export interface ActiveEvidenceView {
     factId: string;
     subjectEntityId: string;
     predicate: string;
+    continuousState?: import('../retrieval/continuousState.ts').ContinuousState;
+    epistemicStatus?: import('../retrieval/contracts.ts').CanonFact['epistemicStatus'];
+    confidence?: import('../retrieval/contracts.ts').CanonFact['confidence'];
   }>;
   requestedEra: string | null;
   /** 四模块共用的时间/地理/叙事用途资格，不包含 passage 正文。 */
@@ -159,7 +164,7 @@ export function buildActiveEvidenceView(
       if (!entity.kinds.includes('person')) continue;
       const lifespan = resolveLifespanFromBaseline(entity, options.baselineWorldTime);
       const effective = lifespan ?? entity.lifespan;
-      if (!effective?.born && !effective?.ageAtRecord) continue;
+      if (!effective?.born && !effective?.ageAtRecord && !effective?.identityTracks) continue;
       const assessment = assessPersonTimeline(
         { ...entity, lifespan: effective },
         requestedEra,
@@ -210,6 +215,8 @@ export function buildActiveEvidenceView(
     }
   }
   return {
+    continuousStates: projectContinuousStates(canonResolved?.activeFacts
+      ?? (bundle.personCanonViews ?? []).flatMap(person => person.facts)),
     citationRegistry: taskCitationRegistry(bundle),
     canonResolvedView: canonResolved
       ? {
@@ -237,6 +244,9 @@ export function buildActiveEvidenceView(
             factId: fact.factId,
             subjectEntityId: fact.subjectEntityId,
             predicate: fact.predicate,
+            continuousState: fact.continuousState,
+            epistemicStatus: fact.epistemicStatus,
+            confidence: fact.confidence,
           }))
       : undefined,
     requestedEra,
@@ -298,11 +308,13 @@ export function requestedEraFromText(value: string | undefined | null): string |
  */
 export function renderActiveEvidenceBlock(
   view: ActiveEvidenceView,
-  options: { citationRegistry?: TaskCitationRegistry } = {},
+  options: { citationRegistry?: TaskCitationRegistry; atTimes?: string[] } = {},
 ): string {
   const citationRegistry = options.citationRegistry ?? view.citationRegistry;
   const lines = [
     ...(citationRegistry ? [renderTaskCitationContract(citationRegistry)] : []),
+    ...renderContinuousStateContract(view.continuousStates ?? []),
+    ...renderContinuousStatesAtTimes(view.continuousStates ?? [], options.atTimes ?? []),
     ...(view.canonResolvedView ? [
       '<CANON_CURRENT_VIEW>',
       '以下内容是当前聊天分支、当前 revision、当前任务范围内的正史投影；只约束本次命中的对象，不得外推污染其他人物、地点或时期。',
@@ -450,6 +462,18 @@ export function renderActiveEvidenceBlock(
   return citationRegistry ? maskTaskCitationIdentifiers(block, citationRegistry) : block;
 }
 
+export function stateTimesFromSpan(span: string | undefined, fallbackEra?: string | null): string[] {
+  if (!span) return [];
+  const parts = span.split(/[—–～]|至|\s-\s/u).map(part => part.trim()).filter(Boolean);
+  let era = fallbackEra ?? '';
+  return parts.flatMap(part => {
+    const match = part.match(/^(.+?)(?:前)?\d+年/u);
+    if (match && !/^\d/u.test(part)) era = match[1];
+    const label = /^\d/u.test(part) ? `${era}${part}` : part;
+    return /\d+年/u.test(label) && era ? [label] : [];
+  });
+}
+
 type CurrentTemporalOrigin = NonNullable<
   NonNullable<ActiveEvidenceView['canonResolvedView']>['currentTemporalOrigins']
 >[number];
@@ -505,6 +529,7 @@ export function renderPersonCanonViewBlock(views: PersonCanonView[]): string[] {
         spatialScope: fact.spatialScope,
         epistemicStatus: fact.epistemicStatus,
         confidence: fact.confidence,
+        ...(fact.continuousState ? { continuousState: fact.continuousState } : {}),
         sourceRefs: fact.sourceRefs,
         sourceSnapshotIds: fact.sourceSnapshotIds,
         sourceSpans: fact.sourceSpans,

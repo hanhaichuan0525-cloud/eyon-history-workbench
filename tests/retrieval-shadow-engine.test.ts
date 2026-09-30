@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { buildCharacterCanonFacts } from '../src/retrieval/characterFacts.ts';
+import { continuousStateAt, projectContinuousStates } from '../src/retrieval/continuousState.ts';
+import { assessStagePerson } from '../src/retrieval/temporal.ts';
 
 import {
   EVIDENCE_PASSAGE_STRATEGY_VERSION,
@@ -37,6 +40,30 @@ function snapshot(
     metadata: {},
   };
 }
+
+test('G-01B：来源中明确的持续状态可召回；坏元数据不丢失原文', () => {
+  const source = snapshot('worldbook:states', '[角色]玲山·哈姆斯沃思', '身份: 文书\n持续状态: {"dimension":"拘束","value":"监禁","start":"复兴纪元450年3月1日"}\n持续状态: {"dimension":"拘束","value":"自由","start":"复兴纪元450年4月1日"}\n持续状态: {"bad":true}');
+  const catalog = buildWorldKnowledgeCatalog([source], []);
+  const person = catalog.entities.find(item => item.canonicalName === '玲山·哈姆斯沃思')!;
+  const facts = buildCharacterCanonFacts(person, new Map([[source.snapshotId, source]])).facts;
+  assert.equal(facts.filter(fact => fact.continuousState).length, 2);
+  assert.equal(continuousStateAt(projectContinuousStates(facts), person.entityId, '拘束', '复兴纪元450年4月2日').value, '自由');
+  assert.ok(source.content.endsWith('{"bad":true}'));
+});
+test('特殊谱系读取：以本界抵达/启动/夺舍原点判在场，不让肉身死亡抹去灵魂', () => {
+  const date = (year: number) => ({ status: 'known', era: '复兴纪元', year, month: null, day: null, precision: 'exact', label: `复兴纪元${year}年` });
+  for (const [lineageKind, field] of [['cross-world-travel', 'arrival'], ['creation', 'activation'], ['possession', 'incarnation'], ['reincarnation', 'incarnation'], ['same-world-travel', 'arrival']]) {
+    const source = snapshot(`genealogy:${field}:${lineageKind}`, '测试人物', JSON.stringify({ name: '测试人物', birth: date(100), death: { ...date(400), status: 'deceased' },
+      identity: { lineageKind, [field]: date(480), body: { world: '原界', birth: date(100), death: { ...date(400), status: 'deceased' } } } }), 'genealogy');
+    const person = buildWorldKnowledgeCatalog([source], []).entities.find(item => item.canonicalName === '测试人物')!;
+    assert.equal(person.lifespan?.born?.year, 480); assert.equal(person.lifespan?.died, undefined);
+    const entry = { name: person.canonicalName, state: 'unknown' as const, narrative: '', lifespan: person.lifespan };
+    const result = assessStagePerson(entry, { start: { era: '复兴纪元', year: 484 }, end: { era: '复兴纪元', year: 485 } });
+    assert.equal(result.state, 'alive'); assert.deepEqual(result.ageRange, { start: null, end: null });
+    assert.ok(result.guidance.includes('4至5年'));
+    assert.equal(assessStagePerson(entry, { start: {}, end: {} }, '复兴纪元').state, 'unknown');
+  }
+});
 
 function withWorldbookKeys(source: SourceSnapshot, uid: number, keys: string[]): SourceSnapshot {
   source.metadata = {

@@ -281,7 +281,7 @@ export function buildEraProfile(
   };
 }
 
-/** 纪元顺序（与 validators/ruin.ts 的 ERA_SEQUENCE 保持一致，供跨纪元年龄换算）。 */
+/** 纪元顺序只供先后比较；各纪元长度未知，不能用于跨纪元年龄换算。 */
 export const ERA_SEQUENCE = [
   '创世纪元',
   '神明纪元',
@@ -297,11 +297,20 @@ export function eraIndex(era: string | undefined | null): number | null {
   return index >= 0 ? index : null;
 }
 
-/** 纪元年份 → 绝对年序（跨纪元比较用；同一纪元内用年，跨纪元用纪元序号换算）。 */
+/** 纪元年份 → 排序键。100_000 是排序间隔，不是纪元时长，禁止用其差值计算年龄。 */
 export function absoluteYear(era: string | undefined | null, year: number | null | undefined): number | null {
   const index = eraIndex(era);
   if (index === null || year === null || year === undefined) return null;
   return index * 100_000 + year;
+}
+
+/** 相同纪年可以直接比较（包括自定义纪年）；已知不同纪元只比较先后。 */
+function relativeTimelineYear(era: string | null | undefined, year: number | null | undefined, referenceEra: string): number | null {
+  if (!era || year == null) return null;
+  if (era === referenceEra) return year;
+  const index = eraIndex(era);
+  const referenceIndex = eraIndex(referenceEra);
+  return index === null || referenceIndex === null ? null : (index - referenceIndex) * 100_000 + year;
 }
 
 export interface ParsedWorldTime {
@@ -335,9 +344,11 @@ export function resolveLifespanFromBaseline(
   baselineTime: string | undefined | null,
 ): KnowledgeEntity['lifespan'] | undefined {
   const existing = entity.lifespan;
+  if (existing?.originKind && existing.originKind !== 'birth') return existing;
   if (existing?.born) return existing; // 显式生卒直接可用
-  if (!existing?.ageAtRecord) return undefined;
-  const base = parseWorldTime(baselineTime);
+  if (existing?.ageAtRecord == null) return undefined;
+  const base = existing.basedOnEra && existing.basedOnYear != null
+    ? { era: existing.basedOnEra, year: existing.basedOnYear } : parseWorldTime(baselineTime);
   if (base.era === null || base.year === null) return undefined;
   const ageText = existing.ageAtRecord;
   if (ageText < 0 || ageText > base.year) return undefined; // 年龄大于基准年：不兼容，不硬算
@@ -359,6 +370,7 @@ export function describePersonLifespanWindow(
   name: string,
   lifespan: KnowledgeEntity['lifespan'],
 ): string {
+  if (lifespan?.originKind && lifespan.originKind !== 'birth') return specialIdentityGuidance(name, lifespan);
   const born = lifespan?.born;
   const origin = lifespan?.ageBased
     ? `由基准时间${lifespan.basedOnEra ?? ''}${lifespan.basedOnYear ?? ''}年时${lifespan.ageAtRecord ?? ''}岁推算`
@@ -386,14 +398,20 @@ export function assessPersonTimeline(
   narrative: string;
 } {
   const lifespan = entity.lifespan;
+  if (lifespan?.originKind && lifespan.originKind !== 'birth') {
+    const born = lifespan.born;
+    const died = lifespan.died;
+    const state = !born || targetYear === null || targetEra !== born.era ? 'unknown'
+      : targetYear < born.year ? 'not-born'
+      : died && died.era === targetEra && targetYear > died.year ? 'deceased' : 'alive';
+    return { state, narrative: specialIdentityGuidance(entity.canonicalName, lifespan)
+      + (state === 'not-born' ? '本段早于本界在场原点，不能把原世界血缘当作本界在场证据。'
+        : state === 'deceased' ? '本段晚于明确身份终止，按遗产或原肉身另行叙事。' : '') };
+  }
   if (!lifespan?.born) return { state: 'unknown', narrative: `${entity.canonicalName}的生卒信息缺失，按世界书资料与时代画像自行判断。` };
-  const targetIndex = eraIndex(targetEra);
-  const bornIndex = eraIndex(lifespan.born.era);
-  const bornAbs = absoluteYear(lifespan.born.era, lifespan.born.year);
-  const targetAbs = targetYear !== null && targetIndex !== null
-    ? targetIndex * 100_000 + targetYear
-    : null;
-  if (bornAbs === null) return { state: 'unknown', narrative: `${entity.canonicalName}生卒信息不完整，按资料自行判断。` };
+  const bornAbs = lifespan.born.year;
+  const targetAbs = relativeTimelineYear(targetEra, targetYear, lifespan.born.era);
+  if (targetAbs === null) return { state: 'unknown', narrative: `${entity.canonicalName}的目标年份或纪年关系不明，保留生卒原文，由模型判断，不能据此断言在世。` };
   if (targetAbs !== null && targetAbs < bornAbs) {
     return {
       state: 'not-born',
@@ -403,7 +421,8 @@ export function assessPersonTimeline(
     };
   }
   if (lifespan.died) {
-    const diedAbs = absoluteYear(lifespan.died.era, lifespan.died.year);
+    const diedAbs = relativeTimelineYear(lifespan.died.era, lifespan.died.year, lifespan.born.era);
+    if (diedAbs === null) return { state: 'unknown', narrative: `${entity.canonicalName}的死亡纪年与目标纪年不可比较，按原文判断。` };
     if (diedAbs !== null && targetAbs !== null && targetAbs > diedAbs) {
       return {
         state: 'deceased',
@@ -544,6 +563,20 @@ function normalizePersonName(value: string): string {
   return value.normalize('NFKC').replace(/\s+/gu, '').trim();
 }
 
+function specialIdentityGuidance(name: string, lifespan: NonNullable<KnowledgeEntity['lifespan']>): string {
+  const labels = { birth: '肉身出生', arrival: '本界抵达', activation: '启动/创造', incarnation: '夺舍/转生' };
+  const identity = lifespan.identityTracks;
+  const origin = lifespan.born ? `${lifespan.born.era}${lifespan.born.year}年` : '时间待考';
+  const body = identity?.body?.birth?.label;
+  const soul = identity?.soul?.birth?.label;
+  return `${name}的${labels[lifespan.originKind ?? 'birth']}原点：${origin}；`
+    + `此原点只用于本界身份在场，不是生理出生或年龄为0。`
+    + (body ? `肉身原点：${identity?.body?.world ?? '世界待考'}／${body}；` : '')
+    + (soul ? `灵魂原点：${identity?.soul?.world ?? '世界待考'}／${soul}；` : '')
+    + (identity?.originAge ? `原点年龄：${identity.originAge.at.label}时${identity.originAge.years}岁；` : '')
+    + '原世界年龄与本界经过时间分开，禁止跨世界减年、用宿主生卒判原灵魂死亡或把创造者当血亲。';
+}
+
 /** 单段单人的在场结论（区间相交：生卒窗口 × 段起止）。 */
 export interface StagePersonAssessment {
   name: string;
@@ -568,6 +601,7 @@ export interface StageSpanLike {
 /** 人物在场窗口的一句话（供规划 prompt）；无可用生卒信息返回 null。 */
 export function personAvailabilityLine(person: PersonTimelineEntry): string | null {
   const lifespan = person.lifespan;
+  if (lifespan?.originKind && lifespan.originKind !== 'birth') return specialIdentityGuidance(person.name, lifespan);
   if (!lifespan?.born?.era || lifespan.born.year === null || lifespan.born.year === undefined) {
     return null;
   }
@@ -594,6 +628,25 @@ export function assessStagePerson(
   contextEra: string | null = null,
 ): StagePersonAssessment {
   const lifespan = person.lifespan;
+  if (lifespan?.originKind && lifespan.originKind !== 'birth') {
+    const born = lifespan.born;
+    const era = span.end.era ?? span.start.era ?? contextEra;
+    const comparable = !!born && era === born.era
+      && !(span.start.era && span.end.era && span.start.era !== span.end.era)
+      && (span.start.year != null || span.end.year != null);
+    const before = born && era === born.era && span.end.year != null && span.end.year < born.year;
+    const died = lifespan.died;
+    const after = died && era === died.era && span.start.year != null && span.start.year > died.year;
+    return {
+      name: person.name, state: comparable && before ? 'before-birth' : comparable && after ? 'after-death' : comparable ? 'alive' : 'unknown',
+      ageRange: { start: null, end: null },
+      guidance: specialIdentityGuidance(person.name, lifespan)
+        + (comparable ? `本段相对该原点的经过年数：${span.start.year == null ? '待考' : span.start.year - born!.year}至${span.end.year == null ? '待考' : span.end.year - born!.year}年（不是肉身年龄）。` : '')
+        + (before ? '本段早于该原点，只可写其本界缺席前史或明确标注原世界/原肉身。'
+          : after ? '本段晚于明确身份终止，不倒写其本界在场。'
+          : '本段在场按上述原点与轨道核对；本界经过年数不是生理年龄。'),
+    };
+  }
   if (!lifespan?.born?.era || lifespan.born.year === null || lifespan.born.year === undefined) {
     return {
       name: person.name,
@@ -602,7 +655,7 @@ export function assessStagePerson(
       guidance: `${person.name}的生卒窗口缺失，按世界书资料与时代画像自行判断在场与年龄。`,
     };
   }
-  const bornAbs = absoluteYear(lifespan.born.era, lifespan.born.year);
+  const bornAbs = lifespan.born.year;
   if (bornAbs === null) {
     return {
       name: person.name,
@@ -612,7 +665,7 @@ export function assessStagePerson(
     };
   }
   const diedAbs = lifespan.died?.era
-    ? absoluteYear(lifespan.died.era, lifespan.died.year)
+    ? relativeTimelineYear(lifespan.died.era, lifespan.died.year, lifespan.born.era)
     : null;
   const startAbs = stagePointAbsolute(span.start, contextEra, lifespan.born.era);
   const endAbs = stagePointAbsolute(span.end, contextEra, lifespan.born.era);
@@ -668,10 +721,12 @@ export function assessStagePerson(
   // 在场（含段内出生/段内亡故的跨接）。
   let ageStart: number | null = null;
   let ageEnd: number | null = null;
-  if (startAbs !== null) ageStart = Math.max(0, startAbs - bornAbs);
-  if (endAbs !== null) {
+  const startEra = span.start.era?.trim() || contextEra || lifespan.born.era;
+  const endEra = span.end.era?.trim() || contextEra || lifespan.born.era;
+  if (startAbs !== null && startEra === lifespan.born.era) ageStart = Math.max(0, startAbs - bornAbs);
+  if (endAbs !== null && endEra === lifespan.born.era) {
     ageEnd = endAbs - bornAbs;
-    if (diedAbs !== null && ageEnd > diedAbs - bornAbs) ageEnd = diedAbs - bornAbs;
+    if (diedAbs !== null && lifespan.died?.era === lifespan.born.era && ageEnd > diedAbs - bornAbs) ageEnd = diedAbs - bornAbs;
   }
   const notes: string[] = [];
   if (startAbs !== null && startAbs < bornAbs) {
@@ -682,7 +737,7 @@ export function assessStagePerson(
   }
   const ageText = ageStart !== null || ageEnd !== null
     ? `本段年龄约 ${formatAgeRange(ageStart, ageEnd)} 岁（正文写到段内某一年时按该年取龄：段首场景用段首年龄，段末场景用段末年龄，禁止把段末年龄套到段首年份的场景上）`
-    : '年龄无法换算';
+    : '年龄无法换算（跨纪元长度未记载时不得编造精确年龄）';
   const exactAgeGuide = renderExactAgeGuide(
     span,
     contextEra,
@@ -723,7 +778,7 @@ function stagePointAbsolute(
   if (point.year === null || point.year === undefined) return null;
   const era = (point.era && point.era.trim()) || contextEra || fallbackEra;
   if (!era) return null;
-  return absoluteYear(era, point.year);
+  return fallbackEra ? relativeTimelineYear(era, point.year, fallbackEra) : absoluteYear(era, point.year);
 }
 
 function formatAgeRange(start: number | null, end: number | null): string {
@@ -751,6 +806,7 @@ function renderExactAgeGuide(
 
   const startEra = (span.start.era && span.start.era.trim()) || contextEra || fallbackEra;
   const endEra = (span.end.era && span.end.era.trim()) || contextEra || fallbackEra;
+  if (startEra !== fallbackEra || endEra !== fallbackEra) return '';
   const startYear = span.start.year;
   const endYear = span.end.year;
   if (startYear === null || startYear === undefined || endYear === null || endYear === undefined) {

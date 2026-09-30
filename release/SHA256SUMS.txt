@@ -1,6 +1,6 @@
 # Release checksums (SHA-256)
-d2e65c8dcbe1010d9be2734ac3d32d714dfcb34dc2e89fa0d1f0adf583fc7ac5  酒馆助手脚本-伊雍历史工作台-v0.13.3.json
-3d8fa223c2ae79f602b5a48d4ee31742819190553b1f831521c15a077016bd63  酒馆助手脚本-伊雍历史工作台-β1.json
+f682eea670fe32938aa4a5701df4387ad03c8360b06a882409871e359dd5888d  酒馆助手脚本-伊雍历史工作台-v0.14.4.json
+74a6126e0902b5a8def10af859c3906fe6850d3062cf20618c118e0383584d46  酒馆助手脚本-伊雍历史工作台-β1.json
 ebd436749781c8de62d91bc371d703a658c3df0683a53f30d56d925c26abab25  extension/auto-loader.js
 4f55622c8ab402cd4301c7b538f14b288474f71afed566a9e6b2648d0c9fc5d2  regex/regex-伊雍-传记美化（as）.json
 2fa224b078e8fd9b96f399ee91d92404561f2e45a84d51c8da48680d468b1c5f  regex/regex-伊雍-对话框美化（as）.json

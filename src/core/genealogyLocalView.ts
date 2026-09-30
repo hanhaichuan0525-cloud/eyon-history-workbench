@@ -4,6 +4,7 @@ import type { ArtifactCanonAssessment, CanonBranch, CanonFact } from '../retriev
 import { assessArtifactCanonBinding, createIneligibleArtifactCanonAssessment } from './artifactCanonAssessment.ts';
 import { currentArtifactCanonAssessmentTarget, decideArtifactCanonConsumption } from './artifactCanonConsumption.ts';
 import { parseWorldTime } from '../retrieval/temporal.ts';
+import { biologicalEdge } from './genealogyIdentity.ts';
 import { namespaceKey } from './namespace.ts';
 import { fingerprintText } from '../runtime/transactionIdentity.ts';
 import {
@@ -140,7 +141,7 @@ function computeGenealogyLocalView(record: GenealogyRecord, branch?: CanonBranch
     const child = parent === edge.from ? edge.to : edge.from;
     // Birth after death is not proof of conception after death (posthumous or non-human births).
     // Keep the person, suspend only the unsupported relation; never invent another parent.
-    if (changedLife && parent) {
+    if (changedLife && parent && biologicalEdge(edge)) {
       const death = pointFor(parent, 'death_time');
       const birth = pointFor(child, 'birth_time');
       const parentBirth = pointFor(parent, 'birth_time');
@@ -152,7 +153,7 @@ function computeGenealogyLocalView(record: GenealogyRecord, branch?: CanonBranch
       } else if (!birth || !parentBirth || birth.era !== parentBirth.era) {
         uncertain(s, 'relationship-time-unresolved');
       }
-    } else if (changedLife && ['spouse', 'adoptiveParent', 'adoptiveChild', 'guardian', 'ward'].includes(edge.relationType)) {
+    } else if (changedLife && edge.track !== 'soul' && ['spouse', 'adoptiveParent', 'adoptiveChild', 'guardian', 'ward'].includes(edge.relationType)) {
       for (const id of [edge.from, edge.to]) {
         const death = pointFor(id, 'death_time');
         if (!death) continue;
@@ -196,12 +197,18 @@ function computeGenealogyLocalView(record: GenealogyRecord, branch?: CanonBranch
     }
     if (!s.reusable) {
       copy.birth = unknownDate(); copy.death = unknownDate();
+      if (copy.identity) copy.identity = { lineageKind: copy.identity.lineageKind, note: '时间轨待复核；不沿用旧版本原点。' };
       copy.identities = []; copy.professions = ['职业不详']; copy.race = '不详'; copy.lifeLevel = '';
       copy.provenance = 'inferred';
     }
     for (const kind of ['birth', 'death'] as const) {
       const value = pointFor(node.id, kind === 'birth' ? 'birth_time' : 'death_time');
-      if (value) setLifeDate(copy, kind, value);
+      if (value) {
+        setLifeDate(copy, kind, value);
+        if (copy.identity && copy.identity.lineageKind !== 'creation') {
+          copy.identity.body = { ...copy.identity.body, [kind]: structuredClone(copy[kind]) };
+        }
+      }
     }
     return copy;
   });
@@ -283,7 +290,7 @@ export function unknownDate(): GenealogyNode['birth'] {
   return { status: 'unknown', era: '', year: null, month: null, day: null, precision: 'unknown', label: '不详' };
 }
 export function setLifeDate(node: GenealogyNode, kind: 'birth' | 'death', value: Point): void {
-  const era = ['创世纪元', '神明纪元', '混乱纪元', '英雄纪元', '复兴纪元'].includes(value.era) ? value.era as GenealogyNode['birth']['era'] : null;
+  const era = value.era.trim().slice(0, 80);
   if (!era || !Number.isInteger(value.year)) return;
   node[kind] = { status: kind === 'birth' ? 'known' : 'deceased', era, year: value.year, month: null, day: null, precision: 'exact', label: `${era}${value.year}年` };
 }

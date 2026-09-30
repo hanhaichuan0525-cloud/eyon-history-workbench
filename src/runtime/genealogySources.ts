@@ -1,4 +1,5 @@
 import type { GenealogyRecord } from '../storage/genealogies.ts';
+import { genealogyEdgeDescription, genealogyIdentityLines } from '../core/genealogyIdentity.ts';
 import type { CanonBranch } from '../retrieval/contracts.ts';
 import type { RuinSelectedCharacter } from '../storage/ruinReferences.ts';
 import { buildGenealogyLocalView, type GenealogyLocalView } from '../core/genealogyLocalView.ts';
@@ -16,7 +17,7 @@ export function genealogySources(records: GenealogyRecord[], branch?: CanonBranc
     const ids = new Map(record.localEvidence?.nodes.map(node => [node.nodeId, node.entityId]) ?? []);
     const nodeKey = (id: string) => ids.get(id) ?? `${record.requestId}:${id}`;
     const edges = view.edges.filter(edge => {
-      const key = `${nodeKey(edge.from)}\u0000${edge.relationType}\u0000${nodeKey(edge.to)}`;
+      const key = `${nodeKey(edge.from)}\u0000${edge.relationType}\u0000${nodeKey(edge.to)}\u0000${edge.track ?? 'body'}`;
       if (seenEdges.has(key)) return false;
       seenEdges.add(key); return true;
     });
@@ -44,9 +45,10 @@ export function genealogyNodeToRuinReference(record: GenealogyRecord, nodeId: st
   const referenceId = `genealogy:${record.requestId}:${node.id}`;
   const names = new Map(view.nodes.map(item => [item.id, item.name]));
   const relations = view.edges.filter(edge => edge.from === node.id || edge.to === node.id)
-    .map(edge => `${names.get(edge.from) ?? ''} → ${edge.label} → ${names.get(edge.to) ?? ''}`);
+    .map(edge => `${names.get(edge.from) ?? ''} → ${genealogyEdgeDescription(edge)} → ${names.get(edge.to) ?? ''}`);
   return { referenceId, mvuId: node.mvuId || referenceId, name: node.name, source: 'genealogy', identities: node.identities, race: node.race, professions: node.professions, relations,
-    lifespan: `${node.birth.label} - ${node.death.label}`, contextSummary: [node.summary, node.profile.personality, node.profile.lifeExperience].join('；') };
+    lifespan: `${node.birth.label} - ${node.death.label}`, contextSummary: [node.summary, ...genealogyIdentityLines(node), node.profile.personality, node.profile.lifeExperience].join('；'),
+    ...(node.identity ? { identity: node.identity } : {}) };
 }
 
 /** Rebuild on each read; retained selections are never deleted on a Canon change. */

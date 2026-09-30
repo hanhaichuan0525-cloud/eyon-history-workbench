@@ -27,12 +27,16 @@
     const settings = {
       schemaVersion: 1,
       generation: {
-        genealogy: { mode: 'follow_tavern' },
-        ruin: { mode: 'follow_tavern' },
-        biography: { mode: 'follow_tavern' },
-        butterfly: { mode: 'follow_tavern' },
+        genealogy: { apiurl: '', key: '', model: '', source: 'openai', maxTokens: 60000, temperature: 0.8 },
+        ruin: { apiurl: '', key: '', model: '', source: 'openai', maxTokens: 60000, temperature: 0.8 },
+        biography: { apiurl: '', key: '', model: '', source: 'openai', maxTokens: 60000, temperature: 0.8 },
+        butterfly: { apiurl: '', key: '', model: '', source: 'openai', maxTokens: 60000, temperature: 0.8 },
       },
       ruinDraft: null,
+      retries: { genealogy: 2, ruin: 2, biography: 2, butterfly: 2 },
+      retrieval: { biographyEnabled: false, worldbookScope: 'eyon', mergeAliases: true, worldbookEntryExclusions: {} },
+      ruinPreferences: { candidateCount: 3 },
+      errorLog: [],
       genealogyDepth: { ancestors: 4, descendants: 3, maxPerGeneration: 7 },
       appearance: {
         mode: previewOption('mode', ['light', 'dark'], 'light'),
@@ -150,8 +154,58 @@
       createdAt: 1,
       updatedAt: 1,
     }];
+    // Explicit query-only fixtures: the default preview and real host remain untouched.
+    const lineage = previewOption('lineage', ['creation', 'possession', 'cross-world-travel'], '');
+    const date = (year, label, status = year === null ? 'unknown' : 'known', era = year === null ? '' : '复兴纪元') =>
+      ({ status, era, year, month: null, day: null, precision: year === null ? 'unknown' : 'exact', label });
+    const previewGenealogies = [];
+    if (lineage) {
+      Object.assign(character, { mvuId: 'preview-special-person', name: lineage === 'creation' ? '艾琳一号' : '归来的见证者',
+        race: lineage === 'creation' ? '构装体' : '人类', identities: ['王庭档案管理员'], professions: ['档案整理员'], lifeLevel: '第二层级' });
+      const node = (id, name, generation, relation, focus = false) => ({
+        id, name, generation, relationToFocus: relation, isFocus: focus, mvuId: focus ? character.mvuId : '', aliases: [],
+        isMvuCharacter: focus, viewable: true, canInjectToRuin: true, provenance: 'generated',
+        birth: date(464, '复兴纪元464年'), death: date(null, '在世', 'alive'), race: focus ? character.race : '人类',
+        identities: [focus ? '王庭档案管理员' : relation], professions: ['档案整理员'], lifeLevel: '',
+        summary: '守护珍贵的记录。', profile: { personality: '安静认真，习惯反复确认每一份记录。',
+          lifeExperience: focus ? '来到王庭后，将各地散佚的档案重新编目。' : '与王庭档案保存工作结下长久因缘。' }, sourceRefs: [], historyRefs: [],
+      });
+      const edge = (id, from, to, relationType, label, track) => ({ id, from, to, relationType, label, track, sourceRefs: [] });
+      const nodes = [node('focus', character.name, 0, '本人', true)], edges = [];
+      if (lineage === 'creation') {
+        nodes[0].identity = { lineageKind: lineage, activation: date(485, '复兴纪元485年') };
+        nodes.push(node('creator', '工匠罗森', -1, '创造者'), node('owner', '档案馆长', 0, '主人'), node('previous', '艾琳零号', -1, '前代个体'));
+        edges.push(edge('creator', 'creator', 'focus', 'creator', '创造者', 'creation'),
+          edge('owner', 'owner', 'focus', 'owner', '主人', 'social'), edge('previous', 'previous', 'focus', 'predecessor', '前代个体', 'creation'));
+        nodes[2].professions = ['王庭档案馆长']; nodes[3].race = '构装体';
+        nodes[3].identity = { lineageKind: 'creation', activation: date(480, '复兴纪元480年') };
+      } else if (lineage === 'possession') {
+        nodes[0].identity = { lineageKind: lineage, body: { birth: nodes[0].birth },
+          soul: { name: '远行的抄书人', world: '原界', birth: date(null, '原界幼年'), death: date(null, '去向不详') },
+          incarnation: date(487, '复兴纪元487年') };
+        nodes.push(node('body-parent', '宿主父亲', -1, '父亲'), node('origin-parent', '原界母亲', -1, '原身份母亲'));
+        nodes[1].birth = date(430, '复兴纪元430年');
+        nodes[2].birth = date(null, '原界早年'); nodes[2].death = date(null, '去向不详');
+        edges.push(edge('body-parent', 'body-parent', 'focus', 'parent', '宿主父亲', 'body'),
+          edge('origin-parent', 'origin-parent', 'focus', 'parent', '原身份母亲', 'soul'));
+      } else {
+        nodes[0].identity = { lineageKind: lineage, body: { world: '原界', birth: date(null, '穿越前约24年') }, arrival: date(480, '复兴纪元480年') };
+        nodes[0].birth = date(null, '穿越前约24年');
+        nodes.push(node('origin-parent', '原界父亲', -1, '父亲'));
+        nodes[1].birth = date(null, '穿越前约50年');
+        edges.push(edge('parent', 'origin-parent', 'focus', 'parent', '父亲', 'body'));
+      }
+      const result = { schema: 'eyon.genealogy.v2', requestId: 'preview-special-lineage', focusCharacterId: character.mvuId,
+        focusCharacterName: character.name, depth: settings.genealogyDepth, nodes, edges,
+        referenceSummary: { familyNames: [], knownResidences: ['王庭'], knownOrganizations: ['王庭档案馆'], brief: '王庭见证者的源流。' },
+        qualityChecks: { focusIsMvuCharacter: true, generatedNodesHaveProvenance: true, allNodesHaveLifeDates: true,
+          allNodesHaveBasicProfiles: true, noConflictNarrative: true } };
+      previewGenealogies.push({ requestId: result.requestId, namespace: { characterKey: 'preview', chatId: 'preview-chat' }, createdAt: 1,
+        input: { focusCharacter: character, depth: result.depth, lineageKind: 'auto' }, result,
+        localView: { nodes, edges, units: nodes.map(item => ({ unitId: item.id, unitType: 'node', reusable: true, disposition: 'available' })) } });
+    }
     const facade = {
-      version: '0.13.3',
+      version: '0.14.4',
       getSettings: () => structuredClone(settings),
       updateSettings: patch => {
         Object.assign(settings, patch);
@@ -178,7 +232,7 @@
       setCharacterWorldbookEntryEnabled: async () => [],
       setCharacterWorldbookEntriesEnabled: async () => [],
       generateGenealogy: async () => { throw new Error('预览页不调用生成 API'); },
-      listGenealogies: async () => [],
+      listGenealogies: async () => structuredClone(previewGenealogies),
       listRuinCharacterReferences: async () => [],
       toggleGenealogyNodeRuinReference: async () => [],
       removeRuinCharacterReference: async () => [],
@@ -210,7 +264,7 @@
       exportCurrentData: async () => ({
         format: 'eyon-history-workbench-backup',
         schemaVersion: 1,
-        workbenchVersion: '0.13.3',
+        workbenchVersion: '0.14.4',
         exportedAt: new Date().toISOString(),
         namespace: { characterKey: 'preview', chatId: 'preview-chat' },
         settings: structuredClone(settings),
@@ -229,6 +283,10 @@
       },
       clearErrorLog: async () => 0,
       enterRuin: async () => undefined,
+      getRuinTaskReview: async () => null,
+      generateRuinTaskDraft: async () => { throw new Error('预览页不调用生成 API'); },
+      updateRuinTaskDraft: async () => { throw new Error('预览页不写入任务'); },
+      confirmRuinTaskDraft: async () => { throw new Error('预览页不写入任务'); },
       returnRuin: async () => undefined,
       retryButterfly: async () => undefined,
       dispose: () => undefined,
@@ -247,7 +305,7 @@
       () => { document.querySelector('[data-eyon-workbench-reopen]').style.display = 'none'; },
     );
   </script>
-  <script type="module" src="../dist/workbench.js?v=0.13.3"></script>
+  <script type="module" src="../dist/workbench.js?v=0.14.4"></script>
   <script type="module">
     // The preview must announce its mock facade after the production bundle has
     // installed its listeners. Keeping this page on the real bundle prevents a

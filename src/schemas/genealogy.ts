@@ -2,14 +2,7 @@ import { z } from 'zod';
 
 z.config({ jitless: true });
 
-export const GenealogyEraSchema = z.enum([
-  '创世纪元',
-  '神明纪元',
-  '混乱纪元',
-  '英雄纪元',
-  '复兴纪元',
-  '',
-]);
+export const GenealogyEraSchema = z.string().trim().max(80);
 
 export const GenealogyLifeDateSchema = z.strictObject({
   status: z.enum(['known', 'unknown', 'alive', 'deceased']),
@@ -19,6 +12,28 @@ export const GenealogyLifeDateSchema = z.strictObject({
   day: z.number().int().min(1).max(31).nullable(),
   precision: z.enum(['exact', 'approximate', 'unknown']),
   label: z.string().min(1),
+});
+
+export const GenealogyLineageKindSchema = z.enum([
+  'native', 'same-world-travel', 'cross-world-travel', 'possession',
+  'reincarnation', 'adoption', 'creation',
+]);
+const IdentityTrackSchema = z.object({
+  name: z.string().trim().max(80).optional().catch(undefined),
+  world: z.string().trim().max(80).optional(),
+  birth: GenealogyLifeDateSchema.optional(),
+  death: GenealogyLifeDateSchema.optional(),
+});
+export const GenealogyIdentitySchema = z.object({
+  lineageKind: GenealogyLineageKindSchema,
+  body: IdentityTrackSchema.optional().catch(undefined),
+  soul: IdentityTrackSchema.optional().catch(undefined),
+  arrival: GenealogyLifeDateSchema.optional().catch(undefined),
+  activation: GenealogyLifeDateSchema.optional().catch(undefined),
+  incarnation: GenealogyLifeDateSchema.optional().catch(undefined),
+  identityEnd: GenealogyLifeDateSchema.optional().catch(undefined),
+  originAge: z.object({ years: z.number().nonnegative(), at: GenealogyLifeDateSchema }).optional().catch(undefined),
+  note: z.string().trim().max(240).optional().catch(undefined),
 });
 
 export const GenealogyNodeSchema = z.strictObject({
@@ -32,6 +47,7 @@ export const GenealogyNodeSchema = z.strictObject({
   viewable: z.literal(true),
   canInjectToRuin: z.boolean(),
   provenance: z.enum(['explicit', 'inferred', 'generated']),
+  identity: GenealogyIdentitySchema.optional().catch(undefined),
   birth: GenealogyLifeDateSchema,
   death: GenealogyLifeDateSchema,
   race: z.string().min(1),
@@ -71,9 +87,23 @@ export const GenealogyRelationTypeSchema = z.enum([
   'cousin',
   'ancestor',
   'descendant',
+  'creator',
+  'creation',
+  'soulOrigin',
+  'incarnation',
+  'owner',
+  'owned',
+  'predecessor',
+  'successor',
+  'sameSource',
 ]);
 
 export const GenealogyEdgeSchema = z.strictObject({
+  track: z.enum(['body', 'soul', 'social', 'creation']).optional().catch(undefined),
+  period: z.object({
+    from: GenealogyLifeDateSchema.optional().catch(undefined),
+    to: GenealogyLifeDateSchema.optional().catch(undefined),
+  }).optional().catch(undefined),
   id: z.string().min(1),
   from: z.string().min(1),
   to: z.string().min(1),
@@ -121,6 +151,8 @@ export const GenealogyErrorSchema = z.strictObject({
 });
 
 export const GenealogyGenerationInputSchema = z.strictObject({
+  lineageKind: z.union([z.literal('auto'), GenealogyLineageKindSchema]).optional(),
+  identityNote: z.string().trim().max(240).optional(),
   focusCharacter: z.strictObject({
     mvuId: z.string().min(1),
     name: z.string().min(1),

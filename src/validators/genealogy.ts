@@ -7,6 +7,7 @@ import {
   type GenealogyResult,
 } from '../schemas/genealogy.ts';
 import { parseWorldTime } from '../retrieval/temporal.ts';
+import { biologicalEdge, biologicalFamilyIds, genealogyFamilyView, hasOriginFamily, hasOrdinaryGenerationChronology, isDualTrack } from '../core/genealogyIdentity.ts';
 import { setLifeDate, unknownDate } from '../core/genealogyLocalView.ts';
 import { historyReferencesForPerson } from '../runtime/genealogyContinuity.ts';
 import {
@@ -76,12 +77,21 @@ export function parseAndValidateGenealogy(
     throw new GenealogyValidationError(result.error.message, 'SCHEMA_INVALID');
   }
   const genealogy = result.data;
+  const requestedKind = expected.input.lineageKind;
+  const focusIdentityNode = genealogy.nodes.find(node => node.isFocus);
+  if (focusIdentityNode && requestedKind && requestedKind !== 'auto') {
+    if (focusIdentityNode.identity && focusIdentityNode.identity.lineageKind !== requestedKind) {
+      throw new GenealogyValidationError('谱系身份类型与选定类型不符', 'IDENTITY_POLICY_MISMATCH');
+    }
+    focusIdentityNode.identity ??= { lineageKind: requestedKind, note: '特殊身份时间轨待考，未用本界年龄硬推生年。' };
+  }
   const knownSourceIds = expected.context.sourceIndex.map(source => source.sourceId);
   const citationRegistry = extendTaskCitationRegistry(
     taskCitationRegistry(expected.context.evidenceBundle),
     knownSourceIds,
   );
   for (const node of genealogy.nodes) {
+    normalizeOptionalDates(node, expected.onWarning);
     node.sourceRefs = resolveGenealogySourceRefs(
       citationRegistry,
       node.sourceRefs,
@@ -165,6 +175,23 @@ export function parseAndValidateGenealogy(
       const matches = views.filter(view => [view.canonicalName, ...view.aliases].some(name => normalize(name) === normalize(node.name)));
       const view = matches.length === 1 ? matches[0] : undefined;
       for (const kind of ['birth', 'death'] as const) {
+        if (isDualTrack(node)) {
+          // Legacy birth/death belong to the body; arrival/soul/activation stay separate.
+          const bodyDate = node.identity?.body?.[kind];
+          if (bodyDate) node[kind] = structuredClone(bodyDate);
+          else {
+            const explicit = (view?.facts ?? []).filter(fact => fact.predicate === `${kind}_time`
+              && ['explicit', 'structural', 'user-asserted'].includes(fact.epistemicStatus));
+            const points = explicit.map(fact => parseWorldTime(fact.object)).filter(point => point.era && point.year !== null);
+            const unique = new Map(points.map(point => [`${point.era}:${point.year}`, point]));
+            if (unique.size === 1 && node.identity?.lineageKind !== 'creation') {
+              const point = [...unique.values()][0];
+              setLifeDate(node, kind, { era: point.era!, year: point.year! });
+              node.identity!.body = { ...node.identity!.body, [kind]: structuredClone(node[kind]) };
+            } else if (kind === 'birth' && node.isFocus) node.birth = unknownDate();
+          }
+          continue;
+        }
         const predicate = kind === 'birth' ? 'birth_time' : 'death_time';
         const authoritative = (view?.facts ?? []).filter(fact => fact.predicate === predicate && ['explicit', 'structural', 'user-asserted'].includes(fact.epistemicStatus));
         const points = authoritative.map(fact => parseWorldTime(fact.object)).filter(value => value.era && value.year !== null);
@@ -279,21 +306,25 @@ export function parseAndValidateGenealogy(
     preparedNodes.push(node);
   }
 
+  // A dual family's independent rows do not consume each other's person limit.
+  const edgeProjection = genealogy.edges.map(edge => ({ ...edge,
+    from: remappedNodeIds.get(edge.from) ?? edge.from, to: remappedNodeIds.get(edge.to) ?? edge.to }));
+  const uncapped = { ...genealogy, nodes: preparedNodes, edges: edgeProjection };
+  const views = hasOriginFamily(uncapped)
+    ? [genealogyFamilyView(uncapped, 'body'), genealogyFamilyView(uncapped, 'soul')] : [uncapped];
   const permittedNodes = new Set<string>();
-  const byGeneration = new Map<number, GenealogyResult['nodes']>();
-  for (const node of preparedNodes) {
-    const row = byGeneration.get(node.generation) ?? [];
-    row.push(node);
-    byGeneration.set(node.generation, row);
+  const memberships = views.map(view => new Set(view.nodes.map(node => node.id)));
+  const counts = views.map(() => new Map<number, number>());
+  const orderedNodes = [...preparedNodes].sort((left, right) => Number(right.isFocus) - Number(left.isFocus)
+    || Number(generatedNodeIds.has(left.id)) - Number(generatedNodeIds.has(right.id)));
+  for (const node of orderedNodes) {
+    const memberOf = memberships.flatMap((ids, index) => ids.has(node.id) ? [index] : []);
+    if (!memberOf.length || memberOf.some(index => (counts[index].get(node.generation) ?? 0) >= expected.input.depth.maxPerGeneration)) continue;
+    permittedNodes.add(node.id);
+    for (const index of memberOf) counts[index].set(node.generation, (counts[index].get(node.generation) ?? 0) + 1);
   }
-  for (const [generation, row] of byGeneration) {
-    const ordered = [...row].sort((left, right) =>
-      Number(generatedNodeIds.has(left.id)) - Number(generatedNodeIds.has(right.id)));
-    for (const node of ordered.slice(0, expected.input.depth.maxPerGeneration)) permittedNodes.add(node.id);
-    for (const node of ordered.slice(expected.input.depth.maxPerGeneration)) {
-      removed.add(node.id);
-      warn(`generation-${generation}-overflow-omitted`, node.id);
-    }
+  for (const node of preparedNodes) if (!permittedNodes.has(node.id)) {
+    removed.add(node.id); warn(`generation-${node.generation}-overflow-omitted`, node.id);
   }
   genealogy.nodes = preparedNodes.filter(node => permittedNodes.has(node.id));
   const nodeById = new Map(genealogy.nodes.map(node => [node.id, node]));
@@ -310,20 +341,33 @@ export function parseAndValidateGenealogy(
       warn('invalid-edge-omitted', edge.id);
       continue;
     }
-    const relation = findRosterRelation(evidenceRoster, from.name, to.name, edge.relationType);
+    if (edge.period?.from?.era && edge.period.from.era === edge.period.to?.era
+      && edge.period.from.year !== null && edge.period.to.year !== null
+      && edge.period.from.year > edge.period.to.year) {
+      delete edge.period; warn('relationship-period-uncertain', edge.id);
+    }
+    // The existing roster has no soul-family scope: never borrow a body relation lock.
+    const relation = edge.track === 'soul' ? null : findRosterRelation(evidenceRoster, from.name, to.name, edge.relationType);
+    // A machine cannot acquire invented biological parents. Supported source relations survive.
+    const child = edge.relationType === 'parent' ? to : edge.relationType === 'child' ? from : null;
+    if (!relation && biologicalEdge(edge) && child?.identity?.lineageKind === 'creation') {
+      warn('creation-biological-edge-omitted', edge.id); continue;
+    }
     if (relation) {
       if (!edge.sourceRefs.some(ref => relation.sourceRefs.includes(ref))) {
         edge.sourceRefs = [...relation.sourceRefs];
         warn('relation-citations-restored', edge.id);
       }
     } else {
-      if (hasLockedRelationForPair(evidenceRoster, from.name, to.name)) {
+      if (hasLockedRelationForPair(evidenceRoster, from.name, to.name)
+        && !['creator', 'creation', 'owner', 'owned', 'predecessor', 'successor', 'sameSource'].includes(edge.relationType)
+        && edge.track !== 'soul') {
         warn('relation-conflicts-with-fact-lock-omitted', edge.id);
         continue;
       }
       edge.sourceRefs = [];
-      edge.id = generatedEdgeId(edge.from, edge.relationType, edge.to);
-      if (hasImpossibleAncestorChronology(from, to, edge.relationType)) {
+      edge.id = generatedEdgeId(edge.from, edge.relationType, edge.to, edge.track);
+      if (biologicalEdge(edge) && hasImpossibleAncestorChronology(from, to, edge.relationType)) {
         const generatedEndpoint = generatedNodeIds.has(from.id)
           ? from
           : generatedNodeIds.has(to.id)
@@ -339,7 +383,7 @@ export function parseAndValidateGenealogy(
         warn('generated-life-date-chronology-normalized', generatedEndpoint.id);
       }
     }
-    const signature = `${edge.from}\u0000${edge.relationType}\u0000${edge.to}`;
+    const signature = `${edge.from}\u0000${edge.relationType}\u0000${edge.to}\u0000${edge.track ?? 'body'}`;
     if (edgeSignatures.has(signature) || edgeIds.has(edge.id)) {
       warn('duplicate-edge-omitted', edge.id);
       continue;
@@ -359,20 +403,11 @@ export function parseAndValidateGenealogy(
   if (removed.size) genealogy.referenceSummary.brief = `${genealogy.referenceSummary.brief} 局部无效或超限单位已略去，其余谱系保留。`.slice(0, 150);
 
   const nodeIds = new Set<string>();
-  const generationCounts = new Map<number, number>();
   for (const node of genealogy.nodes) {
     if (nodeIds.has(node.id)) {
       throw new GenealogyValidationError('Genealogy node IDs must be unique', 'NODE_ID_DUPLICATE');
     }
     nodeIds.add(node.id);
-    const generationCount = (generationCounts.get(node.generation) ?? 0) + 1;
-    generationCounts.set(node.generation, generationCount);
-    if (generationCount > expected.input.depth.maxPerGeneration) {
-      throw new GenealogyValidationError(
-        `Genealogy generation ${node.generation} exceeds the requested person limit`,
-        'GENERATION_SIZE_INVALID',
-      );
-    }
     if (
       node.generation < -expected.input.depth.ancestors
       || node.generation > expected.input.depth.descendants
@@ -403,6 +438,15 @@ export function parseAndValidateGenealogy(
     }
     validateLifeDates(node);
   }
+  for (const track of ['body', 'soul'] as const) {
+    const counts = new Map<number, number>();
+    for (const node of genealogyFamilyView(genealogy, track).nodes) {
+      const count = (counts.get(node.generation) ?? 0) + 1;
+      counts.set(node.generation, count);
+      if (count > expected.input.depth.maxPerGeneration) throw new GenealogyValidationError(
+        `Genealogy generation ${node.generation} exceeds the requested person limit`, 'GENERATION_SIZE_INVALID');
+    }
+  }
 
   const verifiedEdgeIds = new Set<string>();
   for (const edge of genealogy.edges) {
@@ -415,7 +459,7 @@ export function parseAndValidateGenealogy(
     }
     const fromNode = genealogy.nodes.find(node => node.id === edge.from)!;
     const toNode = genealogy.nodes.find(node => node.id === edge.to)!;
-    const rosterRelation = findRosterRelation(
+    const rosterRelation = edge.track === 'soul' ? null : findRosterRelation(
       evidenceRoster,
       fromNode.name,
       toNode.name,
@@ -473,6 +517,22 @@ function resolveGenealogySourceRefs(
   return resolved.targetIds;
 }
 
+/** Optional metadata cannot turn a readable tree into a whole-response failure. */
+function normalizeOptionalDates(node: GenealogyResult['nodes'][number], warn?: (warning: string) => void): void {
+  if (!node.identity) return;
+  for (const track of [node.identity.body, node.identity.soul]) {
+    if (!track) continue;
+    for (const kind of ['birth', 'death'] as const) {
+      const date = track[kind];
+      if (!date) continue;
+      try {
+        validateLifeDates({ ...node, birth: kind === 'birth' ? date : unknownDate(),
+          death: kind === 'death' ? date : unknownDeathDate() });
+      } catch { delete track[kind]; warn?.(`optional-identity-date-omitted:${node.id}:${kind}`); }
+    }
+  }
+}
+
 function normalizeGeneratedLifeDates(
   node: GenealogyResult['nodes'][number],
   warn: (code: string, id: string) => void,
@@ -521,8 +581,9 @@ function generatedEdgeId(
   from: string,
   relationType: GenealogyResult['edges'][number]['relationType'],
   to: string,
+  track?: GenealogyResult['edges'][number]['track'],
 ): string {
-  return `generated-edge:${compactStableId(`${from}|${relationType}|${to}`)}`;
+  return `generated-edge:${compactStableId(`${from}|${relationType}|${to}${track ? `|${track}` : ''}`)}`;
 }
 
 function compactStableId(value: string): string {
@@ -708,6 +769,7 @@ function validateGenealogyChronology(genealogy: GenealogyResult): void {
     const from = nodes.get(edge.from);
     const to = nodes.get(edge.to);
     if (!from || !to) continue;
+    if (!biologicalEdge(edge)) continue;
     const direction = ancestorDirection(edge.relationType);
     if (direction === 0) continue;
     const ancestor = direction > 0 ? from : to;
@@ -717,8 +779,11 @@ function validateGenealogyChronology(genealogy: GenealogyResult): void {
 
   const focus = genealogy.nodes.find(node => node.isFocus);
   if (!focus) return;
+  const biologicalFamily = biologicalFamilyIds(genealogy, focus.id);
   for (const node of genealogy.nodes) {
     if (node.id === focus.id || node.generation === 0) continue;
+    if (!biologicalFamily.has(node.id)) continue;
+    if (!hasOrdinaryGenerationChronology(node) || !hasOrdinaryGenerationChronology(focus)) continue;
     const ancestor = node.generation < 0 ? node : focus;
     const descendant = node.generation < 0 ? focus : node;
     validateAncestorDate(ancestor, descendant, 'generation');
@@ -737,6 +802,8 @@ function validateAncestorDate(
   relationType: string,
 ): void {
   if (
+    !sameBodyWorld(ancestor, descendant)
+    ||
     !ancestor.birth.era
     || ancestor.birth.era !== descendant.birth.era
     || ancestor.birth.year === null
@@ -761,6 +828,8 @@ function hasImpossibleAncestorChronology(
   const ancestor = direction > 0 ? from : to;
   const descendant = direction > 0 ? to : from;
   if (
+    !sameBodyWorld(ancestor, descendant)
+    ||
     !ancestor.birth.era
     || ancestor.birth.era !== descendant.birth.era
     || ancestor.birth.year === null
@@ -777,11 +846,16 @@ function normalizeGeneratedGenerationChronology(
 ): void {
   const focus = genealogy.nodes.find(node => node.isFocus);
   if (!focus) return;
+  const biologicalFamily = biologicalFamilyIds(genealogy, focus.id);
   for (const node of genealogy.nodes) {
     if (!generatedNodeIds.has(node.id) || node.generation === 0) continue;
+    if (!biologicalFamily.has(node.id)) continue;
+    if (!hasOrdinaryGenerationChronology(node) || !hasOrdinaryGenerationChronology(focus)) continue;
     const ancestor = node.generation < 0 ? node : focus;
     const descendant = node.generation < 0 ? focus : node;
     if (
+      !sameBodyWorld(ancestor, descendant)
+      ||
       !ancestor.birth.era
       || ancestor.birth.era !== descendant.birth.era
       || ancestor.birth.year === null
@@ -793,6 +867,11 @@ function normalizeGeneratedGenerationChronology(
     node.profile.lifeExperience = '经历为本次谱系的低权补全；不沿用与代际位置冲突的具体出生年份。';
     warn('generated-life-date-generation-normalized', node.id);
   }
+}
+
+function sameBodyWorld(left: GenealogyResult['nodes'][number], right: GenealogyResult['nodes'][number]): boolean {
+  const a = left.identity?.body?.world?.trim(), b = right.identity?.body?.world?.trim();
+  return !a || !b || a === b;
 }
 
 function ensureConnected(

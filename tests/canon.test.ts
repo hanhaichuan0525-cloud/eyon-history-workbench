@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { continuousStateAt } from '../src/retrieval/continuousState.ts';
 
 import type { WorkbenchNamespace } from '../src/core/namespace.ts';
 import type {
@@ -367,6 +368,42 @@ function withBase(branch: Awaited<ReturnType<MemoryCanonRepository['getBranch']>
     },
   };
 }
+
+test('G-01B：持续状态跨发生窗口召回，回滚只失效依赖结果，旧 revision 和事件保留', async () => {
+  const repository = new MemoryCanonRepository();
+  let previous = '';
+  for (const [index, value] of ['监禁', '越狱', '赦免'].entries()) {
+    const change = deathChange({ runId: `cs-${index}`, assistantMessageId: (index + 1) * 10, year: 450 + index, now: 100 + index });
+    const op = change.delta.operations[0];
+    op.op = 'assert'; op.originalFactIds = []; op.factKey = `entity:person-a|continuous:拘束|${450 + index}`;
+    op.current.predicate = 'continuous:拘束'; op.current.object = value;
+    op.current.statement = `A${value}`; op.current.continuousState = { dimension: '拘束', value, start: `复兴纪元${450 + index}年3月1日` };
+    change.delta.preconditionFactIds = [];
+    change.delta.cascadeScope.time = { start: { label: `复兴纪元${450 + index}年` }, end: { label: `复兴纪元${450 + index}年` } };
+    change.causalPlan = { directOperationFactKeys: previous ? [] : [op.factKey], supports: previous ? [{
+      inputRefs: [{ kind: 'fact', factId: previous }], outputFactKey: op.factKey, claimText: '状态承接', sourceRefs: op.current.sourceRefs,
+    }] : [] };
+    const committed = await repository.commitIntervention(change);
+    previous = committed.delta.operations[0].current.factId;
+  }
+  const branch = withBase(await repository.getBranch(namespace));
+  const old = JSON.stringify(branch);
+  for (const [year, value] of [[450, '监禁'], [451, '越狱'], [452, '赦免']] as const) {
+    const view = resolveCanon(branch, 3, { ...scope, temporalScopes: [`复兴纪元${year}年`] });
+    assert.equal(continuousStateAt(view.continuousStates!, 'entity:person-a', '拘束', `复兴纪元${year}年4月1日`).value, value);
+    assert.equal(view.activeFacts.filter(fact => fact.continuousState).length, 3);
+  }
+  assert.equal(JSON.stringify(branch), old);
+  const rolled = await repository.rollbackByMessageId(namespace, 20, 200);
+  assert.ok(rolled);
+  const view = resolveCanon(withBase(rolled!.branch), rolled!.branch.headRevision, scope);
+  assert.equal(continuousStateAt(view.continuousStates!, 'entity:person-a', '拘束', '复兴纪元453年4月1日').value, '监禁');
+  assert.equal(rolled!.branch.actions.length, 3);
+  const oldView = resolveCanon(branch, 1, scope);
+  assert.equal(oldView.activeFacts.filter(fact => fact.continuousState).length, 1);
+  const elsewhere = resolveCanon(branch, 3, { ...scope, subjectEntityIds: ['entity:unrelated'], spatialScopes: ['另一城'] });
+  assert.equal(elsewhere.continuousStates!.length, 0);
+});
 
 test('RC-01：revision 0 只读返回 BaseCanon，重复解析完全确定', async () => {
   const repository = new MemoryCanonRepository();

@@ -33,7 +33,7 @@ test('源码版本与清单一致，固定β1加载器元信息可落后于当�
   assert.deepEqual(artifact.export_with, { data: true, button: true });
 });
 
-test('β1.6 远端更新兼容已安装的β1.5加载器：代码逐字节保持不变', async () => {
+test('β1.7 远端更新兼容已安装的β1.5加载器：代码逐字节保持不变', async () => {
   const loader = await readFile(remoteLoaderPath);
   // 固定β1.5发布时loader 0.3.1的哈希；本次只更换清单和bundle，不要求重新导入。
   assert.equal(createHash('sha256').update(loader).digest('hex'),

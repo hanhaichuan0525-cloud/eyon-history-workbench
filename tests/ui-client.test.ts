@@ -132,6 +132,7 @@ function makeFacade(): EyonHistoryWorkbenchFacade {
     setCharacterWorldbookEntriesEnabled: async () => [],
     generateGenealogy: async () => { throw new Error('not used'); },
     listGenealogies: async () => [],
+    clearCharacterGenealogy: async () => ({ deleted: 0, recordKeys: [], references: [] }),
     listRuinCharacterReferences: async () => [],
     toggleGenealogyNodeRuinReference: async () => [],
     removeRuinCharacterReference: async () => [],
@@ -315,6 +316,7 @@ test('UI客户端通过公开门面执行资料管理操作', async () => {
     new EventTarget(),
   );
   assert.equal((await client.inspectCurrentData()).healthy, true);
+  assert.deepEqual(await client.clearCharacterGenealogy('玲山'), { deleted: 0, recordKeys: [], references: [] });
   assert.equal(
     (await client.exportCurrentData()).format,
     'eyon-history-workbench-backup',
@@ -390,6 +392,22 @@ test('UI客户端订阅跨模块资料变化事件', () => {
     detail: { reason: 'cache-cleared', views: ['settings'] },
   }));
   assert.deepEqual(received, ['ruin-references:genealogy,ruin']);
+});
+
+test('单人物清空在UI窗口广播且不把旧聊天结果传播给新聊天', async () => {
+  const events = new EventTarget(), facade = makeFacade();
+  const client = new WorkbenchUiClient({ [WORKBENCH_GLOBAL]: facade }, events);
+  const received: string[] = [];
+  events.addEventListener(WORKBENCH_DATA_CHANGED_EVENT, event => received.push((event as CustomEvent).detail.reason));
+  events.addEventListener(WORKBENCH_RUIN_REFERENCES_EVENT, () => received.push('references'));
+  await client.clearCharacterGenealogy('玲山');
+  assert.deepEqual(received, ['references', 'genealogy-cleared']);
+  let resolve!: (value: any) => void;
+  facade.clearCharacterGenealogy = () => new Promise(done => { resolve = done; });
+  const clearing = client.clearCharacterGenealogy('玲山'); facade.contextRevision = 1;
+  resolve({ deleted: 1, recordKeys: ['old'], references: [] });
+  await assert.rejects(clearing, /聊天已切换/u);
+  assert.equal(received.length, 2);
 });
 
 test('UI客户端写操作在界面窗口广播资料变化并即时同步墟境人物', async () => {

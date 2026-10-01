@@ -60,8 +60,10 @@ export class ButterflyWorkflow {
     this.now = dependencies.now;
   }
 
-  async settle(pending: PendingSettlement): Promise<ButterflyRecord> {
-    let existing = await this.prepare(pending);
+  async settle(pending: PendingSettlement, assertActive: () => void = () => {}): Promise<ButterflyRecord> {
+    assertActive();
+    let existing = await this.prepare(pending, assertActive);
+    assertActive();
     const currentAssistantId = pending.request.trigger.returnAssistantMessageId;
     const needsRebind = (
       existing.assistantMessageId !== currentAssistantId
@@ -115,7 +117,8 @@ export class ButterflyWorkflow {
       }
       return existing;
     }
-    return this.resume(existing, pending);
+    assertActive();
+    return this.resume(existing, pending, assertActive);
   }
 
   /**
@@ -123,10 +126,11 @@ export class ButterflyWorkflow {
    * 此阶段只保存已校验结果，不依赖尚未存在的遣返 AI 楼；
    * 楼层绑定、面板追加、世界书镜像与 Canon 提交仍在 settle 中完成。
    */
-  async prepare(pending: PendingSettlement): Promise<ButterflyRecord> {
+  async prepare(pending: PendingSettlement, assertActive: () => void = () => {}): Promise<ButterflyRecord> {
     const existing = await this.repository.getRecord(
       butterflyRecordKey(pending.namespace, pending.runId),
     );
+    assertActive();
     // internal.81 v21：删楼回滚会把这轮记录标记为 canonStatus='reverted'。
     // 此时不得复用旧文本（否则档案永远指向已被回滚的 Canon，形成「待人工判断」
     // 死结）——放行重新生成，用新版覆盖同 key 记录。仅 reverted 自动；
@@ -138,7 +142,8 @@ export class ButterflyWorkflow {
       rules: this.rules,
       activeEvidence: pending.activeEvidence,
     });
-    const raw = await this.generator.generate('butterfly', prompt);
+    const raw = await this.generator.generate('butterfly', prompt, { progressLabel: '正在撰写现世落点与历史演变' });
+    assertActive();
     const result = parseAndValidateButterfly(
       raw,
       pending.request,
@@ -150,6 +155,7 @@ export class ButterflyWorkflow {
     await this.assertNamespace(pending);
 
     const existingRecords = await this.repository.list(pending.namespace);
+    assertActive();
     const title = `《蝴蝶效应锚定日志${existingRecords.length + 1}》`;
     const panel = serializeButterflyPanel(result.effect);
     const archiveEntry = serializeButterflyArchive({
@@ -193,14 +199,17 @@ export class ButterflyWorkflow {
   private async resume(
     record: ButterflyRecord,
     pending: PendingSettlement,
+    assertActive: () => void,
   ): Promise<ButterflyRecord> {
     await this.assertCurrent(pending);
+    assertActive();
     if (record.status === 'validated') {
       await this.host.appendButterflyPanel(
         record.assistantMessageId,
         record.requestId,
         record.panel,
       );
+      assertActive();
       record = {
         ...record,
         status: 'message_committed',
@@ -221,8 +230,10 @@ export class ButterflyWorkflow {
              this.now(),
              pending.linkingIndex,
              pending.activeEvidence,
+             assertActive,
            )
           : null;
+        assertActive();
         const canonBindings = canon
           ? buildArtifactCanonBindingsSafely({
             artifactType: 'butterfly',
@@ -260,6 +271,7 @@ export class ButterflyWorkflow {
         await this.repository.updateRecord(record);
         await this.repository.deletePending(pending.key);
       } catch (error) {
+        assertActive();
         // Canon 提交/归档失败：保留待结算快照供重试（旧字段名沿用，仅为兼容既有记录语义）。
         record = {
           ...record,
@@ -306,6 +318,7 @@ async function commitButterflyCanon(
   now: number,
   linkingIndex?: readonly EntityLinkCandidate[],
   activeEvidence?: ActiveEvidenceView,
+  assertActive: () => void = () => {},
 ) {
   // internal.82（F-01）：把模型命名的载体（carrier）保守归并回冻结检索的稳定
   // 实体 id，使干涉事实与史料实体同空间（后续任务 canon 视图才能命中）。
@@ -524,10 +537,16 @@ async function commitButterflyCanon(
   } satisfies Parameters<CanonRepository['commitIntervention']>[0];
   const reconciled = await reconcileCanonIntervention({
     repository,
-    generator,
+    generator: { generate: async (...args) => {
+      assertActive();
+      const result = await generator.generate(...args);
+      assertActive();
+      return result;
+    } },
     intervention,
     activeEvidence,
   });
+  assertActive();
   return repository.commitIntervention(reconciled);
 }
 

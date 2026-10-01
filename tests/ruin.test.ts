@@ -93,6 +93,7 @@ import {
 } from '../src/renderers/ruinTimeLabel.ts';
 import { insertRuinTrace } from '../src/workflows/messageAssembly.ts';
 import { scopeRuinGenealogy } from '../src/runtime/ruinActorPolicy.ts';
+import { UnifiedShadowRetrievalEngine } from '../src/retrieval/shadowEngine.ts';
 
 const namespace = {
   characterKey: '命定之诗',
@@ -337,6 +338,42 @@ function makeContext(): RuinContextBundle {
     sourceHash: 'ruin-source-hash',
   };
 }
+
+test('已选蝴蝶历史跨地点进入墟境大纲与扩写，不被外部事实摘录再次裁尾', async () => {
+  const source: ContextSource = { sourceId: 'butterfly:continuity', sourceType: 'butterfly',
+    title: '《蝴蝶效应锚定日志3》', authority: 70, content: [
+      '### 《蝴蝶效应锚定日志3》', '',
+      '| 墟境跨度 | 内容 |', '|:---|:---|',
+      '| 进入时墟境时间 | 神明纪元126年-8月-15日-09:00 |', '',
+      '| 墟境行动记录 | 玩家在幽谷溪畔启动泉眼机关，二叶由泉水重组并首次获得诅咒。 |',
+      `| 历史演变 | 德鲁伊目击后记录《切芽圣典》。${'后世传播。'.repeat(500)}末尾证据：此事由玩家介入引发。 |`,
+    ].join('\n') };
+  const bundle = makeEvidenceBundle([source]);
+  const result = await new UnifiedShadowRetrievalEngine(bundle.sourceSnapshots).retrieve({
+    requestId, taskType: 'ruin', query: '神明纪元126年，艾尔文海姆，二叶事件后的目击者遭遇',
+  });
+  const context = makeContext();
+  context.evidenceBundle = result.bundle;
+  context.sourceIndex = [source];
+  context.butterflyRefs = [source];
+  const input = makeInput();
+  input.era = '神明纪元'; input.location = '艾尔文海姆';
+  input.supplementaryDirection = '二叶事件后的目击者遭遇';
+  const promptInput = { requestId, directive: '墟境探索', generationInput: input,
+    context, rules: { generationContract: '' } };
+  // 强制走异地 reference 路径：旧版 factExcerpt 会仅保留开头而丢失演变末尾。
+  for (const passage of context.evidenceBundle.qualifiedEvidence?.passages ?? []) {
+    passage.allowedUses = ['background', 'reference'];
+  }
+  const outline = makeCandidates().candidates[0];
+  const expansion = buildRuinExpansionApiPrompt(promptInput, input.materials[0]!, outline);
+  const recovery = buildCompactRuinExpansionRecoveryPrompt(expansion);
+  assert.ok(recovery);
+  for (const prompt of [buildRuinOutlineBatchApiPrompt(promptInput), expansion, recovery]) {
+    assert.ok(prompt.includes(source.content), '完整行动记录与历史演变必须进入模型提示词');
+    assert.match(prompt, /不得把已定事件的起因换成/u);
+  }
+});
 
 function makeHistoricalAmbiguityView(
   dimension: ContinuityView['relationGroups'][number]['dimension'] = 'time',
@@ -3076,7 +3113,7 @@ test('聊天文本不再触发任何候选生成链路（β1.1：探索与谱系
 
 test('遣返玩家楼由 MESSAGE_SENT 启动一次准备，生成前等待同一事务', async () => {
   const runtime = new RuinRuntime();
-  runtime.messages.get(8)!.message = '好了，我跑到了他们看不到的地方，任务完成，遣返吧';
+  runtime.messages.get(8)!.message = '好了，我跑到了他们看不到的地方，任务完成，遣返吧，伊雍——';
   let prepareCount = 0;
   let release: (() => void) | undefined;
   const gate = new Promise<void>(resolve => { release = resolve; });
@@ -3115,6 +3152,10 @@ test('遣返玩家楼由 MESSAGE_SENT 启动一次准备，生成前等待同一
 
   const sent = lifecycle.onUserMessageSent(8);
   const beforeGeneration = lifecycle.beforeGeneration('normal');
+  let generationReleased = false;
+  void beforeGeneration.then(() => { generationReleased = true; });
+  await Promise.resolve();
+  assert.equal(generationReleased, false, '蝴蝶准备未完成时，生成前钩子仍须等待');
   assert.equal(prepareCount, 1);
   release?.();
   assert.equal(await sent, true);

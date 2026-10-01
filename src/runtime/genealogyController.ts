@@ -101,16 +101,18 @@ export class GenealogyController {
     ].join('::');
     const existing = this.inFlight.get(key);
     if (existing) return existing;
+    if (this.inFlight.size) throw new Error('宗族谱系正在生成，请等待或停止当前任务');
 
     const task = (async () => {
       try {
         this.hooks.onStatus?.('assembling_context', '正在查找中心人物与宗族的旧记录');
         this.hooks.onStatus?.('generating_genealogy', '正在核对年龄、世代与亲缘位置');
         const record = await this.workflow.generate(command, input, identity);
+        this.transactionGuard.assertCurrent(identity.lifecycleEpoch);
         this.hooks.onStatus?.('ready', '宗族谱系已完成并写入当前存档');
         return record;
       } catch (error) {
-        if (isTaskCancellationError(error)) throw error;
+        if (identity.lifecycleEpoch !== this.transactionGuard.currentEpoch() || isTaskCancellationError(error)) throw error;
         this.hooks.onStatus?.(
           'failed',
           error instanceof Error ? error.message : String(error),

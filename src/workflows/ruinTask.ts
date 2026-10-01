@@ -5,6 +5,7 @@ import type {
   UserTurnAdapter,
 } from '../adapters/host.ts';
 import { namespaceKey, type WorkbenchNamespace } from '../core/namespace.ts';
+import { GenerationCancelledError, isTaskCancellationError } from '../runtime/tavernGeneration.ts';
 import { buildRuinTaskPrompt } from '../prompts/ruinTask.ts';
 import { resolveRuinTaskEconomy } from '../core/ruinTaskEconomy.ts';
 import {
@@ -87,6 +88,8 @@ interface RuinTaskTerminalWatch {
 }
 
 export class RuinTaskWorkflow {
+  private sending: AbortController | null = null;
+  private epoch = 0;
   private readonly dependencies: {
     host: HostAdapter;
     generator: GenerationAdapter;
@@ -119,7 +122,13 @@ export class RuinTaskWorkflow {
 
   generateDraft(request: RuinTaskDraftRequest): Promise<RuinTaskReviewSnapshot> {
     if (this.inFlight) return this.inFlight;
-    const task = this.runDraft(request).finally(() => {
+    const epoch = this.epoch;
+    const task = this.runDraft(request, epoch).catch(error => {
+      if (epoch === this.epoch && !isTaskCancellationError(error)) {
+        this.dependencies.hooks?.onStatus?.('failed', error instanceof Error ? error.message : String(error), { phase: 'error' });
+      }
+      throw error;
+    }).finally(() => {
       if (this.inFlight === task) this.inFlight = null;
     });
     this.inFlight = task;
@@ -127,10 +136,12 @@ export class RuinTaskWorkflow {
   }
 
   async readReview(): Promise<RuinTaskReviewSnapshot | null> {
+    const epoch = this.epoch;
     const [namespace, snapshot] = await Promise.all([
       this.dependencies.host.getNamespace(),
       this.dependencies.host.getRuinRuntimeSnapshot(),
     ]);
+    if (epoch !== this.epoch) return null;
     if (!this.review) {
       const messages = this.dependencies.runtime.getChatMessages(
         `0-${Math.max(0, this.dependencies.runtime.getLastMessageId())}`,
@@ -235,6 +246,7 @@ export class RuinTaskWorkflow {
    * 发送入口都会自然续接同一次正文生成。
    */
   async preparePlayerFloor(playerText: string, messageId: number): Promise<boolean> {
+    const epoch = this.epoch;
     const existing = this.dependencies.shell.readTriggerLock(messageId);
     if (existing) {
       this.pendingLock = existing;
@@ -260,6 +272,7 @@ export class RuinTaskWorkflow {
       this.dependencies.host.getNamespace(),
       this.dependencies.host.getRuinRuntimeSnapshot(),
     ]);
+    this.assertActive(epoch);
     assertSameRuin(review.namespace, review.runId, namespace, snapshot, '确认任务前');
     assertNoActiveTask(snapshot);
     const requestId = crypto.randomUUID();
@@ -292,7 +305,9 @@ export class RuinTaskWorkflow {
     this.approvedLock = lock;
     try {
       await this.dependencies.shell.arm(lock);
+      this.assertActive(epoch);
       await this.dependencies.shell.attachTriggerMetadata(lock);
+      this.assertActive(epoch);
       review.phase = 'approved';
       review.approvedTaskHash = approvedTaskHash;
       review.triggerMessageId = messageId;
@@ -306,19 +321,23 @@ export class RuinTaskWorkflow {
       await this.dependencies.shell.clear(lock).catch(() => undefined);
       if (this.pendingLock === lock) this.pendingLock = null;
       if (this.approvedLock === lock) this.approvedLock = null;
-      review.phase = 'staged';
-      delete review.approvedTaskHash;
-      delete review.triggerMessageId;
+      if (epoch === this.epoch) {
+        review.phase = 'staged';
+        delete review.approvedTaskHash;
+        delete review.triggerMessageId;
+      }
       throw error;
     }
   }
 
   async prepareGeneration(triggerMessageId: number): Promise<boolean> {
+    const epoch = this.epoch;
     this.stopTerminalPoll();
     const [namespace, snapshot] = await Promise.all([
       this.dependencies.host.getNamespace(),
       this.dependencies.host.getRuinRuntimeSnapshot(),
     ]);
+    this.assertActive(epoch);
     const activeTasks = (snapshot.ruinTasks ?? []).filter(task => !task.terminal);
     this.terminalWatch = activeTasks.length > 0 ? {
       namespace,
@@ -335,10 +354,13 @@ export class RuinTaskWorkflow {
     this.pendingLock = lock;
     this.review = reviewFromLock(lock, this.review);
     await this.dependencies.shell.arm(lock);
+    if (epoch !== this.epoch) await this.dependencies.shell.clear(lock);
+    this.assertActive(epoch);
     return true;
   }
 
   async commitRendered(assistantMessageId: number): Promise<RuinTaskSubmission | null> {
+    const epoch = this.epoch;
     const lock = this.pendingLock;
     if (!this.dependencies.shell.readAssistantMessage(assistantMessageId).trim()) return null;
     if (this.dependencies.runtime.isGenerating?.() === true) {
@@ -349,11 +371,14 @@ export class RuinTaskWorkflow {
     if (lock) {
       try {
         await this.dependencies.shell.assertRenderedFloor(lock, assistantMessageId);
+        this.assertActive(epoch);
       } catch (error) {
+        if (isTaskCancellationError(error)) throw error;
         console.warn('[Eyon History Workbench] ruin task rendered floor rejected; keeping transaction', error);
         return null;
       }
       submission = await this.commitLock(lock, assistantMessageId);
+      this.assertActive(epoch);
     }
     await this.commitTerminalTransition(assistantMessageId);
     return submission;
@@ -362,8 +387,10 @@ export class RuinTaskWorkflow {
   async onMessageDeleted(messageId: number): Promise<void> {
     const lock = this.approvedLock ?? this.pendingLock;
     if (!lock || lock.triggerMessageId !== messageId) return;
+    const epoch = this.epoch;
     this.stopSettlePoll();
     await this.dependencies.shell.clear(lock).catch(() => undefined);
+    this.assertActive(epoch);
     this.pendingLock = null;
     this.approvedLock = null;
     if (this.review?.runId === lock.runId) {
@@ -379,6 +406,11 @@ export class RuinTaskWorkflow {
   }
 
   async cancelPending(): Promise<void> {
+    this.epoch += 1;
+    this.inFlight = null;
+    this.confirming = null;
+    this.sending?.abort(new GenerationCancelledError('ruin'));
+    this.sending = null;
     this.stopSettlePoll();
     this.stopTerminalPoll();
     const lock = this.pendingLock;
@@ -388,13 +420,17 @@ export class RuinTaskWorkflow {
     if (this.review?.phase === 'staged') this.review.phase = 'review';
   }
 
-  private async runDraft(requestValue: RuinTaskDraftRequest): Promise<RuinTaskReviewSnapshot> {
+  private async runDraft(requestValue: RuinTaskDraftRequest, epoch: number): Promise<RuinTaskReviewSnapshot> {
+    const assertActive = () => {
+      if (epoch !== this.epoch) throw new GenerationCancelledError('ruin');
+    };
     const request = normalizeDraftRequest(requestValue);
     const startedAt = Date.now();
     const [namespace, snapshot] = await Promise.all([
       this.dependencies.host.getNamespace(),
       this.dependencies.host.getRuinRuntimeSnapshot(),
     ]);
+    assertActive();
     assertCanCreateTask(snapshot, request.direction);
     const runId = snapshot.runId;
     const context = readNarrativeContext(this.dependencies.runtime);
@@ -415,8 +451,10 @@ export class RuinTaskWorkflow {
       }),
       { purpose: 'ruin-task', progressLabel: '正在拟定墟境任务草案' },
     );
+    assertActive();
     const draft = parseRuinTaskDraft(raw);
     const worldbookCorpus = await loadRuntimeWorldbookCorpus(this.dependencies.sources);
+    assertActive();
     const economy = resolveRuinTaskEconomy({
       sources: worldbookCorpus.sources,
       location: snapshot.ruinLocation,
@@ -429,6 +467,7 @@ export class RuinTaskWorkflow {
       this.dependencies.host.getNamespace(),
       this.dependencies.host.getRuinRuntimeSnapshot(),
     ]);
+    assertActive();
     assertSameRuin(namespace, runId, namespaceAfter, snapshotAfter, '生成任务草案期间');
     assertNoActiveTask(snapshotAfter);
     this.review = {
@@ -451,11 +490,14 @@ export class RuinTaskWorkflow {
   }
 
   private async runConfirm(playerText: string, signal?: AbortSignal): Promise<RuinTaskSubmission> {
+    const epoch = this.epoch;
+    const assertActive = () => this.assertActive(epoch);
     const review = this.requireStagedReview();
     const [namespace, snapshot] = await Promise.all([
       this.dependencies.host.getNamespace(),
       this.dependencies.host.getRuinRuntimeSnapshot(),
     ]);
+    assertActive();
     assertSameRuin(review.namespace, review.runId, namespace, snapshot, '确认任务前');
     assertNoActiveTask(snapshot);
     const requestId = crypto.randomUUID();
@@ -473,14 +515,20 @@ export class RuinTaskWorkflow {
       approvedTaskHash,
     );
     let armedLock: RuinTaskFloorLock | null = null;
+    const controller = new AbortController();
+    const onAbort = () => controller.abort(signal?.reason);
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
+    this.sending = controller;
     try {
       const { messageId } = await this.dependencies.userTurns.sendUserTurn(playerText, {
-        signal,
+        signal: controller.signal,
         beforeCreate: async expectedMessageId => {
           const [namespaceNow, snapshotNow] = await Promise.all([
             this.dependencies.host.getNamespace(),
             this.dependencies.host.getRuinRuntimeSnapshot(),
           ]);
+          assertActive();
           assertSameRuin(review.namespace, review.runId, namespaceNow, snapshotNow, '任务注入前');
           assertNoActiveTask(snapshotNow);
           const lock: RuinTaskFloorLock = {
@@ -500,16 +548,20 @@ export class RuinTaskWorkflow {
           this.pendingLock = lock;
           this.approvedLock = lock;
           await this.dependencies.shell.arm(lock);
+          assertActive();
         },
         afterCreate: async messageId => {
+          assertActive();
           if (!armedLock) throw new Error('墟境任务封缄尚未建立');
           armedLock.triggerSwipeId = this.dependencies.runtime.getMessageSwipeId(messageId);
           await this.dependencies.shell.attachTriggerMetadata(armedLock);
+          assertActive();
           review.phase = 'approved';
           review.approvedTaskHash = approvedTaskHash;
           review.triggerMessageId = messageId;
         },
       });
+      assertActive();
       if (!armedLock) throw new Error('墟境任务确认楼创建失败');
       this.dependencies.hooks?.onStatus?.(
         'writing_ruin_task',
@@ -528,13 +580,18 @@ export class RuinTaskWorkflow {
       if (armedLock) await this.dependencies.shell.clear(armedLock).catch(() => undefined);
       if (this.pendingLock === armedLock) this.pendingLock = null;
       if (this.approvedLock === armedLock) this.approvedLock = null;
-      review.phase = 'staged';
-      delete review.approvedTaskHash;
-      delete review.triggerMessageId;
-      this.dependencies.hooks?.onStatus?.(
-        'failed', error instanceof Error ? error.message : String(error), { phase: 'error' },
-      );
+      if (epoch === this.epoch && !isTaskCancellationError(error)) {
+        review.phase = 'staged';
+        delete review.approvedTaskHash;
+        delete review.triggerMessageId;
+        this.dependencies.hooks?.onStatus?.(
+          'failed', error instanceof Error ? error.message : String(error), { phase: 'error' },
+        );
+      }
       throw error;
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+      if (this.sending === controller) this.sending = null;
     }
   }
 
@@ -555,15 +612,18 @@ export class RuinTaskWorkflow {
   }
 
   private async commitTerminalTransition(assistantMessageId: number): Promise<void> {
+    const epoch = this.epoch;
     const watch = this.terminalWatch;
     this.terminalWatch = null;
     if (!watch) return;
-    if (await this.tryCommitTerminalTransition(watch, assistantMessageId)) return;
+    if (await this.tryCommitTerminalTransition(watch, assistantMessageId, epoch) || epoch !== this.epoch) return;
     let checks = 0;
     const poll = (): void => {
+      if (epoch !== this.epoch) return;
       checks += 1;
       this.terminalPoll = globalThis.setTimeout(() => {
-        void this.tryCommitTerminalTransition(watch, assistantMessageId).then(committed => {
+        void this.tryCommitTerminalTransition(watch, assistantMessageId, epoch).then(committed => {
+          if (epoch !== this.epoch) return;
           if (committed || checks >= 10) return this.stopTerminalPoll();
           poll();
         }).catch(error => {
@@ -578,11 +638,13 @@ export class RuinTaskWorkflow {
   private async tryCommitTerminalTransition(
     watch: RuinTaskTerminalWatch,
     assistantMessageId: number,
+    epoch: number,
   ): Promise<boolean> {
     const [namespace, snapshot] = await Promise.all([
       this.dependencies.host.getNamespace(),
       this.dependencies.host.getRuinRuntimeSnapshot(),
     ]);
+    if (epoch !== this.epoch) return false;
     if (namespaceKey(namespace) !== namespaceKey(watch.namespace)) return false;
     const terminal = watch.tasks.map(before =>
       (snapshot.ruinTasks ?? []).find(after => after.name === before.name && after.terminal)
@@ -594,6 +656,7 @@ export class RuinTaskWorkflow {
       triggerMessageId: watch.triggerMessageId,
       task: terminal,
     }, assistantMessageId, buildRuinTaskTerminalPanel(terminal));
+    if (epoch !== this.epoch) return false;
     this.dependencies.hooks?.onStatus?.(
       'ruin_task_terminal',
       `墟境任务“${stripTaskPrefix(terminal.name)}”已${terminal.status || '结束'}`,
@@ -605,6 +668,7 @@ export class RuinTaskWorkflow {
   private async commitLock(lock: RuinTaskFloorLock, assistantMessageId: number): Promise<RuinTaskSubmission | null> {
     this.stopSettlePoll();
     if (this.pendingLock !== lock) return null;
+    const epoch = this.epoch;
     this.pendingLock = null;
     try {
       await this.dependencies.host.replaceAssistantSlot(
@@ -612,12 +676,15 @@ export class RuinTaskWorkflow {
         ruinTaskSlot(lock.requestId),
         buildRuinTaskPanel(lock.task),
       );
+      this.assertActive(epoch);
     } catch (error) {
-      this.pendingLock = lock;
+      if (epoch === this.epoch) this.pendingLock = lock;
       throw error;
     }
     await this.dependencies.shell.clear(lock);
+    this.assertActive(epoch);
     await this.dependencies.shell.attachMetadata(lock, assistantMessageId);
+    this.assertActive(epoch);
     if (this.review?.approvedTaskHash === lock.approvedTaskHash) this.review.phase = 'rendered';
     this.dependencies.hooks?.onStatus?.('ready', '墟境任务已经写入正文与任务栏', { phase: 'success' });
     return {
@@ -628,6 +695,10 @@ export class RuinTaskWorkflow {
       task: lock.task,
       approvedTaskHash: lock.approvedTaskHash,
     };
+  }
+
+  private assertActive(epoch: number): void {
+    if (epoch !== this.epoch) throw new GenerationCancelledError('ruin');
   }
 
   private ensureSettlePoll(lock: RuinTaskFloorLock, messageId: number): void {

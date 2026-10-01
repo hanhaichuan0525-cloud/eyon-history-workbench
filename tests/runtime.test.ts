@@ -54,6 +54,65 @@ function makePreparation(): BiographyPreparation {
   };
 }
 
+function deferredRuntime<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+test('停止传记时入口资料读取仍挂起，不得以新epoch复活', async () => {
+  const scope = deferredRuntime<BiographyPreparation['scope']>();
+  const runtime = new FakeRuntime();
+  let calls = 0;
+  const statuses: string[] = [];
+  const workflow = { async prepare() { calls += 1; return makePreparation(); } } as unknown as BiographyWorkflow;
+  const controller = new BiographyController(workflow, new TavernBiographyShellAdapter(runtime), runtime, () => scope.promise, { onStatus: status => statuses.push(status) });
+  const pending = controller.prepareText('对维奥莱塔进行寻根溯源');
+  const rejected = assert.rejects(pending, GenerationCancelledError);
+  await controller.cancelPending(); scope.resolve(makePreparation().scope);
+  await rejected;
+  assert.equal(calls, 0); assert.deepEqual(statuses, []);
+});
+
+test('传记复用记录读取晚返回，停止后不得重新武装', async () => {
+  const record = deferredRuntime<BiographyRecord | null>();
+  const runtime = new FakeRuntime();
+  const workflow = { findCommittedByTrigger: () => record.promise } as unknown as BiographyWorkflow;
+  const statuses: string[] = [];
+  const controller = new BiographyController(workflow, new TavernBiographyShellAdapter(runtime), runtime, async () => makePreparation().scope, { onStatus: status => statuses.push(status) });
+  const pending = controller.prepareText('对维奥莱塔进行寻根溯源');
+  const rejected = assert.rejects(pending, GenerationCancelledError);
+  await new Promise(resolve => setImmediate(resolve));
+  await controller.cancelPending(); record.resolve(null);
+  await rejected; assert.deepEqual(statuses, []); assert.equal(runtime.prompts.size, 0);
+});
+
+test('同类物理请求顺序执行，第二请求不会抢第一请求计时', async () => {
+  const runtime = new FakeRuntime();
+  const first = deferredRuntime<string>();
+  let calls = 0;
+  runtime.generateRaw = async config => { runtime.rawCalls.push(config); calls += 1; return calls === 1 ? first.promise : '{"second":true}'; };
+  const adapter = new TavernGenerationAdapter(runtime, { async get() { return {}; } }, () => 'queue');
+  const a = adapter.generate('ruin', 'A');
+  const b = adapter.generate('ruin', 'B');
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(calls, 1);
+  first.resolve('{"first":true}');
+  assert.equal(await a, '{"first":true}'); assert.equal(await b, '{"second":true}');
+  assert.equal(calls, 2);
+});
+
+test('排队中的旧请求也会被停止，不能在队首结束后补发', async () => {
+  const runtime = new FakeRuntime();
+  const first = deferredRuntime<string>(); let calls = 0;
+  runtime.generateRaw = async () => { calls += 1; return first.promise; };
+  const adapter = new TavernGenerationAdapter(runtime, { async get() { return {}; } }, () => 'queue');
+  const a = adapter.generate('ruin', 'A'); const b = adapter.generate('ruin', 'B');
+  const rejectedA = assert.rejects(a, GenerationCancelledError);
+  const rejectedB = assert.rejects(b, GenerationCancelledError);
+  await new Promise(resolve => setImmediate(resolve)); adapter.cancel('ruin'); first.resolve('{"ok":true}');
+  await Promise.all([rejectedA, rejectedB]); assert.equal(calls, 1);
+});
+
 class FakeRuntime implements TavernRuntime {
   characterKey = '命定之诗';
   chatId = '存档一';

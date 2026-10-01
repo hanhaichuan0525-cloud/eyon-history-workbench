@@ -154,10 +154,13 @@ export class RuinWorkflow {
       automaticTimeRange: rangeResolution.automatic,
     };
     const outlinePrompt = buildRuinOutlineBatchApiPrompt(promptInput);
+    await this.dependencies.assertCurrent(identity);
     let rawResult = await this.dependencies.generator.generate(
       'ruin',
       outlinePrompt,
+      { progressLabel: '正在编排候选大纲' },
     );
+    await this.dependencies.assertCurrent(identity);
     let result;
     try {
       result = parseAndNormalizeRuinOutlines(rawResult, {
@@ -170,9 +173,11 @@ export class RuinWorkflow {
     } catch (error) {
       if (!(error instanceof RuinValidationError)) throw error;
       // 大纲失败给一次定向修复机会，再失败才终止（对齐传记 plan repair）。
+      await this.dependencies.assertCurrent(identity);
       const repaired = await this.dependencies.generator.generate(
         'ruin',
         buildRuinOutlineRepairPrompt(outlinePrompt, error.message),
+        { progressLabel: '正在校订候选大纲' },
       );
       result = parseAndNormalizeRuinOutlines(repaired, {
         requestId,
@@ -222,6 +227,7 @@ export class RuinWorkflow {
     };
     // Keep the previous usable result until the new outline has passed parsing,
     // validation and request-identity checks, then swap the chat namespace once.
+    await this.dependencies.assertCurrent(identity);
     await this.dependencies.repository.replaceNamespace(record);
 
     // 提纲只负责固定候选之间可比较的历史骨架；在把结果交给玩家选择前，
@@ -342,7 +348,9 @@ export class RuinWorkflow {
     }, material, outline);
 
     try {
-      let raw = await this.dependencies.generator.generate('ruin', prompt);
+      await this.dependencies.assertCurrent(identity);
+      let raw = await this.dependencies.generator.generate('ruin', prompt, { progressLabel: '正在撰写本份墟境史稿' });
+      await this.dependencies.assertCurrent(identity);
       let expanded;
       try {
         expanded = parseAndNormalizeExpandedRuinCandidate(raw, {
@@ -350,9 +358,11 @@ export class RuinWorkflow {
         });
       } catch (error) {
         if (!(error instanceof RuinValidationError)) throw error;
+        await this.dependencies.assertCurrent(identity);
         raw = await this.dependencies.generator.generate(
           'ruin',
           buildRuinExpansionRepairPrompt(prompt, error.message),
+          { progressLabel: '正在修订本份史稿与节点' },
         );
         expanded = parseAndNormalizeExpandedRuinCandidate(raw, {
           requestId, input: latest.input, material, context, outline, citationRegistry,
@@ -362,9 +372,11 @@ export class RuinWorkflow {
       const ageConflicts = explicitAgeConflictNames(expanded.historyProse, ageAssessments);
       if (ageConflicts.length > 0) {
         try {
+          await this.dependencies.assertCurrent(identity);
           const reviewedRaw = await this.dependencies.generator.generate(
             'ruin',
             buildRuinKnownPersonReviewPrompt(prompt, ageConflicts),
+            { progressLabel: '正在复核本份史稿的人物年龄' },
           );
           const reviewed = parseAndNormalizeExpandedRuinCandidate(reviewedRaw, {
             requestId, input: latest.input, material, context, outline, citationRegistry,
@@ -392,6 +404,7 @@ export class RuinWorkflow {
         end: outline.span.end,
         automaticTimeRange: false,
       })) {
+        await this.dependencies.assertCurrent(identity);
         const reviewedRaw = await this.dependencies.generator.generate(
           'ruin',
           buildRuinEarlierWindowCutoffReviewPrompt({
@@ -401,12 +414,14 @@ export class RuinWorkflow {
             outline,
             candidate: expanded,
           }),
+          { progressLabel: '正在复核本份史稿的历史时间边界' },
         );
         // 较早时间窗的强制语义门：复核若不能返回合法候选，宁可让该槽位
         // 进入可重试失败态，也不把已经知道未来结局的史稿交给玩家。
         expanded = parseAndNormalizeExpandedRuinCandidate(reviewedRaw, {
           requestId, input: latest.input, material, context, outline, citationRegistry,
         });
+        await this.dependencies.assertCurrent(identity);
         const verdictRaw = await this.dependencies.generator.generate(
           'ruin',
           buildRuinEarlierWindowCutoffVerdictPrompt({
@@ -416,6 +431,7 @@ export class RuinWorkflow {
             outline,
             candidate: expanded,
           }),
+          { progressLabel: '正在完成本份史稿的时间边界校验' },
         );
         if (parseRuinEarlierWindowCutoffVerdict(verdictRaw) !== 'PASS') {
           throw new RuinValidationError(
@@ -459,7 +475,9 @@ export class RuinWorkflow {
           },
         },
       };
+      await this.dependencies.assertCurrent(identity);
       await this.dependencies.repository.replace(next);
+      await this.dependencies.assertCurrent(identity);
       this.dependencies.onCandidateProgress?.({
         stage: 'success', candidateIndex, completed: readyCount(next), total,
       });
@@ -467,6 +485,7 @@ export class RuinWorkflow {
     } catch (error) {
       if (!isStaleRequestError(error)) {
         const current = await this.dependencies.repository.get(latest.key);
+        await this.dependencies.assertCurrent(identity);
         if (
           current
           && ruinCandidateState(current, candidateId).generationEpoch === generationEpoch
@@ -483,6 +502,7 @@ export class RuinWorkflow {
             },
           };
           await this.dependencies.repository.replace(failed);
+          await this.dependencies.assertCurrent(identity);
           this.dependencies.onCandidateProgress?.({
             stage: 'failed', candidateIndex,
             completed: readyCount(failed), total,

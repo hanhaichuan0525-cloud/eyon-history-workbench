@@ -1,5 +1,6 @@
 import {
   WORKBENCH_DATA_CHANGED_EVENT,
+  WORKBENCH_CONTEXT_EVENT,
   WORKBENCH_GLOBAL,
   WORKBENCH_READY_EVENT,
   WORKBENCH_RUIN_REFERENCES_EVENT,
@@ -42,6 +43,15 @@ export class WorkbenchUiClient {
 
   isReady(): boolean {
     return isFacade(this.globals[WORKBENCH_GLOBAL]);
+  }
+
+  contextRevision(): number {
+    return (this.globals[WORKBENCH_GLOBAL] as Partial<EyonHistoryWorkbenchFacade> | undefined)?.contextRevision ?? 0;
+  }
+
+  onContextChanged(listener: () => void): () => void {
+    this.events.addEventListener(WORKBENCH_CONTEXT_EVENT, listener);
+    return () => this.events.removeEventListener(WORKBENCH_CONTEXT_EVENT, listener);
   }
 
   /**
@@ -173,6 +183,19 @@ export class WorkbenchUiClient {
     return this.facade().listGenealogies();
   }
 
+  async clearCharacterGenealogy(mvuId: string) {
+    const context = this.contextRevision();
+    const facade = this.facade();
+    if (typeof facade.clearCharacterGenealogy !== 'function') {
+      throw new Error('当前脚本版本不支持单人物清空，请载入最新版脚本');
+    }
+    const result = await facade.clearCharacterGenealogy(mvuId);
+    if (context !== this.contextRevision()) throw new Error('聊天已切换，已忽略旧谱系清空通知');
+    this.publishRuinReferences(result.references);
+    this.publishDataChanged({ views: ['genealogy', 'ruin', 'settings'], reason: 'genealogy-cleared' });
+    return result;
+  }
+
   listBiographies() {
     return this.facade().listBiographies();
   }
@@ -239,7 +262,9 @@ export class WorkbenchUiClient {
   }
 
   async clearGenerationCache() {
+    const context = this.contextRevision();
     const result = await this.facade().clearGenerationCache();
+    if (context !== this.contextRevision()) throw new Error('聊天已切换，已忽略旧缓存清理通知');
     this.publishRuinReferences([]);
     this.publishDataChanged({
       views: ['genealogy', 'ruin', 'settings'],
@@ -336,10 +361,12 @@ export class WorkbenchUiClient {
     genealogyRecordKey: string,
     nodeId: string,
   ) {
+    const context = this.contextRevision();
     const references = await this.facade().toggleGenealogyNodeRuinReference(
       genealogyRecordKey,
       nodeId,
     );
+    if (context !== this.contextRevision()) throw new Error('聊天已切换，已忽略旧引用结果');
     this.publishRuinReferences(references);
     this.publishDataChanged({
       views: ['genealogy', 'ruin'],
@@ -349,7 +376,9 @@ export class WorkbenchUiClient {
   }
 
   async removeRuinCharacterReference(referenceId: string) {
+    const context = this.contextRevision();
     const references = await this.facade().removeRuinCharacterReference(referenceId);
+    if (context !== this.contextRevision()) throw new Error('聊天已切换，已忽略旧引用结果');
     this.publishRuinReferences(references);
     this.publishDataChanged({
       views: ['genealogy', 'ruin'],

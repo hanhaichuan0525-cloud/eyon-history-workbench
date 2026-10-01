@@ -127,6 +127,8 @@ export interface GenealogyContextBundle {
   worldbookContext: ContextSource[];
   recentContext: ContextSource[];
   characterContext: ContextSource[];
+  /** 本次读取的完整MVU准入名册，仅供脚本检查；不参与检索选源或模型提示。 */
+  currentMvuCharacters?: Array<Pick<ContextSource, 'sourceId' | 'title'>>;
   biographyRefs: ContextSource[];
   sourceIndex: ContextSource[];
   /** Retrieval v1.1+ 当前任务的瞬时模型可见证据真源（与墟境同构）。 */

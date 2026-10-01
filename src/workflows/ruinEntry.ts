@@ -12,7 +12,7 @@ import {
   TavernRuinEntryShellAdapter,
   type RuinEntryFloorLock,
 } from '../runtime/tavernRuinEntryShell.ts';
-import { isTaskCancellationError } from '../runtime/tavernGeneration.ts';
+import { GenerationCancelledError, isTaskCancellationError } from '../runtime/tavernGeneration.ts';
 import { fingerprintText } from '../runtime/transactionIdentity.ts';
 import type {
   RuinCandidateRecord,
@@ -261,6 +261,8 @@ function asSentence(value: string): string {
 }
 
 export class RuinEntryWorkflow {
+  private epoch = 0;
+  private sending: AbortController | null = null;
   private readonly inFlight = new Map<string, Promise<RuinEntrySubmission>>();
   private readonly submitted = new Set<string>();
   /** 已发送未提交的进入(triggerMessageId → submissionKey):删楼回退时释放防重 */
@@ -300,7 +302,9 @@ export class RuinEntryWorkflow {
     nodeId: string,
     playerText: string,
   ): Promise<RuinEntrySubmission> {
+    const epoch = this.epoch;
     const namespace = await this.host.getNamespace();
+    this.assertActive(epoch);
     const submissionKey = [
       namespaceKey(namespace),
       recordKey,
@@ -312,6 +316,7 @@ export class RuinEntryWorkflow {
     }
     const existing = this.inFlight.get(submissionKey);
     if (existing) return existing;
+    if (this.inFlight.size || this.pendingLock) throw new Error('穿越正在进行，请等待或停止当前任务');
 
     const task = this.submit(
       recordKey,
@@ -319,6 +324,7 @@ export class RuinEntryWorkflow {
       nodeId,
       playerText,
       submissionKey,
+      epoch,
     ).finally(() => {
       if (this.inFlight.get(submissionKey) === task) {
         this.inFlight.delete(submissionKey);
@@ -347,10 +353,12 @@ export class RuinEntryWorkflow {
    * 断言通过且流式结束后提交:清理注入 + 元数据写回。
    */
   async commitRendered(assistantMessageId: number): Promise<RuinEntrySubmission | null> {
+    const epoch = this.epoch;
     const lock = this.pendingLock;
     if (!lock) return null;
     try {
       await this.shell.assertRenderedFloor(lock, assistantMessageId);
+      this.assertActive(epoch);
     } catch (error) {
       if (isTaskCancellationError(error)) throw error;
       const detail = error instanceof Error ? error.message : String(error);
@@ -361,6 +369,7 @@ export class RuinEntryWorkflow {
       return null;
     }
     const content = await this.shell.readAssistantMessage(assistantMessageId);
+    this.assertActive(epoch);
     if (!content.trim()) {
       console.warn('[Eyon History Workbench] ruin entry target floor is still empty; waiting for content', {
         assistantMessageId,
@@ -381,16 +390,20 @@ export class RuinEntryWorkflow {
    * 聊天切换 / 取消兜底:丢锁 + 清理注入(幂等)。
    */
   async cancelPending(): Promise<void> {
+    this.epoch += 1;
+    this.inFlight.clear();
+    this.sending?.abort(new GenerationCancelledError('ruin'));
+    this.sending = null;
     this.stopSettlePoll();
     const lock = this.pendingLock;
     if (!lock) return;
     this.pendingLock = null;
+    this.hooks.onStatus?.('cancelled', '本次穿越已然中断', { phase: 'cancelled' });
     try {
       await this.shell.clear(lock.requestId);
     } catch (error) {
       console.warn('[Eyon History Workbench] ruin entry injection cleanup failed', error);
     }
-    this.hooks.onStatus?.('cancelled', '本次穿越已然中断', { phase: 'cancelled' });
   }
 
   /**
@@ -414,20 +427,26 @@ export class RuinEntryWorkflow {
     nodeId: string,
     playerText: string,
     submissionKey: string,
+    epoch: number,
   ): Promise<RuinEntrySubmission> {
+    const assertActive = () => this.assertActive(epoch);
     const { namespace, contractText, traceText } = await this.prepareSelection(
       recordKey,
       candidateId,
       nodeId,
     );
+    assertActive();
 
     const namespaceBeforeSend = await this.host.getNamespace();
+    assertActive();
     if (namespaceKey(namespaceBeforeSend) !== namespaceKey(namespace)) {
       throw new Error('Chat changed before the ruin entry turn was sent');
     }
     const normalizedPlayerText = resolveRuinEntryPlayerText(playerText);
     const requestId = crypto.randomUUID();
     let armed = false;
+    const controller = new AbortController();
+    this.sending = controller;
     const startedAt = Date.now();
     this.hooks.onStatus?.(
       'entering_ruin',
@@ -436,8 +455,10 @@ export class RuinEntryWorkflow {
     );
     try {
       const { messageId } = await this.userTurns.sendUserTurn(normalizedPlayerText, {
+        signal: controller.signal,
         beforeCreate: async expectedMessageId => {
           const namespaceNow = await this.host.getNamespace();
+          assertActive();
           if (namespaceKey(namespaceNow) !== namespaceKey(namespace)) {
             throw new Error('Chat changed while the ruin entry was being armed');
           }
@@ -457,8 +478,11 @@ export class RuinEntryWorkflow {
           this.pendingLock = lock;
           await this.shell.arm(lock);
           armed = true;
+          if (epoch !== this.epoch) await this.shell.clear(requestId);
+          assertActive();
         },
         afterCreate: async messageId => {
+          assertActive();
           const lock = this.pendingLock;
           if (!lock || lock.requestId !== requestId) {
             throw new Error('Ruin entry lock was not armed before sending');
@@ -466,6 +490,7 @@ export class RuinEntryWorkflow {
           lock.triggerSwipeId = this.runtime.getMessageSwipeId(messageId);
         },
       });
+      assertActive();
       if (!Number.isInteger(messageId) || messageId < 0) {
         throw new Error('Ruin entry sender did not return a valid user floor');
       }
@@ -486,7 +511,7 @@ export class RuinEntryWorkflow {
       };
     } catch (error) {
       // 单向失败:任何发送失败都必须清注入、丢锁,不留半截状态
-      this.pendingLock = null;
+      if (this.pendingLock?.requestId === requestId) this.pendingLock = null;
       if (armed) {
         try {
           await this.shell.clear(requestId);
@@ -495,8 +520,10 @@ export class RuinEntryWorkflow {
         }
       }
       const detail = error instanceof Error ? error.message : String(error);
-      this.hooks.onStatus?.('failed', detail, { phase: 'error' });
+      if (epoch === this.epoch && !isTaskCancellationError(error)) this.hooks.onStatus?.('failed', detail, { phase: 'error' });
       throw error;
+    } finally {
+      if (this.sending === controller) this.sending = null;
     }
   }
 
@@ -506,17 +533,22 @@ export class RuinEntryWorkflow {
   ): Promise<RuinEntrySubmission | null> {
     this.stopSettlePoll();
     if (this.pendingLock !== lock) return null;
+    const epoch = this.epoch;
     this.pendingLock = null;
     await this.shell.clear(lock.requestId);
+    this.assertActive(epoch);
     try {
       // 组装权威 [RuinTrace] 进穿越助手楼(替换模型自发块或插入正文与面板之间),
       // 先写正文再挂元数据(attach 以当前正文作分支触发器)。
       const content = await this.shell.readAssistantMessage(assistantMessageId);
+      this.assertActive(epoch);
       const assembled = insertRuinTrace(content, lock.traceText);
       if (assembled !== content) {
         await this.shell.writeAssistantMessage(assistantMessageId, assembled);
+        this.assertActive(epoch);
       }
       await this.shell.attachRequestMetadata(lock, assistantMessageId);
+      this.assertActive(epoch);
       // 提交完成:释放防重(此后由 flowState==='idle' 检查接管),允许删楼回退后重进
       this.pendingSubmissions.delete(lock.triggerMessageId);
       this.submitted.delete([
@@ -539,6 +571,10 @@ export class RuinEntryWorkflow {
       console.error('[Eyon History Workbench] ruin entry metadata attach failed', error);
       throw error;
     }
+  }
+
+  private assertActive(epoch: number): void {
+    if (epoch !== this.epoch) throw new GenerationCancelledError('ruin');
   }
 
   /**

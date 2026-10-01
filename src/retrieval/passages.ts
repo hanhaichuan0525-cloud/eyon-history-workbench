@@ -56,6 +56,15 @@ export async function assembleEvidencePassages(input: {
   }
 
   const required = new Set<PassageCandidate>();
+  // 上游已经筛过当前有效、与查询相关的来源；蝴蝶档案是已发生历史，
+  // 时间表、行动记录与演变必须作为一个整体投递，不能只选得分最高的表格。
+  for (const candidate of candidates) {
+    if (candidate.snapshot.sourceType !== 'butterfly') continue;
+    candidate.mandatory = true;
+    candidate.priority = 0;
+    candidate.reasons.push('butterfly-continuity-full');
+    required.add(candidate);
+  }
   for (const anchor of anchors) {
     const best = candidates
       .filter(candidate => candidate.matchedAnchors.includes(anchor))
@@ -135,22 +144,26 @@ export async function assembleEvidencePassages(input: {
   const accepted: PassageCandidate[] = [];
   const rejected: RetrievalPassageDecision[] = [];
   let usedChars = 0;
+  let excerptBudgetChars = 0;
   for (const candidate of merged.sort(compareCandidate)) {
     const charCount = candidate.endOffset - candidate.startOffset;
+    const completeHistory = candidate.snapshot.sourceType === 'butterfly';
     if (
-      !candidate.mandatory
+      !completeHistory
+      && !candidate.mandatory
       && accepted.length > 0
-      && usedChars + charCount > input.budget.softLimitChars
+      && excerptBudgetChars + charCount > input.budget.softLimitChars
     ) {
       rejected.push(toDecision(candidate, 'soft-passage-budget-exhausted'));
       continue;
     }
-    if (usedChars + charCount > input.budget.hardLimitChars) {
+    if (!completeHistory && excerptBudgetChars + charCount > input.budget.hardLimitChars) {
       rejected.push(toDecision(candidate, 'hard-passage-budget-exhausted'));
       continue;
     }
     accepted.push(candidate);
     usedChars += charCount;
+    if (!completeHistory) excerptBudgetChars += charCount;
   }
 
   const coveredAnchors = new Set(accepted.flatMap(candidate => candidate.matchedAnchors));
@@ -293,7 +306,8 @@ function splitIntoSections(
     });
   }
 
-  if (!hasHeadings && content.trim().length <= budget.fullSourceLimitChars) {
+  if (snapshot.sourceType === 'butterfly'
+    || (!hasHeadings && content.trim().length <= budget.fullSourceLimitChars)) {
     const [startOffset, endOffset] = trimOffsets(content, 0, content.length);
     return [{
       snapshot,

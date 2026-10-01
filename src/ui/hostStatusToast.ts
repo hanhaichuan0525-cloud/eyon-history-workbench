@@ -1,16 +1,19 @@
 import {
   WORKBENCH_APPEARANCE_EVENT,
   WORKBENCH_CANCEL_TASK_EVENT,
+  WORKBENCH_CONTEXT_EVENT,
   WORKBENCH_OPEN_EVENT,
   WORKBENCH_STATUS_EVENT,
   type WorkbenchAppearanceDetail,
   type WorkbenchStatusDetail,
 } from '../runtime/facade.ts';
+import { isTaskBusy } from '../runtime/taskStatus.ts';
 import eyonCompanionAtlas from '../../prototype/assets/eyon-companion-prototype-v5.png';
 import {
   clampCompanionInViewport,
   collectHostFrames,
   companionPresentation,
+  companionStatusDescription,
   companionViewportRect,
   isWorkbenchVisible,
   type CompanionMotion,
@@ -29,7 +32,7 @@ interface CompanionEntry {
   key: string;
   taskKey: string;
   detail: WorkbenchStatusDetail;
-  updatedAt: number;
+  updateOrder: number;
   countdown: number | null;
   errorTimer: ReturnType<typeof setInterval> | null;
   hideTimer: ReturnType<typeof setTimeout> | null;
@@ -85,6 +88,7 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
     <div class="bubble-head">
       <span class="bubble-orb" aria-hidden="true"></span>
       <strong class="bubble-title"></strong>
+      <button class="bubble-close" type="button" aria-label="关闭气泡，不停止任务" title="关闭气泡，不停止任务">×</button>
     </div>
     <p class="bubble-detail"></p>
     <div class="bubble-footer">
@@ -104,14 +108,18 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
   const description = bubble.querySelector<HTMLElement>('.bubble-detail')!;
   const retry = bubble.querySelector<HTMLElement>('.bubble-retry')!;
   const timer = bubble.querySelector<HTMLElement>('.bubble-timer')!;
+  const progress = bubble.querySelector<HTMLElement>('.bubble-progress')!;
   const stop = bubble.querySelector<HTMLButtonElement>('.bubble-stop')!;
+  const close = bubble.querySelector<HTMLButtonElement>('.bubble-close')!;
 
   const entries = new Map<string, CompanionEntry>();
   let nextResultId = 0;
+  let updateOrder = 0;
   let activeKey = '';
   let activeMotion: CompanionMotion | null = null;
   let transitionTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  let bubbleDismissed = false;
 
   const onIntroEnd = (event: AnimationEvent): void => {
     if (event.animationName !== 'eyon-intro' || currentFrame.dataset.phase !== 'intro') return;
@@ -130,6 +138,11 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
       removeTaskEntries('butterfly');
     }
     const taskKey = detail.taskType ?? 'system';
+    const previous = entries.get(taskKey)?.detail;
+    // 关闭只作用于现有任务；同一任务的阶段、重试与心跳不会重新弹出。
+    // 新任务或玩家主动点击悬浮球时才恢复提示。
+    if (isTaskBusy(detail) && (!isTaskBusy(previous ?? null)
+      || detail.startedAt !== previous?.startedAt)) bubbleDismissed = false;
     const terminal = detail.phase === 'error'
       || detail.phase === 'success'
       || detail.phase === 'cancelled';
@@ -141,7 +154,7 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
     const entry = entries.get(key) ?? createEntry(key, taskKey, detail);
     clearEntryTimers(entry);
     entry.detail = detail;
-    entry.updatedAt = Date.now();
+    entry.updateOrder = ++updateOrder;
     entry.countdown = detail.phase === 'error' ? 5 : null;
     entries.set(key, entry);
     installEntryTimers(entry);
@@ -156,11 +169,18 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
     host.dataset.accent = detail.accent;
     host.dataset.text = detail.text;
   };
+  const onContextChanged = (): void => {
+    for (const entry of entries.values()) clearEntryTimers(entry);
+    entries.clear();
+    bubbleDismissed = false;
+    renderActive();
+  };
 
   // β1.2：视口变化一律重夹。原来只监听 window.resize 且"没拖过就 return"，
   // 于是转屏、键盘弹出、地址栏收展、双指缩放都不会把球拉回来。
   const onViewportChange = (): void => keepCompanionVisible(host, hostWindow);
   eventTarget.addEventListener(WORKBENCH_STATUS_EVENT, onStatus);
+  eventTarget.addEventListener(WORKBENCH_CONTEXT_EVENT, onContextChanged);
   hostWindow?.addEventListener(WORKBENCH_APPEARANCE_EVENT, onAppearance);
   hostWindow?.addEventListener('resize', onViewportChange);
   hostWindow?.addEventListener('orientationchange', onViewportChange);
@@ -175,16 +195,18 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
     detail: WorkbenchStatusDetail,
     ttl: number,
   ): void => {
-    const busy = [...entries.values()].some(entry => entry.detail.phase === 'running');
+    const busy = [...entries.values()].some(entry => isTaskBusy(entry.detail));
     if (busy && !entries.has(key)) return;
     const entry = createEntry(key, 'system', detail);
-    entry.updatedAt = Date.now();
+    entry.updateOrder = ++updateOrder;
     entry.hideTimer = setTimeout(() => removeEntry(entry.key), ttl);
     entries.set(entry.key, entry);
     renderActive();
   };
 
   installCompanionDrag(host, avatar, hostWindow, () => {
+    bubbleDismissed = false;
+    renderActive();
     const showOpened = (): void => showTapFeedback('system:workbench-open', {
       status: 'workbench_open',
       detail: '卷宗、谱系与时间暗流，都请从这里看。',
@@ -227,6 +249,12 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
       detail: { taskType: entry.taskKey },
     }));
   });
+  close.addEventListener('click', event => {
+    event.stopPropagation();
+    bubbleDismissed = true;
+    renderActive();
+    avatar.focus();
+  });
 
   // 首次装载只播放一次空闲开场，然后停在微动循环。
   setMotion('idle');
@@ -244,7 +272,7 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
       key,
       taskKey,
       detail,
-      updatedAt: Date.now(),
+      updateOrder: ++updateOrder,
       countdown: null,
       errorTimer: null,
       hideTimer: null,
@@ -265,14 +293,14 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
       entry.hideTimer = setTimeout(() => removeEntry(entry.key), 2600);
       return;
     }
-    if (typeof entry.detail.progress?.startedAt === 'number') {
+    if (typeof (entry.detail.startedAt ?? entry.detail.progress?.startedAt) === 'number' && isTaskBusy(entry.detail)) {
       entry.elapsedTimer = setInterval(renderActive, 1000);
     }
   }
 
   function renderActive(): void {
     if (disposed) return;
-    const entry = [...entries.values()].sort((left, right) => right.updatedAt - left.updatedAt)[0];
+    const entry = [...entries.values()].sort((left, right) => right.updateOrder - left.updateOrder)[0];
     activeKey = entry?.key ?? '';
     if (!entry) {
       bubble.hidden = true;
@@ -283,28 +311,37 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
     const presentation = companionPresentation(entry.detail);
     host.dataset.state = presentation.state;
     title.textContent = presentation.title;
-    description.textContent = entry.detail.detail;
-    retry.hidden = entry.detail.phase !== 'retrying';
+    const count = entry.detail.progress;
+    description.textContent = companionStatusDescription(entry.detail);
+    retry.hidden = !entry.detail.retry || entry.detail.retry.attempt <= 1;
     retry.textContent = entry.detail.retry
       ? `第 ${entry.detail.retry.attempt} / ${entry.detail.retry.max} 次尝试`
       : '';
     stop.hidden = !entry.detail.cancellable
-      || (entry.detail.phase !== 'running' && entry.detail.phase !== 'retrying');
+      || !isTaskBusy(entry.detail);
+    progress.hidden = !isTaskBusy(entry.detail);
+    progress.dataset.determinate = String(Boolean(count && count.total > 1));
+    progress.style.setProperty('--progress', count ? `${Math.min(100, Math.max(0, count.current / Math.max(1, count.total) * 100))}%` : '0%');
     const meta = timerText(entry);
     timer.hidden = !meta;
     timer.textContent = meta;
-    bubble.hidden = false;
+    bubble.hidden = bubbleDismissed;
     setMotion(presentation.motion);
-    updateBubbleDirection(host, hostWindow);
+    if (!bubble.hidden) updateBubbleDirection(host, hostWindow);
   }
 
   function timerText(entry: CompanionEntry): string {
-    if (entry.countdown !== null) return `${entry.countdown}s`;
-    const startedAt = entry.detail.progress?.startedAt;
+    if (entry.countdown !== null) return `${entry.countdown}s 后收起`;
+    if (!isTaskBusy(entry.detail)) return '';
+    const startedAt = entry.detail.startedAt ?? entry.detail.progress?.startedAt;
     if (typeof startedAt !== 'number') return '';
     const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
     const minutes = Math.floor(seconds / 60);
-    return `已等待 ${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+    const total = `总用时 ${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+    const request = entry.detail.request;
+    if (!request) return total;
+    const waited = Math.max(0, Math.floor((Date.now() - request.startedAt) / 1000));
+    return `${total}\n\n模型本次等待 ${Math.floor(waited / 60)}:${String(waited % 60).padStart(2, '0')}`;
   }
 
   function setMotion(motion: CompanionMotion): void {
@@ -350,7 +387,7 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
   function trimResultEntries(): void {
     const results = [...entries.values()]
       .filter(entry => entry.key.includes(':result:'))
-      .sort((left, right) => left.updatedAt - right.updatedAt);
+      .sort((left, right) => left.updateOrder - right.updateOrder);
     for (const entry of results.slice(0, Math.max(0, results.length - 6))) {
       removeEntry(entry.key);
     }
@@ -368,6 +405,7 @@ export function installHostStatusToast(eventTarget: EventTarget): () => void {
   return () => {
     disposed = true;
     eventTarget.removeEventListener(WORKBENCH_STATUS_EVENT, onStatus);
+    eventTarget.removeEventListener(WORKBENCH_CONTEXT_EVENT, onContextChanged);
     hostWindow?.removeEventListener(WORKBENCH_APPEARANCE_EVENT, onAppearance);
     hostWindow?.removeEventListener('resize', onViewportChange);
     hostWindow?.removeEventListener('orientationchange', onViewportChange);
@@ -730,18 +768,22 @@ const companionCss = `
   .bubble-orb { width:7px; height:7px; flex:0 0 auto; border-radius:50%; background:var(--eyon-accent); box-shadow:0 0 0 4px var(--eyon-accent-soft); }
   :host([data-state="success"]) .bubble-orb { background:#78bda5; }
   :host([data-state="error"]) .bubble-orb { background:#d77e8e; }
-  .bubble-title { min-width:0; overflow:hidden; color:var(--eyon-text); font:650 13px/1.4 "Noto Sans SC","Microsoft YaHei",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
-  .bubble-detail { margin:5px 0 0 15px; color:var(--eyon-muted); font:400 11px/1.55 "Noto Sans SC","Microsoft YaHei",sans-serif; overflow-wrap:anywhere; }
-  .bubble-footer { display:flex; align-items:center; justify-content:flex-end; gap:8px; min-height:0; margin:7px 0 0 15px; }
-  .bubble-retry,.bubble-timer { color:var(--eyon-muted); font:600 10px/1.2 "Noto Sans SC","Microsoft YaHei",sans-serif; font-style:normal; }
+  .bubble-title { flex:1; min-width:0; overflow:hidden; color:var(--eyon-text); font:650 13px/1.4 "Noto Sans SC","Microsoft YaHei",sans-serif; text-overflow:ellipsis; white-space:nowrap; }
+  .bubble-close { all:initial; box-sizing:border-box; display:grid; place-items:center; flex:0 0 auto; width:28px; height:28px; margin:-5px -5px -5px 0; border-radius:8px; color:var(--eyon-muted); cursor:pointer; font:400 21px/1 sans-serif; }
+  .bubble-close:hover,.bubble-close:focus-visible { background:var(--eyon-accent-soft); color:var(--eyon-text); outline:1px solid var(--eyon-accent); }
+  .bubble-detail { margin:5px 0 0 15px; color:var(--eyon-muted); font:400 11px/1.55 "Noto Sans SC","Microsoft YaHei",sans-serif; overflow-wrap:anywhere; white-space:pre-line; }
+  .bubble-footer { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; min-height:0; margin:7px 0 0 15px; }
+  .bubble-retry,.bubble-timer { color:var(--eyon-muted); font:600 10px/1.4 "Noto Sans SC","Microsoft YaHei",sans-serif; font-style:normal; white-space:pre-line; }
   .bubble-retry { margin-right:auto; color:var(--eyon-accent); }
   .bubble-stop { all:initial; box-sizing:border-box; min-width:40px; padding:4px 7px; border:1px solid var(--eyon-line); border-radius:999px; color:var(--eyon-text); background:transparent; cursor:pointer; font:600 11px/1 "Noto Sans SC","Microsoft YaHei",sans-serif; text-align:center; }
   .bubble-stop:hover,.bubble-stop:focus-visible { border-color:var(--eyon-accent); color:var(--eyon-accent); outline:none; }
   .bubble-retry[hidden],.bubble-timer[hidden],.bubble-stop[hidden] { display:none; }
   .bubble-progress { height:2px; margin:8px 0 0 15px; overflow:hidden; border-radius:999px; background:rgba(127,117,137,.12); }
   .bubble-progress::after { content:""; display:block; width:42%; height:100%; border-radius:inherit; background:linear-gradient(90deg,transparent,var(--eyon-accent),transparent); animation:eyon-progress 1500ms ease-in-out infinite; }
+  .bubble-progress[data-determinate="true"]::after { width:var(--progress); animation:none; background:var(--eyon-accent); transition:width .2s ease; }
   :host(:not([data-state="working"])) .bubble-progress { display:none; }
   @keyframes eyon-progress { from { transform:translateX(-115%); } to { transform:translateX(280%); } }
+  @media (pointer:coarse) { .bubble-close { width:44px; height:44px; } }
   @media (prefers-reduced-motion:reduce) {
     *,*::before,*::after { animation-duration:.001ms!important; animation-iteration-count:1!important; transition-duration:.001ms!important; }
     .eyon-sheet { animation:none!important; transform:translate3d(calc(var(--step) * -2),var(--row-y),0)!important; }

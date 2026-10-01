@@ -1,4 +1,6 @@
 import type { WorkbenchStatusDetail } from '../runtime/facade.ts';
+import { isTaskBusy } from '../runtime/taskStatus.ts';
+import { preserveDomState, ViewRefreshGuard } from './viewRefresh.ts';
 import type { RuinRuntimeSnapshot, RuinTaskSnapshot } from '../adapters/host.ts';
 import {
   createRuinMaterials,
@@ -20,6 +22,7 @@ import {
   type RuinSelectedCharacter,
 } from '../storage/ruinReferences.ts';
 import { WorkbenchUiClient } from './workbenchClient.ts';
+import { selectAddedRuinReferences } from './ruinReferenceSelection.ts';
 import type { RuinTaskReviewSnapshot } from '../workflows/ruinTask.ts';
 import type { RuinTaskInterpretation, RuinTaskScale } from '../schemas/ruinTask.ts';
 import ruinCss from './ruinWorkbench.css?raw';
@@ -98,7 +101,11 @@ export function mountRuinWorkbench(
   });
   container.replaceChildren(host);
   let theme = options.theme ?? 'light';
-  let recordSyncVersion = 0;
+  const reads = new ViewRefreshGuard(() => client.contextRevision());
+  const mutations = new ViewRefreshGuard(() => client.contextRevision());
+  const runtimeReads = new ViewRefreshGuard(() => client.contextRevision());
+  let configuredLoaded = client.isReady();
+  let draftEdited = false;
 
   const configured = client.isReady()
     ? client.facade().getSettings().ruinDraft
@@ -137,28 +144,52 @@ export function mountRuinWorkbench(
 
   const offStatus = client.onStatus(detail => {
     if (detail.taskType && detail.taskType !== 'ruin') return;
+    if (detail.phase === 'cancelled') {
+      mutations.invalidate(); reads.invalidate(); runtimeReads.invalidate();
+      state.entering = false; state.taskCreating = false;
+    }
     state.status = detail;
-    state.busy = detail.phase === 'running'
-      || detail.phase === 'retrying'
-      || Boolean(
-        detail.phase === 'success'
-        && detail.progress
-        && detail.progress.current < detail.progress.total,
-      );
+    state.busy = isTaskBusy(detail);
     if (detail.phase === 'error') state.error = detail.detail;
-    render();
-    if (detail.progress) void syncRecords();
+    if (!detail.request) render();
+    if (detail.status === 'candidate_ready' || detail.status === 'candidate_failed') void syncRecords();
     if (detail.status === 'ready' || detail.status === 'ruin_task_draft_restored') {
-      void refreshRuntime();
+      void refresh();
     }
   });
   const offReady = client.onReady(() => void refresh());
-  const offReferences = client.onRuinReferences(references => {
-    // 引用人物只是重点参考池，不自动勾选——勾选由用户手动维护，
-    // 避免旧任务添加的引用（如谱系加入的玲山）自动污染新任务的名单。
-    state.characters = references;
+  const offContext = client.onContextChanged(() => {
+    mutations.invalidate();
+    reads.invalidate(); runtimeReads.invalidate();
+    state.records = []; state.characters = []; state.biographies = [];
+    state.runtime = emptyRuinRuntime(); state.taskReview = null;
+    state.activeRecordKey = ''; state.activeCandidateId = ''; state.selectedNodeId = '';
+    state.selectedCharacterIds.clear(); state.busy = false; state.entering = false; state.taskCreating = false;
+    state.status = null; state.error = ''; configuredLoaded = true; draftEdited = false;
+    state.draft = { era: '复兴纪元', start: { ...EMPTY_DATE }, end: { ...EMPTY_DATE }, location: '', supplementaryDirection: '', autoGenealogy: false, candidateCount: 3 };
+    state.taskDirection = '';
     render();
   });
+  const offReferences = client.onRuinReferences(references => {
+    selectAddedRuinReferences(state.characters, references, state.selectedCharacterIds);
+    state.characters = references;
+    persistCharacterSelection();
+    render();
+  });
+
+  function persistCharacterSelection(): void {
+    if (!client.isReady()) return;
+    const draft = client.facade().getSettings().ruinDraft;
+    if (draft) client.facade().setRuinDraft({
+      ...draft,
+      selectedCharacters: state.characters.filter(character =>
+        state.selectedCharacterIds.has(ruinCharacterReferenceIdentity(character))),
+    });
+  }
+  function operationIsCurrent(): () => boolean {
+    const current = mutations.begin();
+    return () => !state.disposed && current();
+  }
 
   function activeRecord(): RuinCandidateRecord | null {
     return state.records.find(item => item.key === state.activeRecordKey)
@@ -185,7 +216,16 @@ export function mountRuinWorkbench(
       render();
       return;
     }
-    state.busy = true;
+    const current = reads.begin();
+    runtimeReads.invalidate();
+    if (!configuredLoaded) {
+      const draft = client.facade().getSettings().ruinDraft;
+      if (draft && !draftEdited) {
+        state.draft = inputToDraft(draft);
+        state.selectedCharacterIds = new Set(draft.selectedCharacters.map(ruinCharacterReferenceIdentity));
+      }
+      configuredLoaded = true;
+    }
     state.error = '';
     render();
     try {
@@ -196,14 +236,15 @@ export function mountRuinWorkbench(
         client.getRuinRuntimeSnapshot(),
         client.getRuinTaskReview(),
       ]);
+      if (!current()) return;
+      runtimeReads.invalidate();
       state.records = [...records].sort((left, right) =>
         right.createdAt - left.createdAt);
       state.characters = references;
       state.biographies = biographies;
       state.runtime = runtime;
-      state.taskReview = taskReview;
-      // 引用人物只作重点参考池，不自动勾选——勾选由用户手动维护，
-      // 刷新/重开页面不得让旧引用污染新任务名单。
+      if (!(state.taskReview?.phase === 'review' && taskReview?.phase === 'review' && state.taskReview.runId === taskReview.runId)) state.taskReview = taskReview;
+      // 普通刷新只读取候选池，不能把玩家关闭的旧引用再次勾回。
       if (!state.records.some(item => item.key === state.activeRecordKey)) {
         state.activeRecordKey = state.records[0]?.key ?? '';
       }
@@ -212,22 +253,25 @@ export function mountRuinWorkbench(
         item.id === state.activeCandidateId)) {
         state.activeCandidateId = record?.result.candidates[0]?.id ?? '';
       }
-      state.selectedNodeId = '';
+      if (!activeCandidate(record)?.nodes.some(node => node.id === state.selectedNodeId)) state.selectedNodeId = '';
     } catch (error) {
+      if (!current()) return;
       state.error = errorMessage(error);
     } finally {
-      state.busy = false;
-      render();
+      if (current()) render();
     }
   }
 
   async function refreshRuntime(): Promise<void> {
     if (state.disposed || !client.isReady()) return;
+    const current = runtimeReads.begin();
     try {
-      [state.runtime, state.taskReview] = await Promise.all([
+      const [runtime, review] = await Promise.all([
         client.getRuinRuntimeSnapshot(),
         client.getRuinTaskReview(),
       ]);
+      if (!current()) return;
+      state.runtime = runtime; state.taskReview = review;
       render();
     } catch {
       // 完整刷新会报告持久错误；状态事件后的轻量刷新保持安静。
@@ -236,10 +280,10 @@ export function mountRuinWorkbench(
 
   async function syncRecords(): Promise<void> {
     if (state.disposed || !client.isReady()) return;
-    const version = ++recordSyncVersion;
+    const current = reads.begin();
     try {
       const records = await client.facade().listRuins();
-      if (state.disposed || version !== recordSyncVersion) return;
+      if (!current()) return;
       state.records = [...records].sort((left, right) =>
         right.createdAt - left.createdAt);
       // 增量同步只更新资料，不夺走用户当前正在阅读的旧记录。
@@ -264,6 +308,7 @@ export function mountRuinWorkbench(
    * 引用人物候选池（state.characters）保留——它们只是候选，不自动勾选。
    */
   function resetTask(): void {
+    draftEdited = true;
     state.draft = {
       era: '复兴纪元',
       start: { ...EMPTY_DATE },
@@ -291,6 +336,8 @@ export function mountRuinWorkbench(
       return;
     }
     state.busy = true;
+    reads.invalidate();
+    const current = operationIsCurrent();
     state.status = {
       status: 'generating_candidates',
       detail: '伊雍正在编织并校订全部候选史稿',
@@ -299,6 +346,8 @@ export function mountRuinWorkbench(
     try {
       client.facade().setRuinDraft(input);
       const record = await client.facade().generateRuin(input);
+      if (!current()) return;
+      reads.invalidate();
       state.records = [
         record,
         ...state.records.filter(item => item.key !== record.key),
@@ -306,13 +355,14 @@ export function mountRuinWorkbench(
       state.activeRecordKey = record.key;
       state.activeCandidateId = record.result.candidates[0]?.id ?? '';
       state.selectedNodeId = '';
-      state.status = { status: 'ready', detail: '候选墟境史稿已经完成，可以比较后选择' };
+      const ready = record.result.candidates.filter(candidate => ruinCandidateState(record, candidate.id).status === 'ready').length;
+      state.status = { status: 'ready', detail: `候选史稿已完成 ${ready}/${record.result.candidates.length}${ready < record.result.candidates.length ? '，其余可单独重试' : '，可以比较后选择'}` };
     } catch (error) {
+      if (!current()) return;
       state.error = '墟境生成未完成，技术详情已保存到设置中的错误日志。';
       state.status = { status: 'failed', detail: state.error };
     } finally {
-      state.busy = false;
-      render();
+      if (current()) { state.busy = false; render(); }
     }
   }
 
@@ -364,6 +414,7 @@ export function mountRuinWorkbench(
       render();
       return;
     }
+    const current = operationIsCurrent();
     state.entering = true;
     state.error = '';
     state.status = {
@@ -373,21 +424,23 @@ export function mountRuinWorkbench(
     render();
     try {
       await client.facade().enterRuin(record.key, candidate.id, node.id);
+      if (!current()) return;
       state.status = {
         status: 'ready',
         detail: '进入指令已发送，伊雍正在开启历史切口',
       };
     } catch (error) {
+      if (!current()) return;
       state.error = errorMessage(error);
       state.status = { status: 'failed', detail: state.error };
     } finally {
-      state.entering = false;
-      render();
+      if (current()) { state.entering = false; render(); }
     }
   }
 
   async function createRuinTaskDraft(): Promise<void> {
-    if (state.taskCreating) return;
+    if (state.taskCreating || state.busy || state.entering) return;
+    const current = operationIsCurrent();
     const direction = state.taskDirection.trim();
     if (!direction) {
       state.error = '请先写下想做的事情';
@@ -395,24 +448,28 @@ export function mountRuinWorkbench(
       return;
     }
     state.taskCreating = true;
+    reads.invalidate(); runtimeReads.invalidate();
     state.error = '';
     render();
     try {
-      state.taskReview = await client.generateRuinTaskDraft({
+      const review = await client.generateRuinTaskDraft({
         direction,
         interpretation: state.taskInterpretation,
         scale: state.taskScale,
       });
+      if (current()) { reads.invalidate(); runtimeReads.invalidate(); state.taskReview = review; }
     } catch (error) {
+      if (!current()) return;
       state.error = errorMessage(error);
     } finally {
-      state.taskCreating = false;
-      render();
+      if (current()) { state.taskCreating = false; render(); }
     }
   }
 
   async function confirmRuinTaskDraft(): Promise<void> {
     if (state.taskCreating || !state.taskReview || state.taskReview.phase !== 'review') return;
+    const current = operationIsCurrent();
+    reads.invalidate(); runtimeReads.invalidate();
     state.taskCreating = true;
     state.error = '';
     render();
@@ -422,12 +479,13 @@ export function mountRuinWorkbench(
         detail: state.taskReview.task.detail,
         objective: state.taskReview.task.objective,
       });
-      state.taskReview = await client.confirmRuinTaskDraft();
+      const review = await client.confirmRuinTaskDraft();
+      if (current()) { reads.invalidate(); runtimeReads.invalidate(); state.taskReview = review; }
     } catch (error) {
+      if (!current()) return;
       state.error = errorMessage(error);
     } finally {
-      state.taskCreating = false;
-      render();
+      if (current()) { state.taskCreating = false; render(); }
     }
   }
 
@@ -435,6 +493,8 @@ export function mountRuinWorkbench(
     const record = activeRecord();
     const candidate = activeCandidate(record);
     if (!record || !candidate || state.busy || state.entering) return;
+    const current = operationIsCurrent();
+    reads.invalidate();
     state.busy = true;
     state.error = '';
     state.status = {
@@ -444,20 +504,23 @@ export function mountRuinWorkbench(
     render();
     try {
       const next = await client.retryRuinCandidate(record.key, candidate.id);
+      if (!current()) return;
+      reads.invalidate();
       state.records = state.records.map(item => item.key === next.key ? next : item);
       state.status = { status: 'ready', detail: '这段墟境史稿已经补全' };
     } catch {
+      if (!current()) return;
       state.error = '这段史稿仍未完成，技术详情已保存到错误日志。';
       state.status = { status: 'failed', detail: state.error };
       await syncRecords();
     } finally {
-      state.busy = false;
-      render();
+      if (current()) { state.busy = false; render(); }
     }
   }
 
   function render(): void {
     if (state.disposed) return;
+    const restore = preserveDomState(root);
     const record = activeRecord();
     const candidate = activeCandidate(record);
     const node = selectedNode(candidate);
@@ -493,6 +556,7 @@ export function mountRuinWorkbench(
         ${renderRuinTaskModule(state)}
       </main>`;
     bind();
+    restore();
     const timeline = root.querySelector<HTMLElement>('[data-timeline]');
     if (timeline) timeline.scrollLeft = scrollLeft;
   }
@@ -514,6 +578,7 @@ export function mountRuinWorkbench(
   }
 
   function bind(): void {
+    root.querySelectorAll('input, textarea, select').forEach(input => input.addEventListener('input', () => { draftEdited = true; }));
     root.querySelector<HTMLInputElement>('[data-auto-genealogy]')
       ?.addEventListener('change', event => {
         state.draft.autoGenealogy = (event.currentTarget as HTMLInputElement).checked;
@@ -567,6 +632,7 @@ export function mountRuinWorkbench(
           } else {
             state.selectedCharacterIds.add(id);
           }
+          persistCharacterSelection();
           render();
         });
       });
@@ -579,6 +645,7 @@ export function mountRuinWorkbench(
           state.characters = state.characters.filter(character =>
             ruinCharacterReferenceIdentity(character) !== id);
           state.selectedCharacterIds.delete(id);
+          persistCharacterSelection();
           render();
           void client.removeRuinCharacterReference(id).catch(error => {
             state.error = errorMessage(error);
@@ -709,7 +776,9 @@ export function mountRuinWorkbench(
         ?.setAttribute('data-theme', appearance.mode);
     },
     dispose() {
+      mutations.dispose();
       state.disposed = true;
+      reads.dispose(); runtimeReads.dispose(); offContext();
       stopScrollPan();
       offStatus();
       offReady();
@@ -961,7 +1030,7 @@ function renderForm(state: RuinState): string {
               }).join('')
               : '<span class="field-note">尚未加入重点参考人物；此项可以留空。</span>'}
           </div>
-          <span class="field-note">默认关闭。开启后只关联有本地活动依据的人物；手选和方向指定本人或亲属不受影响。</span>
+          <span class="field-note">关联宗族默认关闭，仅关联有本地活动依据的人物。手动加入的人物默认启用，可点击取消；方向指定不受影响。</span>
         </div>
         <div class="field">
           <strong>重点参考传记（可选）</strong>
@@ -1095,7 +1164,7 @@ function renderCandidates(
         <strong>这段史稿尚未完成</strong>
         <p>其他候选已经保留。你可以只重新生成当前墟境，不会改动已经完成的内容。</p>
         <button type="button" class="primary-button retry-candidate-button"
-          data-retry-candidate>重新生成此墟境</button>
+          data-retry-candidate ${state.busy || state.entering ? 'disabled' : ''}>重新生成此墟境</button>
       </article>` : `
       <article class="ruin-dossier pending-dossier" role="status" aria-live="polite" aria-busy="true">
         ${selectedState.status === 'generating'

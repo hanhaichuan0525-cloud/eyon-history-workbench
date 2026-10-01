@@ -92,6 +92,7 @@ export class TavernGenerationAdapter implements GenerationAdapter {
   private readonly hooks: GenerationRetryHooks;
   private readonly epochs = new Map<GenerationTask, number>();
   private readonly activeControllers = new Map<GenerationTask, Set<AbortController>>();
+  private readonly queues = new Map<GenerationTask, Promise<unknown>>();
 
   constructor(
     runtime: TavernRuntime,
@@ -111,6 +112,22 @@ export class TavernGenerationAdapter implements GenerationAdapter {
     options: { progressLabel?: string; purpose?: 'semantic-evidence' | 'canon-reconcile' | 'ruin-task' } = {},
   ): Promise<string> {
     const epoch = this.epochs.get(taskType) ?? 0;
+    const previous = this.queues.get(taskType) ?? Promise.resolve();
+    const queued = previous.catch(() => undefined).then(() => {
+      if ((this.epochs.get(taskType) ?? 0) !== epoch) throw new GenerationCancelledError(taskType);
+      return this.generateActive(taskType, prompt, options, epoch);
+    });
+    this.queues.set(taskType, queued);
+    try { return await queued; }
+    finally { if (this.queues.get(taskType) === queued) this.queues.delete(taskType); }
+  }
+
+  private async generateActive(
+    taskType: GenerationTask,
+    prompt: string,
+    options: { progressLabel?: string; purpose?: 'semantic-evidence' | 'canon-reconcile' | 'ruin-task' },
+    epoch: number,
+  ): Promise<string> {
     const controller = new AbortController();
     this.trackController(taskType, controller);
     const assertActive = () => {
@@ -118,8 +135,10 @@ export class TavernGenerationAdapter implements GenerationAdapter {
         throw new GenerationCancelledError(taskType);
       }
     };
+    try {
     assertActive();
     const settings = parseGenerationSettings(await this.settings.get(taskType));
+    assertActive();
     const maxRetries = Math.max(
       0,
       Math.floor(this.settings.getRetryLimit?.(taskType) ?? 1),
@@ -141,8 +160,7 @@ export class TavernGenerationAdapter implements GenerationAdapter {
       },
     );
 
-    try {
-      // 串行生成：同一时刻只有 1 个请求在飞（慢中转下并发只会互相拖慢）。
+      // 同模块队列由 generate() 持有，设置读取失败也释放 controller。
       return await run();
     } finally {
       this.releaseController(taskType, controller);

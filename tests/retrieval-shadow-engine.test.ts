@@ -88,6 +88,52 @@ function withWorldbookKeys(source: SourceSnapshot, uid: number, keys: string[]):
   return source;
 }
 
+const butterflyContinuityArchive = [
+  '### 《蝴蝶效应锚定日志3》',
+  '',
+  '| 墟境跨度 | 内容 |',
+  '|:---|:---|',
+  '| 进入时墟境时间 | 神明纪元126年-8月-15日-09:00 |',
+  '| 离开时墟境时间 | 神明纪元126年-8月-15日-09:25 |',
+  '',
+  '| 蝴蝶效应面板 | 内容 |',
+  '|:---|:---|',
+  '| 墟境行动记录 | 玩家在幽谷溪畔启动泉眼机关，二叶由泉水重组并首次获得诅咒。 |',
+  `| 历史演变 | 德鲁伊将事件记录于《切芽圣典》。${'后续历史传播。'.repeat(450)}末尾证据：原事件不是自然魔力冲突。 |`,
+].join('\n');
+
+test('蝴蝶日志时间表不成为人物，已选历史全文保留行动和演变', async () => {
+  const archive = snapshot('butterfly:continuity', '《蝴蝶效应锚定日志3》', butterflyContinuityArchive, 'butterfly');
+  const person = snapshot('worldbook:twoleaf', '[角色]二叶', '身份: 花灵\n二叶目前有生命蚀刻之咒。');
+  const catalog = buildWorldKnowledgeCatalog([archive, person], []);
+  assert.ok(!catalog.entities.some(entity => entity.canonicalName.includes('|')), '时间中的冒号不能生成演员');
+  const result = await new UnifiedShadowRetrievalEngine([archive, person]).retrieve({
+    requestId: 'butterfly-history-continuity', taskType: 'ruin',
+    query: '神明纪元126年，二叶事件后第一个目击者的遭遇',
+  });
+  const passages = result.bundle.passages.filter(passage => passage.sourceId === archive.logicalId);
+  assert.equal(passages.length, 1);
+  assert.equal(passages[0].extractionMode, 'full');
+  assert.equal(passages[0].content, butterflyContinuityArchive);
+  assert.ok(!result.bundle.castManifest?.entries.some(entry => entry.identity.canonicalName.includes('|')));
+});
+
+test('相关蝴蝶全文不被摘录预算裁尾，也不挤掉 required 人物依据', async () => {
+  const archive = snapshot('butterfly:long', '历史日志', butterflyContinuityArchive, 'butterfly');
+  const person = snapshot('worldbook:required', '[角色]测试人物', '测试人物身份：文书。');
+  const result = await assembleEvidencePassages({
+    snapshots: [archive, person], queryAnchors: ['神明纪元', '测试人物'],
+    fatalCoverageAnchors: ['测试人物'],
+    requiredSourceAnchors: [{ anchor: '测试人物', snapshotIds: [person.snapshotId] }],
+    claims: [], budget: { strategyVersion: EVIDENCE_PASSAGE_STRATEGY_VERSION,
+      softLimitChars: 40, hardLimitChars: 60, fullSourceLimitChars: 40, maxWindowChars: 20 },
+  });
+  assert.equal(result.passages.find(passage => passage.sourceType === 'butterfly')?.content, butterflyContinuityArchive);
+  assert.ok(result.passages.some(passage => passage.sourceId === person.logicalId));
+  assert.equal(result.usedChars, result.passages.reduce((sum, passage) => sum + passage.charCount, 0));
+  assert.deepEqual(result.omittedAnchors, []);
+});
+
 test('同一人物主档与无纪元补充条目合并身份胶囊，顺序变化不再产生相互冲突的 required', async () => {
   const main = snapshot('worldbook:mimo-main', '[角色]美墨珊奈', '身份: 咒法学派学徒/Pretty Holic创始人\n出生: 复兴纪元470年\n别名: 珊奈\n复兴纪元482年获得分身能力。');
   const habits = snapshot('worldbook:mimo-habits', '[角色]美墨珊奈', '姓名: 美墨珊奈\n购物必须砍价，第三刀总是特别用力。');

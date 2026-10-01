@@ -205,7 +205,7 @@
         localView: { nodes, edges, units: nodes.map(item => ({ unitId: item.id, unitType: 'node', reusable: true, disposition: 'available' })) } });
     }
     const facade = {
-      version: '0.14.4',
+      version: '0.14.9',
       getSettings: () => structuredClone(settings),
       updateSettings: patch => {
         Object.assign(settings, patch);
@@ -264,7 +264,7 @@
       exportCurrentData: async () => ({
         format: 'eyon-history-workbench-backup',
         schemaVersion: 1,
-        workbenchVersion: '0.14.4',
+        workbenchVersion: '0.14.9',
         exportedAt: new Date().toISOString(),
         namespace: { characterKey: 'preview', chatId: 'preview-chat' },
         settings: structuredClone(settings),
@@ -305,7 +305,7 @@
       () => { document.querySelector('[data-eyon-workbench-reopen]').style.display = 'none'; },
     );
   </script>
-  <script type="module" src="../dist/workbench.js?v=0.14.4"></script>
+  <script type="module" src="../dist/workbench.js?v=0.14.9"></script>
   <script type="module">
     // The preview must announce its mock facade after the production bundle has
     // installed its listeners. Keeping this page on the real bundle prevents a

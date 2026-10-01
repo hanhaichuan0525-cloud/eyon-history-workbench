@@ -160,6 +160,7 @@ export class TavernGenealogyContextAssembler implements GenealogyContextAssemble
       worldbookContext: activeWorldbookContext,
       recentContext: activeRecentContext,
       characterContext: activeCharacterContext,
+      currentMvuCharacters: characters.map(({ sourceId, title }) => ({ sourceId, title })),
       biographyRefs: activeBiographyRefs,
       sourceIndex,
       evidenceBundle: active.bundle,

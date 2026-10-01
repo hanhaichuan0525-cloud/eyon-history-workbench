@@ -3,6 +3,7 @@ import type { BiographyRecord } from '../storage/biographies.ts';
 import type { RuinBiographyReference } from '../storage/ruinReferences.ts';
 import { visibleBiographyItems, type BiographyShelfItem } from './biographyView.ts';
 import { WorkbenchUiClient } from './workbenchClient.ts';
+import { preserveDomState, ViewRefreshGuard } from './viewRefresh.ts';
 import biographyCss from './biographyWorkbench.css?raw';
 import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
 
@@ -39,6 +40,7 @@ export function mountBiographyWorkbench(
   const root = host.attachShadow({ mode: 'open' });
   container.replaceChildren(host);
   let theme = options.theme ?? 'light';
+  const reads = new ViewRefreshGuard(() => client.contextRevision());
 
   const state: BiographyState = {
     records: [],
@@ -65,9 +67,14 @@ export function mountBiographyWorkbench(
       void refresh();
       return;
     }
-    render();
+    if (!detail.request) render();
   });
   const offReady = client.onReady(() => void refresh());
+  const offContext = client.onContextChanged(() => {
+    reads.invalidate(); state.records = []; state.ruinReferences = [];
+    state.selectedKey = ''; state.open = false; state.query = ''; state.status = null;
+    state.error = ''; state.contextMenu = null; revealAwaitingNarrative = false; render();
+  });
   const offDataChanged = client.onDataChanged(detail => {
     if (detail.views.includes('biography')) void refresh();
   });
@@ -88,11 +95,14 @@ export function mountBiographyWorkbench(
       render();
       return;
     }
+    const current = reads.begin();
     try {
-      [state.records, state.ruinReferences] = await Promise.all([
+      const [records, references] = await Promise.all([
         client.listBiographies(),
         client.listRuinBiographyReferences(),
       ]);
+      if (!current()) return;
+      state.records = records; state.ruinReferences = references;
       const available = visibleBiographyItems(state.records, state.query);
       const awaitingNarrative = revealAwaitingNarrative
         ? available.find(item => item.record.status === 'validated')
@@ -107,12 +117,15 @@ export function mountBiographyWorkbench(
       }
       state.error = '';
     } catch (error) {
+      if (!current()) return;
       state.error = error instanceof Error ? error.message : String(error);
     }
     render();
   }
 
   function render(): void {
+    if (state.disposed) return;
+    const restore = preserveDomState(root);
     const available = items();
     const selected = selectedItem();
     root.innerHTML = `
@@ -163,6 +176,7 @@ export function mountBiographyWorkbench(
       </section>
     `;
     bindEvents();
+    restore();
   }
 
   function bindEvents(): void {
@@ -181,6 +195,7 @@ export function mountBiographyWorkbench(
   }
 
   function renderLibraryContent(): void {
+    const restore = preserveDomState(root);
     const available = items();
     const selected = selectedItem();
     const bookList = root.querySelector<HTMLElement>('.book-list');
@@ -200,6 +215,7 @@ export function mountBiographyWorkbench(
       state.open,
     )}`;
     bindLibraryContentEvents();
+    restore();
   }
 
   function isRuinReference(recordKey: string): boolean {
@@ -230,11 +246,18 @@ export function mountBiographyWorkbench(
         const recordKey = (event.currentTarget as HTMLButtonElement)
           .dataset.toggleRuinReference;
         if (!recordKey) return;
+        const context = client.contextRevision();
+        const current = () => !state.disposed && context === client.contextRevision();
+        reads.invalidate();
         state.contextMenu = null;
         try {
-          state.ruinReferences = await client.toggleBiographyRuinReference(recordKey);
+          const references = await client.toggleBiographyRuinReference(recordKey);
+          if (!current()) return;
+          reads.invalidate();
+          state.ruinReferences = references;
           state.error = '';
         } catch (error) {
+          if (!current()) return;
           state.error = error instanceof Error ? error.message : String(error);
         }
         render();
@@ -249,7 +272,10 @@ export function mountBiographyWorkbench(
           return;
         }
         state.contextMenu = null;
+        const context = client.contextRevision();
+        reads.invalidate();
         await client.deleteBiography(recordKey);
+        if (state.disposed || context !== client.contextRevision()) return;
         if (state.selectedKey === recordKey) state.selectedKey = '';
         await refresh();
       });
@@ -320,6 +346,7 @@ export function mountBiographyWorkbench(
     },
     dispose() {
       state.disposed = true;
+      reads.dispose(); offContext();
       offStatus();
       offReady();
       offDataChanged();
@@ -397,8 +424,8 @@ function renderCodex(item: BiographyShelfItem, open: boolean): string {
               <p>${escapeHtml(biography.origin.content)}</p>
             </section>
             <div class="chapters">
-              ${biography.stages.map(stage => `
-                <details class="chapter">
+              ${biography.stages.map((stage, index) => `
+                <details class="chapter" data-chapter-key="${escapeHtml(`${item.record.key}:${index}`)}">
                   <summary>
                     <span>${escapeHtml(stage.title)} · ${escapeHtml(stageTypeLabel(stage.type))}</span>
                     <small>${escapeHtml(stage.span)}</small>

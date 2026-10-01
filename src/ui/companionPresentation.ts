@@ -18,6 +18,19 @@ export interface CompanionPresentation {
   state: 'idle' | 'working' | 'success' | 'error' | 'cancelled';
 }
 
+/** 只拆界面生成的带空格分隔符；玲山·哈姆斯沃思等姓名中的间隔号保持原样。 */
+export function companionStatusDescription(detail: WorkbenchStatusDetail): string {
+  let stage = detail.detail.replaceAll(' · ', '\n\n');
+  const count = detail.progress;
+  if (count?.item && count.total > 1) stage += `（第 ${count.item} 份）`;
+  const counter = count && count.total > 1 ? `${count.current}/${count.total}` : '';
+  if (counter && !stage.includes(counter)) {
+    const label = detail.taskType === 'ruin' ? '史稿已完成' : '已完成';
+    return [stage, `${label} ${counter}`].filter(Boolean).join('\n\n');
+  }
+  return stage;
+}
+
 /**
  * 任务事件只携带稳定状态词；角色化文案是 UI 投影，不回写业务记录。
  * 错误标题刻意保持直接，技术详情仍由设置页错误日志承载。
@@ -28,6 +41,9 @@ export function companionPresentation(
   const task = detail.taskType ?? 'system';
   const status = detail.status;
   const text = detail.detail;
+  if (status === 'ruin_task_draft_ready') return { title: '任务草案已拟好，请主人审阅', motion: 'success', state: 'success' };
+  if (status === 'ruin_task_awaiting_player') return { title: '等主人补充行动并发送', motion: 'idle', state: 'idle' };
+  if (status === 'awaiting_narrative') return { title: '传记已备好，等待正文落定', motion: 'idle', state: 'idle' };
 
   if (detail.phase === 'error') {
     return { title: '本次处理未完成', motion: 'error', state: 'error' };
@@ -57,7 +73,11 @@ export function companionPresentation(
       : task === 'ruin' && status === 'ready' && /\u8e0f\u5165|\u5386\u53f2\u7684\u6697\u6d41|\u6240\u9009\u8282\u70b9\u5df2\u8fdb\u5165/u.test(text)
       ? '到了。这里就是那一刻的历史。'
       : task === 'ruin'
-      ? '每条路都亮了，主人挑一条吧！'
+      ? /其余|单独重试/u.test(text)
+        ? '已有史稿收好，其余可单独补写'
+        : status === 'ready' && /任务/u.test(text)
+        ? '任务已封缄'
+        : '史稿已经收好，主人挑一条吧！'
       : task === 'butterfly'
       ? '听见了吗？很远的年代已经回应了。'
       : '都整理好了，随时可以打开！';

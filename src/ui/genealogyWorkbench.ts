@@ -6,12 +6,13 @@ import type { GenealogyNode } from '../schemas/genealogy.ts';
 import { genealogyDisplayDates, genealogyEdgeDescription, genealogyFamilyView, genealogyMilestone,
   genealogyRelationText, hasOriginFamily, lineageKindLabels, type GenealogyFamilyTrack } from '../core/genealogyIdentity.ts';
 import { genealogyUnitLabel } from '../core/genealogyLocalView.ts';
-import type { GenealogyRecord } from '../storage/genealogies.ts';
+import { genealogyBelongsToCharacter, type GenealogyRecord } from '../storage/genealogies.ts';
 import {
   ruinCharacterReferenceIdentity,
   type RuinSelectedCharacter,
 } from '../storage/ruinReferences.ts';
 import { WorkbenchUiClient } from './workbenchClient.ts';
+import { preserveDomState, ViewRefreshGuard } from './viewRefresh.ts';
 import genealogyCss from './genealogyWorkbench.css?raw';
 import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
 import { installScrollPan } from './scrollPan.ts';
@@ -70,7 +71,7 @@ export function mountGenealogyWorkbench(
   container.replaceChildren(host);
   let theme = options.theme ?? 'light';
 
-  const configuredDepth = client.isReady()
+  let configuredDepth = client.isReady()
     ? client.facade().getSettings().genealogyDepth
     : { ancestors: 4, descendants: 3, maxPerGeneration: 4 };
   const state: GenealogyState = {
@@ -96,19 +97,34 @@ export function mountGenealogyWorkbench(
   const offStatus = client.onStatus(detail => {
     if (detail.taskType === 'butterfly' && detail.phase === 'success') void refresh();
     if (detail.taskType !== 'genealogy') return;
+    if (detail.phase === 'cancelled') {
+      mutations.invalidate(); refreshEpoch += 1;
+      state.busy = false; state.busyCharacterId = '';
+    }
     if (
       state.busyCharacterId
       && state.busyCharacterId !== state.selectedMvuId
     ) return;
     state.status = detail;
     if (detail.phase === 'error') state.error = detail.detail;
-    render();
+    if (!detail.request) render();
   });
-  const offReady = client.onReady(() => void refresh());
+  const offReady = client.onReady(() => {
+    configuredDepth = client.facade().getSettings().genealogyDepth;
+    void refresh();
+  });
+  const offContext = client.onContextChanged(() => {
+    mutations.invalidate();
+    refreshEpoch += 1; state.characters = []; state.records = []; state.ruinReferences = [];
+    state.selectedMvuId = ''; state.selectedNodeId = ''; state.familyTracks.clear();
+    state.identityByCharacter.clear(); state.depthByCharacter.clear(); state.contextMenu = null;
+    state.busy = false; state.busyCharacterId = ''; state.status = null; state.error = ''; render();
+  });
   const offDataChanged = options.embedded ? () => {} : client.onDataChanged(detail => {
     if (detail.views.includes('genealogy')) void refresh();
   });
   let refreshEpoch = 0;
+  const mutations = new ViewRefreshGuard(() => client.contextRevision());
   const changeDepth = (button: HTMLButtonElement): void => {
     if (button.disabled) return;
     const key = button.dataset.stepper as
@@ -205,7 +221,7 @@ export function mountGenealogyWorkbench(
       return;
     }
     const epoch = ++refreshEpoch;
-    const selectedBeforeRefresh = state.selectedMvuId;
+    const context = client.contextRevision();
     state.error = '';
     try {
       const [characters, records, ruinReferences] = await Promise.all([
@@ -213,25 +229,23 @@ export function mountGenealogyWorkbench(
         client.listGenealogies(),
         client.listRuinCharacterReferences(),
       ]);
-      if (state.disposed || epoch !== refreshEpoch) return;
+      if (state.disposed || epoch !== refreshEpoch || context !== client.contextRevision()) return;
       state.characters = characters;
       state.records = records;
       state.ruinReferences = ruinReferences;
-      if (characters.some(item => item.mvuId === selectedBeforeRefresh)) {
-        state.selectedMvuId = selectedBeforeRefresh;
-      } else if (!characters.some(item => item.mvuId === state.selectedMvuId)) {
+      if (!characters.some(item => item.mvuId === state.selectedMvuId)) {
         state.selectedMvuId = characters[0]?.mvuId ?? '';
       }
       restoreDepthForCharacter(selectedCharacter());
       const record = selectedRecord();
-      state.selectedNodeId = record?.result.nodes.find(node => node.isFocus)?.id
-        ?? record?.result.nodes[0]?.id
-        ?? '';
+      if (!record?.result.nodes.some(node => node.id === state.selectedNodeId)) {
+        state.selectedNodeId = record?.result.nodes.find(node => node.isFocus)?.id ?? record?.result.nodes[0]?.id ?? '';
+      }
     } catch (error) {
-      if (epoch !== refreshEpoch) return;
+      if (epoch !== refreshEpoch || context !== client.contextRevision()) return;
       state.error = error instanceof Error ? error.message : String(error);
     } finally {
-      if (!state.disposed && epoch === refreshEpoch) render();
+      if (!state.disposed && epoch === refreshEpoch && context === client.contextRevision()) render();
     }
   }
 
@@ -239,23 +253,60 @@ export function mountGenealogyWorkbench(
     record: GenealogyRecord,
     nodeId: string,
   ): Promise<void> {
+    const context = client.contextRevision();
+    const current = () => !state.disposed && context === client.contextRevision();
+    refreshEpoch += 1;
     state.contextMenu = null;
     state.error = '';
     render();
     try {
-      state.ruinReferences = await client.toggleGenealogyNodeRuinReference(
+      const references = await client.toggleGenealogyNodeRuinReference(
         record.key,
         nodeId,
       );
+      if (!current()) return;
+      refreshEpoch += 1;
+      state.ruinReferences = references;
     } catch (error) {
+      if (!current()) return;
       state.error = error instanceof Error ? error.message : String(error);
     }
     render();
   }
 
+  async function clearCharacterGenealogy(): Promise<void> {
+    const character = selectedCharacter();
+    if (!character || state.busy || !selectedRecord()) return;
+    if (!window.confirm(`清空「${character.name}」在当前聊天中的全部谱系记录？\n\n其谱系人物的墟境参考也会移除；其他人物、MVU、已生成史稿与历史档案不受影响。`)) return;
+    const current = mutations.begin();
+    refreshEpoch += 1;
+    state.busy = true; state.busyCharacterId = character.mvuId;
+    state.status = { status: 'clearing_genealogy', detail: '正在清空此人物的谱系' };
+    state.contextMenu = null; state.error = ''; render();
+    try {
+      const result = await client.clearCharacterGenealogy(character.mvuId);
+      if (!current()) return;
+      refreshEpoch += 1;
+      const deleted = new Set(result.recordKeys);
+      for (const record of state.records) if (deleted.has(record.key)) state.familyTracks.delete(record.requestId);
+      state.records = state.records.filter(record => !deleted.has(record.key));
+      state.ruinReferences = result.references;
+      if (state.selectedMvuId === character.mvuId) state.selectedNodeId = '';
+      state.status = { status: 'genealogy_cleared', detail: '此人物的谱系已清空' };
+    } catch (error) {
+      if (!current()) return;
+      state.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (!current()) return;
+      state.busy = false; state.busyCharacterId = ''; render();
+    }
+  }
+
   async function generate(): Promise<void> {
     const character = selectedCharacter();
     if (!character || state.busy) return;
+    const current = mutations.begin();
+    refreshEpoch += 1;
     const generationCharacterId = character.mvuId;
     const generationDepth = {
       ancestors: state.ancestors,
@@ -286,11 +337,16 @@ export function mountGenealogyWorkbench(
         lineageKind: state.identityByCharacter.get(character.mvuId)?.kind ?? 'auto',
         identityNote: state.identityByCharacter.get(character.mvuId)?.note ?? '',
       });
+      if (!current()) return;
+      refreshEpoch += 1;
       state.records = [
         ...state.records.filter(item => item.key !== record.key),
         record,
       ];
-      state.ruinReferences = await client.listRuinCharacterReferences();
+      const references = await client.listRuinCharacterReferences();
+      if (!current()) return;
+      refreshEpoch += 1;
+      state.ruinReferences = references;
       if (state.selectedMvuId === generationCharacterId) {
         state.selectedNodeId = record.result.nodes.find(node => node.isFocus)?.id
           ?? record.result.nodes[0]?.id
@@ -298,9 +354,11 @@ export function mountGenealogyWorkbench(
       }
       state.status = { status: 'ready', detail: '宗族谱系已经完成' };
     } catch (error) {
+      if (!current()) return;
       state.error = '谱系生成未完成，技术详情已保存到设置中的错误日志。';
       state.status = { status: 'failed', detail: state.error };
     } finally {
+      if (!current()) return;
       state.busy = false;
       state.busyCharacterId = '';
       render();
@@ -309,6 +367,7 @@ export function mountGenealogyWorkbench(
 
   function render(): void {
     if (state.disposed) return;
+    const restore = preserveDomState(root);
     const previousScroll = root.querySelector<HTMLElement>('[data-board-scroll]');
     const scrollLeft = previousScroll?.scrollLeft ?? 0;
     const scrollTop = previousScroll?.scrollTop ?? 0;
@@ -352,7 +411,7 @@ export function mountGenealogyWorkbench(
                 ${Object.entries(lineageKindLabels).map(([kind, label]) => `<option value="${kind}" ${kind === (state.identityByCharacter.get(character?.mvuId ?? '')?.kind ?? 'auto') ? 'selected' : ''}>${label}</option>`).join('')}
               </select>
             </label>
-            <details class="identity-supplement">
+            <details class="identity-supplement" data-identity-supplement open>
               <summary>身份补充（可选）</summary>
             <label class="field">
               <textarea data-identity-note maxlength="240" rows="2" ${state.busy ? 'disabled' : ''}
@@ -391,6 +450,7 @@ export function mountGenealogyWorkbench(
               <span aria-hidden="true">⑂</span>
               ${record ? '重新构建谱系' : '构建宗族谱系'}
             </button>
+            ${record ? `<button type="button" class="clear-genealogy-button" data-clear-genealogy ${state.busy ? 'disabled' : ''}>清空此人物谱系</button>` : ''}
             <section class="focus-detail" aria-live="polite">
               <span>选中人物</span>
               <strong>${escapeHtml(node?.name || '尚无谱系记录')}</strong>
@@ -445,6 +505,7 @@ export function mountGenealogyWorkbench(
       </main>
     `;
     bind(layout);
+    restore();
     const nextScroll = root.querySelector<HTMLElement>('[data-board-scroll]');
     if (nextScroll) {
       nextScroll.scrollLeft = scrollLeft;
@@ -489,6 +550,9 @@ export function mountGenealogyWorkbench(
       });
     root.querySelector('[data-generate]')?.addEventListener('click', () => {
       void generate();
+    });
+    root.querySelector('[data-clear-genealogy]')?.addEventListener('click', () => {
+      void clearCharacterGenealogy();
     });
     root.querySelector('[data-refresh]')?.addEventListener('click', () => {
       void refresh();
@@ -562,7 +626,9 @@ export function mountGenealogyWorkbench(
         ?.setAttribute('data-theme', appearance.mode);
     },
     dispose() {
+      mutations.dispose();
       state.disposed = true;
+      refreshEpoch += 1; offContext();
       stopScrollPan();
       offStatus();
       offReady();
@@ -743,14 +809,9 @@ function newestRecordForCharacter(
   records: GenealogyRecord[],
   character: GenealogyCharacterOption,
 ): GenealogyRecord | null {
-  const exact = records.filter(record =>
-    record.result.focusCharacterId === character.mvuId);
-  const legacy = exact.length
-    ? []
-    : records.filter(record =>
-      !record.result.focusCharacterId
-      && normalize(record.result.focusCharacterName) === normalize(character.name));
-  return [...exact, ...legacy].reduce<GenealogyRecord | null>(
+  const matching = records.filter(record => genealogyBelongsToCharacter(record, character));
+  const exact = matching.filter(record => record.result.focusCharacterId || record.input.focusCharacter?.mvuId);
+  return (exact.length ? exact : matching).reduce<GenealogyRecord | null>(
     (latest, record) => !latest || record.createdAt >= latest.createdAt
       ? record
       : latest,
@@ -760,10 +821,6 @@ function newestRecordForCharacter(
 
 function initial(value: string | undefined): string {
   return value?.trim().slice(0, 1) || '谱';
-}
-
-function normalize(value: string): string {
-  return value.normalize('NFKC').replace(/\s+/gu, '').trim();
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -171,6 +171,26 @@ const contextInput = {
   directive: '检索圣翼议会与议长的历史',
 };
 
+test('宗族当前MVU准入名册完整读取，与active检索入选摘录分开', async () => {
+  let currentCharacters = [
+    simpleSource('mvu-character:议长', '议长', '议长主持圣翼议会。'),
+    simpleSource('mvu-character:远方旅人', '远方旅人', '目前住在另一个大陆。'),
+    simpleSource('mvu-character:空资料人物', '空资料人物', ''),
+  ];
+  const assembler = new TavernGenealogyContextAssembler(new ShadowRuntime(), {
+    ...sources,
+    async getCharacterSources() { return currentCharacters; },
+  }, new RuntimeShadowRetrievalObserver());
+  const context = await assembler.assemble(contextInput);
+  assert.deepEqual(context.currentMvuCharacters, currentCharacters.map(({ sourceId, title }) => ({ sourceId, title })));
+  assert.ok(!context.characterContext.some(source => source.title === '远方旅人'));
+  assert.ok(!context.sourceIndex.some(source => source.title === '空资料人物'));
+  assert.ok(context.sourceIndex.some(source => source.sourceType === 'genealogy'));
+  currentCharacters = [];
+  const removed = await assembler.assemble({ ...contextInput, requestId: 'roster-empty' });
+  assert.deepEqual(removed.currentMvuCharacters, [], '旧族谱仍被检索也不代替当前名单');
+});
+
 test('传记、谱系、墟境与蝴蝶效应全部以 active 回执生成正式上下文', async () => {
   const runtime = new ShadowRuntime();
   const observer = new RuntimeShadowRetrievalObserver();

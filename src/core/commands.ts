@@ -33,8 +33,10 @@ const TEXT_COMMANDS: ReadonlyArray<{
   },
 ];
 
-const RETURN_ACTION = String.raw`(?:遣返(?:我|我们)?(?:回去|回来|回到(?:现世|现实))?|返回(?:现世|现实)|回到(?:现世|现实)|回(?:现世|现实)|(?:送|带)(?:我|我们)回(?:现世|现实)|结算(?:本轮)?蝴蝶效应)`;
-const RETURN_CLOSING = String.raw`(?:吧|了|啦|即可|就好|可以了|好吗)?[。.!！\s]*`;
+const RETURN_ACTION = String.raw`(?:遣返(?:我|我们)?(?:回去|回来|回到(?:现世|现实))?|返回(?:现世|现实)|回到(?:现世|现实)|回(?:现世|现实)|(?:送|带)(?:我|我们)回(?:现世|现实)|把(?:我|我们)(?:送|带)回(?:现世|现实)|(?:退出|离开|结束)(?:本次|这次|当前)?墟境|结算(?:本轮)?蝴蝶效应)`;
+// 呼语和拖长音是指令的尾饰，不是另一个动作；问号只接受明确的礼貌请求。
+const RETURN_END_PUNCTUATION = String.raw`[-—–。.!！\s]*`;
+const RETURN_CLOSING = String.raw`(?:一下)?(?:吧|了|啦|即可|就好|可以了|好吗[?？]?)?${RETURN_END_PUNCTUATION}(?:(?:[，,：:]\s*)?(?:伊雍(?:公主|殿下|大人)?|公主殿下)(?:啊|呀)?${RETURN_END_PUNCTUATION})?`;
 const DIRECT_RETURN_PATTERN = new RegExp(
   `^(?:请)?(?:现在|立刻|马上|直接)?${RETURN_ACTION}${RETURN_CLOSING}$`,
   'u',
@@ -46,9 +48,11 @@ const RETURN_SUFFIX_PATTERN = new RegExp(
 const RETURN_CONNECTOR_PATTERN =
   /(?:[，,：:]|然后|随后|接着|之后|完成后|处理完后|做完后|后|再|并|现在|立刻|马上|直接|就|请|我要|我们要|我选择|我决定|我请求|可以)$/u;
 const HYPOTHETICAL_RETURN_CONTEXT =
-  /^(?:如果|假如|倘若|若是|将来|未来|以后)/u;
+  /(?:^|[，,：:])\s*(?:如果|假如|倘若|若是|将来|未来|以后)/u;
 const NEGATED_RETURN_CONTEXT =
-  /(?:不要|不用|无需|不能|不会|别|暂不|暂时不|会被|被|可能|也许)(?:现在|立刻|马上|直接)?$/u;
+  /(?:不要|不用|无需|不能|不会|别|暂不|暂时不|会被|被|可能|也许)(?:现在|立刻|马上|直接)?[，,：:]?$/u;
+const REPORTED_RETURN_CONTEXT =
+  /^(?:他|她|它|他们|她们|有人|对方|NPC).*(?:说|喊|问|要求|请求|命令)/iu;
 
 export function normalizeCommandInput(input: string): string {
   return input.normalize('NFKC').replace(/\r\n?/gu, '\n').trim();
@@ -108,10 +112,12 @@ export function isExplicitReturnIntent(input: string): boolean {
   if (!action || action.index <= 0) return false;
   const prefix = raw.slice(0, action.index).trimEnd();
   const clause = prefix.split(/[。.!！?？；;\n]/u).at(-1)?.trim() ?? '';
+  // 前面是完整叙事句、末句只有指令，也属于玩家此刻的明确行动。
+  if (!clause) return true;
   if (
-    !clause
-    || HYPOTHETICAL_RETURN_CONTEXT.test(clause)
+    HYPOTHETICAL_RETURN_CONTEXT.test(clause)
     || NEGATED_RETURN_CONTEXT.test(clause)
+    || REPORTED_RETURN_CONTEXT.test(clause)
   ) return false;
   return RETURN_CONNECTOR_PATTERN.test(clause);
 }

@@ -8,6 +8,7 @@ import { WORKBENCH_APPEARANCE_EVENT } from '../runtime/facade.ts';
 import { WORKBENCH_VERSION, WORKBENCH_VERSION_LABEL } from '../core/version.ts';
 import { companionPresentation } from './companionPresentation.ts';
 import { WorkbenchUiClient, type WorkbenchUiSnapshot } from './workbenchClient.ts';
+import { ViewRefreshGuard } from './viewRefresh.ts';
 import {
   normalizeWorkbenchView,
   WORKBENCH_VIEWS,
@@ -50,6 +51,7 @@ export function mountWorkbenchShell(
   };
   let snapshot: WorkbenchUiSnapshot | null = null;
   let disposed = false;
+  const reads = new ViewRefreshGuard(() => client.contextRevision());
   let statusText = '等待工作台脚本';
   let toastTimer: ReturnType<typeof setInterval> | null = null;
   let toastRemaining = 0;
@@ -65,10 +67,16 @@ export function mountWorkbenchShell(
   const offStatus = client.onStatus(detail => {
     if (detail.phase !== 'error') statusText = detail.detail;
     updateChrome();
+    if (detail.taskType && detail.taskType !== 'system' && (detail.phase === 'success' || detail.status === 'awaiting_narrative')) {
+      void refreshChangedViews(detail.taskType === 'butterfly' ? ['timeline', 'ruin', 'genealogy', 'biography'] : [detail.taskType]);
+    }
     // Task notifications live in the Tavern host document so closing the orb
     // never hides an in-flight operation.
   });
   const offReady = client.onReady(() => void refreshAll());
+  const offContext = client.onContextChanged(() => {
+    reads.invalidate(); snapshot = null; statusText = '正在切换聊天资料'; updateChrome();
+  });
   const offDataChanged = client.onDataChanged(detail => {
     void refreshChangedViews(detail.views);
   });
@@ -221,17 +229,21 @@ export function mountWorkbenchShell(
   }
 
   async function refreshView(view: WorkbenchViewId): Promise<void> {
-    if (disposed || !client.isReady()) return;
-    await handles.get(view)?.refresh();
-    snapshot = await client.readSnapshot();
-    updateChrome();
+    await refreshChangedViews([view]);
   }
 
   async function refreshChangedViews(views: WorkbenchViewId[]): Promise<void> {
     if (disposed || !client.isReady()) return;
-    await Promise.all([...new Set(views)].map(view => handles.get(view)?.refresh()));
-    snapshot = await client.readSnapshot();
-    updateChrome();
+    const current = reads.begin();
+    try {
+      await Promise.all([...new Set(views)].map(view => handles.get(view)?.refresh()));
+      if (!current()) return;
+      const next = await client.readSnapshot();
+      if (!current()) return;
+      snapshot = next; updateChrome();
+    } catch (cause) {
+      if (current()) { statusText = cause instanceof Error ? cause.message : String(cause); updateChrome(); }
+    }
   }
 
   function updateChrome(): void {
@@ -314,8 +326,11 @@ export function mountWorkbenchShell(
 
   async function refreshAll(): Promise<void> {
     if (disposed || !client.isReady()) return;
+    const current = reads.begin();
     try {
-      snapshot = await client.readSnapshot();
+      const next = await client.readSnapshot();
+      if (!current()) return;
+      snapshot = next;
       appearance = snapshot.settings.appearance;
       applyWorkbenchAppearance(appearance);
       statusText = snapshot.runtime.flowState === 'exploring'
@@ -323,17 +338,14 @@ export function mountWorkbenchShell(
         : '现实待机 · 当前聊天资料已同步';
       await Promise.all([...handles.values()].map(handle => handle.refresh()));
     } catch (cause) {
+      if (!current()) return;
       statusText = cause instanceof Error ? cause.message : String(cause);
     }
-    updateChrome();
+    if (current()) updateChrome();
   }
 
   async function refresh(): Promise<void> {
-    if (!client.isReady()) return;
-    const handle = handles.get(active);
-    await handle?.refresh();
-    snapshot = await client.readSnapshot();
-    updateChrome();
+    await refreshView(active);
   }
 
   function applyWorkbenchAppearance(next: WorkbenchAppearance): void {
@@ -371,6 +383,7 @@ export function mountWorkbenchShell(
       overlay.scrollLeft = 0;
     }
     resetWorkspaceScroll();
+    void refresh();
   }
 
   function close(): void {
@@ -391,6 +404,7 @@ export function mountWorkbenchShell(
     refresh,
     dispose() {
       disposed = true;
+      reads.dispose(); offContext();
       if (toastTimer) clearInterval(toastTimer);
       offStatus();
       offReady();

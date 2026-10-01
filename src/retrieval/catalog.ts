@@ -205,6 +205,9 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
       }
       continue;
     }
+    // Markdown 表中的时刻冒号不是「人物名: 设定」。原表仍完整留给模型，
+    // 这里只禁止把“| 进入时墟境时间 | ...09”当作具名人物。
+    if (/^\s*\|/u.test(line)) continue;
     const field = line.match(/^\s*(?:[-*]\s*)?([^:：<>\[\]{}]{2,60})[:：]\s*(.*)$/u);
     if (!field) continue;
     const label = field[1].trim();

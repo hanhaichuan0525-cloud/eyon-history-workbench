@@ -24,7 +24,7 @@ import { parseAndValidateGenealogy } from '../src/validators/genealogy.ts';
 import { GenealogyWorkflow } from '../src/workflows/genealogy.ts';
 import { fingerprintText } from '../src/runtime/transactionIdentity.ts';
 import { WorkbenchLifecycle } from '../src/runtime/workbenchLifecycle.ts';
-import { buildGenealogyApiPrompt } from '../src/prompts/genealogy.ts';
+import { buildGenealogyApiPrompt, buildGenealogyRepairPrompt } from '../src/prompts/genealogy.ts';
 import type { GenealogyResult } from '../src/schemas/genealogy.ts';
 import { GenealogyResultSchema } from '../src/schemas/genealogy.ts';
 import { genealogyDisplayDates, genealogyEdgeDescription, genealogyFamilyView, genealogyRelationText, hasOriginFamily } from '../src/core/genealogyIdentity.ts';
@@ -733,6 +733,58 @@ test('宗族结果对单代超限做局部裁剪而非让整棵谱系报错', ()
   assert.equal(parsed.nodes.some(node => node.isFocus), true);
 });
 
+test('家庭展开合同在初次与纠正生成中保留人数目标，并隔离特殊源流例外', () => {
+  const generationContract = readFileSync(new URL('../rules/09_宗族谱系生成规则-API.txt', import.meta.url), 'utf8');
+  for (const lineageKind of ['auto', 'native', 'adoption', 'same-world-travel', 'cross-world-travel', 'possession', 'reincarnation', 'creation'] as const) {
+    const params = { requestId, directive: '宗族谱系', context: makeContext(), rules: { generationContract },
+      generationInput: { ...input, lineageKind, depth: { ...input.depth, maxPerGeneration: 7 } } };
+    for (const prompt of [buildGenealogyApiPrompt(params), buildGenealogyRepairPrompt({ ...params, validationError: '夹具校验错误' })]) {
+      assert.match(prompt, /普通生物及原界生物：每代尽量接近人数目标/u);
+      assert.match(prompt, /先连接父母两侧的祖辈/u);
+      assert.match(prompt, /不得只生成一条直线/u);
+      assert.match(prompt, /资料未记载不等于关系不存在/u);
+      assert.match(prompt, /构装体按有意义的源流展开/u);
+      assert.match(prompt, /创造者与具体前代分线/u);
+      assert.match(prompt, /人数不足不新增错误输出/u);
+      assert.match(prompt, /两套家族分别计数/u);
+      assert.match(prompt, /不编新纪元/u);
+    }
+  }
+});
+
+test('七人预算保留父母两侧家庭及旁系；不足目标不拒绝整图', () => {
+  const context = makeContext(), result: GenealogyResult = makeResult();
+  const scopedInput = { ...input, lineageKind: 'native' as const, depth: { ancestors: 4, descendants: 0, maxPerGeneration: 7 } };
+  result.depth = scopedInput.depth;
+  result.nodes[0].identity = { lineageKind: 'native' };
+  const relatives = [
+    ['mother', '母亲', -1], ['paternal-grandfather', '祖父', -2], ['paternal-grandmother', '祖母', -2],
+    ['maternal-grandfather', '外祖父', -2], ['maternal-grandmother', '外祖母', -2], ['aunt', '姑母', -1],
+    ['uncle', '舅父', -1], ['sister', '妹妹', 0], ['cousin', '表妹', 0],
+  ] as const;
+  for (const [id, relationToFocus, generation] of relatives) {
+    result.nodes.push({ ...structuredClone(result.nodes[1]), id, name: `测试${relationToFocus}`, generation, relationToFocus,
+      provenance: 'generated', sourceRefs: [], birth: life('unknown', null, '生年不详'), death: life('unknown', null, '卒年不详') });
+  }
+  for (const [from, to] of [
+    ['mother', 'focus'], ['father', 'sister'], ['mother', 'sister'],
+    ['paternal-grandfather', 'father'], ['paternal-grandmother', 'father'],
+    ['paternal-grandfather', 'aunt'], ['paternal-grandmother', 'aunt'],
+    ['maternal-grandfather', 'mother'], ['maternal-grandmother', 'mother'],
+    ['maternal-grandfather', 'uncle'], ['maternal-grandmother', 'uncle'], ['uncle', 'cousin'],
+  ]) result.edges.push({ id: `${from}-${to}`, from, to, relationType: 'parent', label: '亲子', sourceRefs: [] });
+  const parsed = parseAndValidateGenealogy(JSON.stringify(result), { requestId, input: scopedInput, context });
+  assert.equal(parsed.nodes.length, 11);
+  assert.equal(parsed.nodes.filter(node => node.generation === -2).length, 4);
+  assert.equal(parsed.nodes.filter(node => node.generation === -1).length, 4);
+  const lines = createGenealogyBoardConnectors(parsed, createGenealogyBoardLayout(parsed));
+  const idFor = (name: string) => parsed.nodes.find(node => node.name === name)!.id;
+  assert.ok(lines.some(line => line.parentIds.includes(idFor('测试祖父')) && line.childIds.includes(idFor('马克西姆三世'))));
+  assert.ok(lines.some(line => line.parentIds.includes(idFor('测试外祖父')) && line.childIds.includes(idFor('测试母亲'))));
+  const sparse = makeResult(); sparse.depth = scopedInput.depth;
+  assert.equal(parseAndValidateGenealogy(JSON.stringify(sparse), { requestId, input: scopedInput, context }).nodes.length, 2);
+});
+
 test('没有亲缘资料时允许补足父系与母系人物，且不伪造来源或MVU身份', () => {
   const context = makeContext();
   const focusView = context.evidenceBundle.personCanonViews![0];
@@ -872,6 +924,41 @@ test('宗族生成只落当前聊天仓库，不写MVU、正文或墟境状态',
   );
   assert.equal(record.result.nodes.length, 2);
   assert.equal((await repository.list({ ...namespace, chatId: '另一存档' })).length, 0);
+});
+
+test('检索未选中MVU摘录时仍按当前MVU名册允许重复生成，旧档案不能授予准入', async () => {
+  const context = makeContext();
+  const currentMvuCharacters = context.characterContext.map(({ sourceId, title }) => ({ sourceId, title }));
+  const selected = context.sourceIndex.filter(source => source.sourceType !== 'mvu');
+  context.characterContext = [];
+  context.sourceIndex = selected;
+  context.evidenceBundle = makeEvidenceBundle(selected);
+  const repository = new MemoryGenealogyRepository();
+  let calls = 0;
+  let roster = currentMvuCharacters;
+  let currentRequestId = requestId;
+  const workflow = new GenealogyWorkflow({
+    contextAssembler: { async assemble({ requestId: id }) { return { ...context, requestId: id, currentMvuCharacters: roster }; } },
+    generator: {
+      async generate(_task, prompt) {
+        calls++;
+        assert.doesNotMatch(prompt, /"currentMvuCharacters"/u, '准入名册不加入模型资料包');
+        return JSON.stringify({ ...makeResult(), requestId: currentRequestId });
+      },
+    },
+    repository, rules: { generationContract: '测试合同' },
+    createRequestId: () => (currentRequestId = `${requestId}-${calls + 1}`), now: () => calls, async assertCurrent() {},
+  });
+  const command = createButtonCommand('genealogy.generate', `宗族谱系 ${input.focusCharacter.name}`);
+  const identity = { namespace, triggerMessageId: 8, triggerTextHash: 'hash', triggerSwipeId: 0, lifecycleEpoch: 0 };
+  await workflow.generate(command, input, identity);
+  await workflow.generate(command, input, identity);
+  assert.equal(calls, 2, '已有族谱不影响仍在MVU中的中心人物再次生成');
+  assert.equal((await repository.list(namespace)).length, 2);
+  roster = [];
+  context.characterContext = makeContext().characterContext;
+  await assert.rejects(workflow.generate(command, input, identity), /只有当前聊天MVU关系列表/u);
+  assert.equal(calls, 2, '当前完整名册为空时不回退到旧摘录或旧档案');
 });
 
 test('GB-07 坏引用局部降级，精确名册恢复真实来源，不额外调用模型', async () => {

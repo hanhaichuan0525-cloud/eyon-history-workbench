@@ -6,6 +6,7 @@ import {
   type ButterflyArchiveItem,
 } from './timelineView.ts';
 import { WorkbenchUiClient } from './workbenchClient.ts';
+import { preserveDomState, ViewRefreshGuard } from './viewRefresh.ts';
 import timelineCss from './timelineWorkbench.css?raw';
 import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
 
@@ -42,6 +43,8 @@ export function mountTimelineWorkbench(
   const root = host.attachShadow({ mode: 'open' });
   container.replaceChildren(host);
   let theme = options.theme ?? 'light';
+  const reads = new ViewRefreshGuard(() => client.contextRevision());
+  const mutations = new ViewRefreshGuard(() => client.contextRevision());
   const state: TimelineState = {
     runtime: null,
     butterflies: [],
@@ -63,6 +66,7 @@ export function mountTimelineWorkbench(
       state.status = detail.detail;
       state.error = '';
       render();
+      if (detail.phase === 'success') void refresh();
       return;
     }
     if (
@@ -70,11 +74,12 @@ export function mountTimelineWorkbench(
       && detail.taskType !== 'butterfly'
       && detail.taskType !== 'system'
     ) return;
+    if (detail.phase === 'cancelled') { mutations.invalidate(); reads.invalidate(); state.busy = false; }
     state.status = detail.detail;
     if (detail.phase === 'error' && detail.taskType === 'butterfly') {
       state.error = detail.detail;
     }
-    render();
+    if (!detail.request) render();
     if (
       detail.taskType === 'butterfly'
       && (
@@ -85,6 +90,11 @@ export function mountTimelineWorkbench(
     ) void refresh();
   });
   const offReady = client.onReady(() => void refresh());
+  const offContext = client.onContextChanged(() => {
+    mutations.invalidate();
+    reads.invalidate(); state.runtime = null; state.butterflies = []; state.failedRunReasons = new Map();
+    state.selectedRunId = ''; state.busy = false; state.status = ''; state.error = ''; render();
+  });
   const offDataChanged = client.onDataChanged(detail => {
     if (detail.views.includes('timeline')) void refresh();
   });
@@ -94,12 +104,14 @@ export function mountTimelineWorkbench(
       render();
       return;
     }
+    const current = reads.begin();
     try {
       const [runtime, butterflies, pending] = await Promise.all([
         client.getRuinRuntimeSnapshot(),
         client.listButterflies(),
         client.listButterflyPending(),
       ]);
+      if (!current()) return;
       state.runtime = runtime;
       state.butterflies = butterflies;
       state.failedRunReasons = new Map(
@@ -113,6 +125,7 @@ export function mountTimelineWorkbench(
       }
       state.error = '';
     } catch (error) {
+      if (!current()) return;
       state.error = error instanceof Error ? error.message : String(error);
     }
     render();
@@ -120,15 +133,21 @@ export function mountTimelineWorkbench(
 
   async function returnRuin(): Promise<void> {
     if (!state.runtime || state.runtime.flowState === 'idle' || state.busy) return;
+    const current = operationIsCurrent();
+    reads.invalidate();
     state.busy = true;
     state.error = '';
     render();
     try {
       await client.returnRuin();
+      if (!current()) return;
+      reads.invalidate();
       state.status = '遣返指令已发送，伊雍正在冻结本轮历史锚点';
     } catch (error) {
+      if (!current()) return;
       state.error = error instanceof Error ? error.message : String(error);
     } finally {
+      if (!current()) return;
       state.busy = false;
       render();
     }
@@ -136,16 +155,22 @@ export function mountTimelineWorkbench(
 
   async function retryButterfly(runId: string): Promise<void> {
     if (!runId || state.busy) return;
+    const current = operationIsCurrent();
+    reads.invalidate();
     state.busy = true;
     state.error = '';
     render();
     try {
       await client.retryButterfly(runId);
+      if (!current()) return;
+      reads.invalidate();
       state.status = '伊雍正在重新校核这份历史回响';
       await refresh();
     } catch (error) {
+      if (!current()) return;
       state.error = error instanceof Error ? error.message : String(error);
     } finally {
+      if (!current()) return;
       state.busy = false;
       render();
     }
@@ -157,24 +182,37 @@ export function mountTimelineWorkbench(
       '删除这份可见蝴蝶效应档案？\n\n已写入正文和正史的内容不会因此回滚。若该干涉仍然有效，系统只保留一份不可浏览的紧凑因果摘要，供正文维持来龙去脉。',
     );
     if (!confirmed) return;
+    const current = operationIsCurrent();
+    reads.invalidate();
     state.busy = true;
     state.error = '';
     render();
     try {
       const deleted = await client.deleteButterfly(runId);
+      if (!current()) return;
+      reads.invalidate();
       state.status = deleted
         ? '可见档案已删除；已生效的正史没有回滚，活动干涉的紧凑因果摘要仍会保留'
         : '这份档案已经不存在';
       await refresh();
     } catch (error) {
+      if (!current()) return;
       state.error = error instanceof Error ? error.message : String(error);
     } finally {
+      if (!current()) return;
       state.busy = false;
       render();
     }
   }
 
+  function operationIsCurrent(): () => boolean {
+    const current = mutations.begin();
+    return () => !state.disposed && current();
+  }
+
   function render(): void {
+    if (state.disposed) return;
+    const restore = preserveDomState(root);
     const runtime = state.runtime ?? emptyRuntime();
     const archives = visibleButterflyArchives(state.butterflies, state.failedRunReasons);
     const selected = archives.find(item =>
@@ -272,6 +310,7 @@ export function mountTimelineWorkbench(
       </section>
     `;
     bindEvents();
+    restore();
   }
 
   function bindEvents(): void {
@@ -315,7 +354,9 @@ export function mountTimelineWorkbench(
         ?.setAttribute('data-theme', appearance.mode);
     },
     dispose() {
+      mutations.dispose();
       state.disposed = true;
+      reads.dispose(); offContext();
       offStatus();
       offReady();
       offDataChanged();

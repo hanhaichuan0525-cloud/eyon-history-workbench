@@ -76,7 +76,9 @@ export class GenealogyWorkflow {
     ) {
       throw new Error('Genealogy context belongs to a different chat request');
     }
-    const focusSource = context.characterContext.find(source =>
+    // 检索摘录是模型证据，不是MVU完整名册；已有族谱占用预算不能剥夺当前人物准入。
+    // 旧装配器兼容摘录；生产装配器总是提供完整名册（包括空名单）。
+    const focusSource = (context.currentMvuCharacters ?? context.characterContext).find(source =>
       source.sourceId === `mvu-character:${input.focusCharacter.mvuId}`
       || normalize(source.title) === normalize(input.focusCharacter.name)
     );
@@ -91,7 +93,9 @@ export class GenealogyWorkflow {
       context,
       rules: this.dependencies.rules,
     });
-    const rawResult = await this.dependencies.generator.generate('genealogy', prompt);
+    await this.dependencies.assertCurrent(identity);
+    const rawResult = await this.dependencies.generator.generate('genealogy', prompt, { progressLabel: '正在构建人物与家庭关系' });
+    await this.dependencies.assertCurrent(identity);
     const validationWarnings: string[] = [];
     const onWarning = (warning: string) => { if (validationWarnings.length < 64) validationWarnings.push(warning); };
     let result;
@@ -113,9 +117,11 @@ export class GenealogyWorkflow {
         context,
         rules: this.dependencies.rules,
       });
+      await this.dependencies.assertCurrent(identity);
       const repairedResult = await this.dependencies.generator.generate(
         'genealogy',
         repairPrompt,
+        { progressLabel: '正在修订人物与关系位置' },
       );
       result = parseAndValidateGenealogy(repairedResult, {
         onWarning,

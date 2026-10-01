@@ -130,6 +130,7 @@ export interface BiographyPreparation {
 }
 
 export interface BiographyPrepareOptions {
+  assertActive?: () => void;
   scope?: BiographyWorkflowScope;
   assertCurrent?(scope: BiographyWorkflowScope): Promise<void>;
 }
@@ -166,6 +167,7 @@ export class BiographyWorkflow {
     }
 
     const initialScope = options.scope ?? await this.dependencies.getScope();
+    options.assertActive?.();
     const requestId = this.dependencies.createRequestId();
     const stagePlan = this.dependencies.createStagePlan();
     const context = await this.dependencies.contextAssembler.assemble({
@@ -175,9 +177,10 @@ export class BiographyWorkflow {
       directive: command.raw,
     });
     this.assertScope(initialScope, context.scope);
+    options.assertActive?.();
 
     // Step A：规划（1 个轻请求）
-    const plan = await this.plan(requestId, command.raw, context, stagePlan);
+    const plan = await this.plan(requestId, command.raw, context, stagePlan, options.assertActive);
     await this.assertCurrent(initialScope, options);
 
     // Step B：小批量扩写（严格顺序，逐块请求 + 定向修复）
@@ -253,6 +256,7 @@ export class BiographyWorkflow {
       createdAt: now,
       updatedAt: now,
     };
+    options.assertActive?.();
     await this.dependencies.repository.saveValidated(record);
 
     const slot = createSlot('rootTrace', requestId);
@@ -273,6 +277,7 @@ export class BiographyWorkflow {
     directive: string,
     context: BiographyContextBundle,
     stagePlan: BiographyStagePlan,
+    assertActive?: () => void,
   ): Promise<BiographyPlan> {
     const input = {
       requestId,
@@ -282,11 +287,13 @@ export class BiographyWorkflow {
       stagePlan,
     };
     const prompt = buildBiographyPlanPrompt(input);
+    assertActive?.();
     const rawResult = await this.dependencies.generator.generate(
       'biography',
       prompt,
       { progressLabel: '正在规划全篇 · 起源、5–8个阶段与现状' },
     );
+    assertActive?.();
     try {
       return parseAndValidateBiographyPlan(rawResult, { requestId, directive, stagePlan, context });
     } catch (error) {
@@ -295,6 +302,7 @@ export class BiographyWorkflow {
         ...input,
         validationError: summarizeBiographyValidationError(error),
       });
+      assertActive?.();
       const repairedRaw = await this.dependencies.generator.generate(
         'biography',
         repairPrompt,
@@ -396,11 +404,13 @@ export class BiographyWorkflow {
           promptInput,
           knownSources,
           writingProgress,
+          options.assertActive,
         )
         : await this.generateBatchWithRepair(
           promptInput,
           knownSources,
           writingProgress,
+          options.assertActive,
         );
       // 每个原始批次只追加一次完整自然语言复核：关键词检测只补充高风险实体与资料，
       // 不再决定某段是否有资格被审阅。否定范围、代词、部件与替代物交给模型结合
@@ -537,6 +547,7 @@ export class BiographyWorkflow {
           reviewInput,
           knownSources,
           biographyPassageProgressLabel(plan, blocks, index, batch.length, 'review'),
+          options.assertActive,
         );
         // 若相关旧作品的原文已送入复核，但本批仍有段落逐字未变，再给模型
         // 一次聚焦比较机会。只重写本批，失败保留首轮结果；不靠词段判错或截断。
@@ -552,6 +563,7 @@ export class BiographyWorkflow {
               },
               knownSources,
               biographyPassageProgressLabel(plan, blocks, index, batch.length, 'focused'),
+              options.assertActive,
             );
             if (focused.some(passage => reviewed.some(previous =>
               previous.passageId === passage.passageId && previous.content !== passage.content))) {
@@ -601,6 +613,7 @@ export class BiographyWorkflow {
       }>();
       if (eventPairCandidatesForBatch.length > 0 && relationViewForBatch) {
         try {
+          options.assertActive?.();
           const rawVerdicts = await this.dependencies.generator.generate(
             'biography',
             buildBiographyContinuityJudgePrompt({
@@ -619,6 +632,7 @@ export class BiographyWorkflow {
               ),
             },
           );
+          options.assertActive?.();
           for (const verdict of parseContinuityEventJudgeText(
             rawVerdicts,
             eventPairCandidatesForBatch,
@@ -679,6 +693,7 @@ export class BiographyWorkflow {
     input: Parameters<typeof buildBiographyPassageBatchPrompt>[0],
     knownSources: Set<string>,
     progressLabel = '',
+    assertActive?: () => void,
   ): Promise<BiographyPassageResponse[]> {
     const prompt = buildBiographyPassageBatchPrompt(input);
       const expected = {
@@ -700,11 +715,13 @@ export class BiographyWorkflow {
     try {
       // 截断/畸形响应可能来自传输层（generator.generate 抛错）或解析层，
       // 两层都在捕获范围内：批次失败统一降级为逐块单块生成。
+      assertActive?.();
       const raw = await this.dependencies.generator.generate(
         'biography',
         prompt,
         { progressLabel },
       );
+      assertActive?.();
       return parseAndValidateBiographyPassageBatch(raw, expected);
     } catch (error) {
       // 整批失败：降级为逐块独立生成（块间无需承接，各自成篇）。
@@ -716,7 +733,7 @@ export class BiographyWorkflow {
       if (!(error instanceof BiographyValidationError) && !truncated) {
         throw error;
       }
-      return this.expandBatchIndividually(input, knownSources, progressLabel);
+      return this.expandBatchIndividually(input, knownSources, progressLabel, assertActive);
     }
   }
 
@@ -724,9 +741,12 @@ export class BiographyWorkflow {
     input: Parameters<typeof buildBiographyPassageBatchPrompt>[0],
     knownSources: Set<string>,
     progressLabel: string,
+    assertActive?: () => void,
   ): Promise<BiographyPassageResponse[]> {
     const prompt = buildBiographyPassageBatchPrompt(input);
+    assertActive?.();
     const raw = await this.dependencies.generator.generate('biography', prompt, { progressLabel });
+    assertActive?.();
     return parseAndValidateBiographyPassageBatch(raw, {
       requestId: input.requestId,
       passages: input.passages.map(block => ({
@@ -749,6 +769,7 @@ export class BiographyWorkflow {
     input: Parameters<typeof buildBiographyPassageBatchPrompt>[0],
     knownSources: Set<string>,
     progressLabel = '',
+    assertActive?: () => void,
   ): Promise<BiographyPassageResponse[]> {
     const result: BiographyPassageResponse[] = [];
     const continuityPassages = [...(input.continuityPassages ?? [])];
@@ -784,6 +805,7 @@ export class BiographyWorkflow {
           1,
           'writing',
         ),
+        assertActive,
       );
       result.push(passage);
       continuityPassages.push(passage);
@@ -795,13 +817,16 @@ export class BiographyWorkflow {
     input: Parameters<typeof buildBiographyPassagePrompt>[0],
     knownSources: Set<string>,
     progressLabel = '',
+    assertActive?: () => void,
   ): Promise<BiographyPassageResponse> {
     const prompt = buildBiographyPassagePrompt(input);
+    assertActive?.();
     const raw = await this.dependencies.generator.generate(
       'biography',
       prompt,
       { progressLabel },
     );
+    assertActive?.();
       const expected = {
       requestId: input.requestId,
       passageId: input.passage.passageId,
@@ -828,7 +853,10 @@ export class BiographyWorkflow {
           ? '本次是正文太短：请把本段重写成至少 330 个字符（去除空白后的字符总数，含标点）。直接写一份更充实的完整段落，不要只补几个字。'
           : undefined,
       });
-      const repairedRaw = await this.dependencies.generator.generate('biography', repairPrompt);
+      assertActive?.();
+      const repairedRaw = await this.dependencies.generator.generate('biography', repairPrompt, {
+        progressLabel: `${progressLabel || '当前正文'} · 正在修订本段`,
+      });
       return parseAndValidateBiographyPassage(repairedRaw, expected);
     }
   }
@@ -837,18 +865,22 @@ export class BiographyWorkflow {
     scope: BiographyWorkflowScope,
     options: BiographyPrepareOptions,
   ): Promise<void> {
+    options.assertActive?.();
     if (options.assertCurrent) {
       await options.assertCurrent(scope);
     } else {
       await this.assertCurrentScope(scope);
     }
+    options.assertActive?.();
   }
 
   async commit(
     preparation: BiographyPreparation,
     assistantMessageId: number,
+    assertActive?: () => void,
   ): Promise<BiographyWorkflowResult> {
     const message = await this.dependencies.shell.readAssistantMessage(assistantMessageId);
+    assertActive?.();
     const assembled = insertRootTrace(
       message,
       preparation.slot,
@@ -858,11 +890,14 @@ export class BiographyWorkflow {
       assistantMessageId,
       assembled.content,
     );
+    assertActive?.();
     await this.dependencies.shell.refreshAssistantMessage(assistantMessageId);
+    assertActive?.();
     await this.dependencies.repository.markCommitted(
       preparation.recordKey,
       assistantMessageId,
     );
+    assertActive?.();
 
     return {
       requestId: preparation.requestId,

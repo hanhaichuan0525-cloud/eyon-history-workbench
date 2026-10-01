@@ -198,6 +198,39 @@ test('已有未结束墟境任务时在 API 调用前拒绝建立第二项', asy
   assert.equal(generated, false);
 });
 
+test('停止草案时资料读取挂起，晚到结果不能发起模型或恢复草案', async () => {
+  const host = mockHost([]);
+  let resume!: (value: Awaited<ReturnType<HostAdapter['getNamespace']>>) => void;
+  host.getNamespace = () => new Promise(done => { resume = done; });
+  const statuses: string[] = [];
+  let calls = 0;
+  const runtime = mockRuntime([]);
+  const workflow = new RuinTaskWorkflow({ host, generator: { async generate() { calls += 1; return draftJson; } },
+    userTurns: { async sendUserTurn() { throw new Error('should not send'); } }, runtime,
+    sources: mockSources(), shell: new TavernRuinTaskShellAdapter(runtime), hooks: { onStatus: status => statuses.push(status) } });
+  const pending = workflow.generateDraft({ direction: '敲一下', interpretation: '原意锁定', scale: '即时互动' });
+  const rejected = assert.rejects(pending, /cancelled/u);
+  await workflow.cancelPending(); resume({ characterKey: 'character', chatId: 'chat' });
+  await rejected; assert.equal(calls, 0); assert.deepEqual(statuses, []);
+});
+
+test('任务确认在资料等待中停止，不会补发玩家楼或注入提示', async () => {
+  const host = mockHost([]); const runtime = mockRuntime([]);
+  let sends = 0;
+  const statuses: string[] = [];
+  const workflow = new RuinTaskWorkflow({ host, generator: { async generate() { return draftJson; } },
+    userTurns: { async sendUserTurn() { sends += 1; return { messageId: 1 }; } }, runtime,
+    sources: mockSources(), shell: new TavernRuinTaskShellAdapter(runtime), hooks: { onStatus: status => statuses.push(status) } });
+  await workflow.generateDraft({ direction: '追回账册', interpretation: '原意锁定', scale: '即时互动' });
+  workflow.stageDraftForComposer(); statuses.length = 0;
+  let resume!: (value: Awaited<ReturnType<HostAdapter['getNamespace']>>) => void;
+  host.getNamespace = () => new Promise(done => { resume = done; });
+  const pending = workflow.confirmStagedDraft('确认墟境任务：追回焚毁前的账册');
+  const rejected = assert.rejects(pending, /cancelled/u);
+  await workflow.cancelPending(); resume({ characterKey: 'character', chatId: 'chat' });
+  await rejected; assert.equal(sends, 0); assert.deepEqual(statuses, []);
+});
+
 test('任务先生成可编辑草案，写入输入框时不创建玩家楼，玩家亲自发送后才封缄', async () => {
   const messages: RuntimeChatMessage[] = [{ message_id: 0, role: 'assistant', message: '库门外传来脚步。' }];
   const runtime = mockRuntime(messages);

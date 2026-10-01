@@ -15,7 +15,7 @@ import type {
 } from './tavernBiographyShell.ts';
 import type { TavernRuntime } from './contracts.ts';
 import { fingerprintText } from './transactionIdentity.ts';
-import { isTaskCancellationError } from './tavernGeneration.ts';
+import { GenerationCancelledError, isTaskCancellationError } from './tavernGeneration.ts';
 
 export type BiographyControllerStatus =
   | 'assembling_context'
@@ -36,6 +36,7 @@ export interface PreparedBiography {
 }
 
 export class BiographyController {
+  private epoch = 0;
   private readonly inFlight = new Map<string, Promise<PreparedBiography | null>>();
   private pending: BiographyFloorLock | null = null;
   private settlePoll: {
@@ -64,10 +65,12 @@ export class BiographyController {
   }
 
   async prepareText(text: string): Promise<PreparedBiography | null> {
+    const epoch = this.epoch;
     const command = parseTextCommand(text);
     if (!command || command.type !== 'biography.generate') return null;
 
     const scope = await this.getScope();
+    this.assertActive(epoch);
     const trigger = this.requireTrigger(scope.triggerMessageId);
     const triggerTextHash = fingerprintText(trigger.message);
     if (fingerprintText(text) !== triggerTextHash) {
@@ -82,6 +85,7 @@ export class BiographyController {
     ].join('::');
     const existing = this.inFlight.get(key);
     if (existing) return existing;
+    if (this.inFlight.size) throw new Error('传记正在准备，请等待或停止当前任务');
     if (this.pending) {
       if (pendingKey(this.pending) === key) {
         // 同一触发楼的再次请求(重roll、swipe、双入口):复用已准备的传记。
@@ -94,6 +98,7 @@ export class BiographyController {
         };
       }
       await this.clearPending();
+      this.assertActive(epoch);
     }
 
     // 双入口(生成拦截器 + GENERATION_AFTER_COMMANDS)可能并发进入:
@@ -104,6 +109,7 @@ export class BiographyController {
         scope.namespace,
         scope.triggerMessageId,
       );
+      this.assertActive(epoch);
       if (committed) {
         console.info('[Eyon History Workbench] biography reuse path', {
           triggerMessageId: scope.triggerMessageId,
@@ -119,6 +125,10 @@ export class BiographyController {
           reuse: true,
         };
         await this.shell.arm(lock);
+        if (epoch !== this.epoch) {
+          await this.shell.clear(lock.preparation.requestId);
+          this.assertActive(epoch);
+        }
         this.pending = lock;
         this.hooks.onStatus?.('awaiting_narrative', '复用已有传记，正在重写正文');
         return { preparation, triggerTextHash };
@@ -131,8 +141,9 @@ export class BiographyController {
         command,
         triggerTextHash,
         this.runtime.getMessageSwipeId(scope.triggerMessageId),
+        epoch,
       );
-    })().finally(() => this.inFlight.delete(key));
+    })().finally(() => { if (this.inFlight.get(key) === task) this.inFlight.delete(key); });
     this.inFlight.set(key, task);
     return task;
   }
@@ -141,10 +152,12 @@ export class BiographyController {
     text: string,
     expectedMessageId: number,
   ): Promise<PreparedBiography | null> {
+    const epoch = this.epoch;
     const command = parseTextCommand(text);
     if (!command || command.type !== 'biography.generate') return null;
 
     const current = await this.getScope();
+    this.assertActive(epoch);
     const scope: BiographyWorkflowScope = {
       namespace: current.namespace,
       triggerMessageId: expectedMessageId,
@@ -158,15 +171,18 @@ export class BiographyController {
     ].join('::');
     const existing = this.inFlight.get(key);
     if (existing) return existing;
+    if (this.inFlight.size) throw new Error('传记正在准备，请等待或停止当前任务');
     if (this.pending) await this.clearPending();
+    this.assertActive(epoch);
 
     const task = this.prepare(
       command,
       triggerTextHash,
       null,
+      epoch,
       scope,
       async expected => this.assertPendingUserTurn(expected),
-    ).finally(() => this.inFlight.delete(key));
+    ).finally(() => { if (this.inFlight.get(key) === task) this.inFlight.delete(key); });
     this.inFlight.set(key, task);
     return task;
   }
@@ -190,6 +206,7 @@ export class BiographyController {
   }
 
   async commitRendered(assistantMessageId: number): Promise<BiographyWorkflowResult | null> {
+    const epoch = this.epoch;
     const lock = this.pending;
     if (!lock) return null;
     // 先断言楼层身份,通过后才销毁锁与协作提示。
@@ -198,6 +215,7 @@ export class BiographyController {
     // 必须保留锁等待真正的新楼事件,而不是提前销毁事务导致传记丢失。
     try {
       await this.shell.assertRenderedFloor(lock, assistantMessageId);
+      this.assertActive(epoch);
     } catch (error) {
       if (isTaskCancellationError(error)) throw error;
       const detail = error instanceof Error ? error.message : String(error);
@@ -212,9 +230,11 @@ export class BiographyController {
     // 即刻释放提示租约；后续等待流式结束、插入传记与存档
     // 仍由 pending lock 独立完成，不再污染下一楼。
     await this.shell.clear(lock.preparation.requestId);
+    this.assertActive(epoch);
     // 假流/流式中间态:目标楼已通过身份断言但正文尚未生成完整。
     // 跳过本次提交,保留锁等待内容完整后的下一次渲染事件。
     const content = await this.shell.readAssistantMessage(assistantMessageId);
+    this.assertActive(epoch);
     if (!content.trim()) {
       console.warn('[Eyon History Workbench] biography target floor is still empty; waiting for content', {
         assistantMessageId,
@@ -243,16 +263,20 @@ export class BiographyController {
   ): Promise<BiographyWorkflowResult | null> {
     this.stopSettlePoll();
     if (this.pending !== lock) return null;
+    const epoch = this.epoch;
     this.pending = null;
     await this.shell.clear(lock.preparation.requestId);
+    this.assertActive(epoch);
     try {
-      const result = await this.workflow.commit(lock.preparation, assistantMessageId);
+      const result = await this.workflow.commit(lock.preparation, assistantMessageId, () => this.assertActive(epoch));
+      this.assertActive(epoch);
       await this.shell.attachRequestMetadata(lock, assistantMessageId);
+      this.assertActive(epoch);
       this.hooks.onStatus?.('committed', '完整传记已写入当前存档');
       this.hooks.onCommitted?.(result);
       return result;
     } catch (error) {
-      if (isTaskCancellationError(error)) throw error;
+      if (epoch !== this.epoch || isTaskCancellationError(error)) throw error;
       const detail = error instanceof Error ? error.message : String(error);
       this.hooks.onStatus?.('failed', detail);
       throw error;
@@ -296,6 +320,8 @@ export class BiographyController {
   }
 
   async cancelPending(): Promise<void> {
+    this.epoch += 1;
+    this.inFlight.clear();
     await this.clearPending();
   }
 
@@ -311,31 +337,44 @@ export class BiographyController {
     command: NonNullable<ReturnType<typeof parseTextCommand>>,
     triggerTextHash: string,
     triggerSwipeId: number | null,
+    epoch: number,
     scope?: BiographyWorkflowScope,
     assertCurrent?: (scope: BiographyWorkflowScope) => Promise<void>,
   ): Promise<PreparedBiography> {
+    const assertActive = () => this.assertActive(epoch);
     try {
+      assertActive();
       this.hooks.onStatus?.('assembling_context', '正在查找与本次传记有关的史料');
       this.hooks.onStatus?.('generating_archive', '已找到材料，正在安排全篇段落');
       const preparation = await this.workflow.prepare(command, {
         scope,
         assertCurrent,
+        assertActive,
       });
+      assertActive();
       const lock: BiographyFloorLock = {
         preparation,
         triggerTextHash,
         triggerSwipeId,
       };
       await this.shell.arm(lock);
+      if (epoch !== this.epoch) {
+        await this.shell.clear(preparation.requestId);
+        assertActive();
+      }
       this.pending = lock;
       this.hooks.onStatus?.('awaiting_narrative', '正在将完整传记写入这一轮正文');
       return { preparation, triggerTextHash };
     } catch (error) {
-      if (isTaskCancellationError(error)) throw error;
+      if (epoch !== this.epoch || isTaskCancellationError(error)) throw error;
       const detail = error instanceof Error ? error.message : String(error);
       this.hooks.onStatus?.('failed', detail);
       throw error;
     }
+  }
+
+  private assertActive(epoch: number): void {
+    if (epoch !== this.epoch) throw new GenerationCancelledError('biography');
   }
 
   private async assertPendingUserTurn(expected: BiographyWorkflowScope): Promise<void> {
@@ -361,8 +400,9 @@ export class BiographyController {
   private async clearPending(): Promise<void> {
     this.stopSettlePoll();
     if (!this.pending) return;
-    await this.shell.clear(this.pending.preparation.requestId);
+    const lock = this.pending;
     this.pending = null;
+    await this.shell.clear(lock.preparation.requestId);
   }
 }
 

@@ -242,6 +242,23 @@ select {
   background: rgba(82, 184, 173, .16);
 }
 
+.clear-genealogy-button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.clear-genealogy-button:hover:not(:disabled),
+.clear-genealogy-button:focus-visible {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 button:disabled,
 select:disabled {
   cursor: not-allowed;

@@ -1,4 +1,6 @@
 import { BiographyController } from './runtime/biographyController.ts';
+import { TaskStatusProjection } from './runtime/taskStatus.ts';
+import { WORKBENCH_CONTEXT_EVENT } from './runtime/facade.ts';
 import { WORKBENCH_VERSION } from './core/version.ts';
 import { ButterflyController } from './runtime/butterflyController.ts';
 import { TavernButterflyNarrativeShell } from './runtime/tavernButterflyShell.ts';
@@ -34,6 +36,7 @@ import {
 import { TavernBiographyShellAdapter } from './runtime/tavernBiographyShell.ts';
 import {
   TavernGenerationAdapter,
+  GenerationCancelledError,
   isGenerationCancelledError,
 } from './runtime/tavernGeneration.ts';
 import {
@@ -84,6 +87,7 @@ import {
 import {
   IndexedDbRuinCharacterReferenceRepository,
   ruinCharacterReferenceIdentity,
+  pruneStaleGenealogyReferences,
   type RuinSelectedCharacter,
 } from './storage/ruinReferences.ts';
 import { namespaceKey } from './core/namespace.ts';
@@ -203,12 +207,47 @@ async function bootstrap(): Promise<void> {
   const settings = new ScriptWorkbenchSettings(
     createGlobalScriptVariableBindings(globalObject),
   );
+  const taskStatuses = new TaskStatusProjection();
+  let contextRevision = 0;
+  let clearingContext = 0;
+  const activeTasks = new Map<GenerationTaskType, symbol>();
+  const referenceWrites = new Map<string, Promise<unknown>>();
+  async function mutateReferences<T>(work: () => Promise<T>): Promise<T> {
+    const context = contextRevision;
+    const key = namespaceKey(scopeReader.getNamespace());
+    const previous = referenceWrites.get(key) ?? Promise.resolve();
+    const task = previous.catch(() => undefined).then(() => {
+      if (context !== contextRevision) throw new GenerationCancelledError('ruin');
+      return work();
+    });
+    referenceWrites.set(key, task);
+    try { return await task; }
+    finally { if (referenceWrites.get(key) === task) referenceWrites.delete(key); }
+  }
+  const runTask = async <T>(task: GenerationTaskType, work: (assertActive: () => void) => Promise<T>): Promise<T> => {
+    if (clearingContext) throw new Error('正在切换聊天资料，请稍候');
+    if (activeTasks.has(task)) throw new Error(`${taskLabel(task)}正在进行，请等待或停止当前任务`);
+    const token = Symbol(task);
+    const context = contextRevision;
+    activeTasks.set(task, token);
+    const assertActive = () => {
+      if (context !== contextRevision || activeTasks.get(task) !== token) throw new GenerationCancelledError(task);
+    };
+    try {
+      const result = await work(assertActive);
+      assertActive();
+      return result;
+    } finally {
+      if (activeTasks.get(task) === token) activeTasks.delete(task);
+    }
+  };
   const emitTaskStatus = (
     taskType: GenerationTaskType,
     status: string,
     detail = '',
     extra: Partial<WorkbenchStatusDetail> = {},
   ) => {
+    if (clearingContext) return;
     const phase = extra.phase ?? classifyStatusPhase(status);
     const technicalDetail = phase === 'error' ? detail : extra.technicalDetail;
     if (phase === 'error') {
@@ -228,14 +267,16 @@ async function bootstrap(): Promise<void> {
       phase === 'error'
         ? `${taskLabel(taskType)}未完成，详情已保存至设置中的错误日志`
         : detail,
-      {
+      taskStatuses.project({
+        status,
+        detail: phase === 'error' ? `${taskLabel(taskType)}未完成，详情已保存至设置中的错误日志` : detail,
         ...extra,
         taskType,
         phase,
         cancellable: extra.cancellable
-          ?? (phase === 'running' || phase === 'retrying'),
+          ?? (phase === 'running' || phase === 'retrying' || phase === 'recovered'),
         technicalDetail,
-      },
+      }),
     );
   };
   const biographies = new IndexedDbBiographyRepository();
@@ -278,14 +319,13 @@ async function bootstrap(): Promise<void> {
         } catch (logError) {
           console.error('[Eyon History Workbench] failed to persist retry log', logError);
         }
-        const short = raw.length > 60 ? `${raw.slice(0, 60)}…` : raw;
         emitTaskStatus(
           taskType,
           'retrying_generation',
-          `${taskLabel(taskType)}连接中断（${short}），伊雍正在重新校订（${attempt}/${max}）`,
+          `${taskLabel(taskType)}本次请求未完成，正在重试`,
           {
             phase: 'retrying',
-            retry: { attempt, max },
+            retry: { attempt: attempt + 1, max: max + 1 },
             technicalDetail: raw,
           },
         );
@@ -309,10 +349,10 @@ async function bootstrap(): Promise<void> {
         emitTaskStatus(
           taskType,
           'generating',
-          `${taskLabel(taskType)}已恢复（此前失败原因：${raw.slice(0, 80)}）`,
+          `${taskLabel(taskType)}已收到模型返回，正在校验结果`,
           {
             phase: 'recovered',
-            retry: { attempt: info.successAttempt, max: info.max },
+            retry: { attempt: info.successAttempt, max: info.max + 1 },
             technicalDetail: `recovered from ${code}: ${raw}`,
           },
         );
@@ -323,20 +363,14 @@ async function bootstrap(): Promise<void> {
           // 「已等待」时长由宿主页 toast 按 startedAt 自行计时，
           // 不受后台标签节流 iframe 计时器的影响。
           const label = info.label || `${taskLabel(taskType)}正在等待模型返回`;
-          const attempt = info.attempt > 1
-            ? ` · 第 ${info.attempt} / ${info.maxRetries} 次尝试`
-            : '';
           emitTaskStatus(
             taskType,
             'generating',
-            `${label}${attempt}`,
+            label,
             {
               phase: 'running',
-              progress: {
-                current: info.attempt,
-                total: info.maxRetries,
-                startedAt: info.startedAt,
-              },
+              request: { label, startedAt: info.startedAt },
+              retry: { attempt: info.attempt, max: info.maxRetries + 1 },
             },
           );
         }
@@ -415,21 +449,20 @@ async function bootstrap(): Promise<void> {
           ? 'candidate_ready'
           : 'candidate_failed',
         event.stage === 'running'
-          ? `正在生成墟境（${event.candidateIndex}/${event.total}）`
+          ? '正在撰写墟境史稿'
           : event.stage === 'success'
-          ? `墟境候选已完成（${event.completed}/${event.total}）`
+          ? '本份墟境史稿已完成'
           : `第${event.candidateIndex}个墟境未完成，可单独重试`,
         {
           phase: event.stage === 'running'
             ? 'running'
           : event.stage === 'success'
             ? 'running'
-            : 'error',
+            : 'running',
           progress: {
-            current: event.stage === 'running'
-              ? event.candidateIndex
-              : event.completed,
+            current: event.completed,
             total: event.total,
+            ...(event.stage === 'running' ? { item: event.candidateIndex } : {}),
           },
         },
       );
@@ -440,8 +473,8 @@ async function bootstrap(): Promise<void> {
     ruinWorkflow,
     runtime,
     {
-      onStatus: (status, detail) =>
-        emitTaskStatus('ruin', status, detail),
+      onStatus: (status, detail, progress) =>
+        emitTaskStatus('ruin', status, detail, progress ? { progress } : {}),
     },
     ruinGuard,
   );
@@ -498,8 +531,12 @@ async function bootstrap(): Promise<void> {
     runtime,
     shell: new TavernRuinEntryShellAdapter(runtime),
     hooks: {
-      onStatus: (status, detail, extra) =>
-        emitTaskStatus('ruin', status, detail, extra as Partial<WorkbenchStatusDetail>),
+      onStatus: (status, detail, extra) => {
+        emitTaskStatus('ruin', status, detail, extra as Partial<WorkbenchStatusDetail>);
+        if (status === 'ready') globalThis.dispatchEvent(new CustomEvent(WORKBENCH_DATA_CHANGED_EVENT, {
+          detail: { views: ['ruin', 'timeline'], reason: 'ruin-task-requested' },
+        }));
+      },
     },
   });
   const ruinTask = new RuinTaskWorkflow({
@@ -512,7 +549,7 @@ async function bootstrap(): Promise<void> {
     hooks: {
       onStatus: (status, detail, extra) => {
         emitTaskStatus('ruin', status, detail, extra as Partial<WorkbenchStatusDetail>);
-        if (status === 'ready') {
+        if (status === 'ready' || status === 'ruin_task_draft_ready' || status === 'ruin_task_draft_restored') {
           globalThis.dispatchEvent(new CustomEvent(WORKBENCH_DATA_CHANGED_EVENT, {
             detail: { views: ['ruin'], reason: 'ruin-task-requested' },
           }));
@@ -572,7 +609,28 @@ async function bootstrap(): Promise<void> {
     globalObject,
   );
   const registration = registerWorkbenchLifecycle(
-    lifecycle,
+    {
+      beforeGeneration: type => lifecycle.beforeGeneration(type),
+      onUserMessageSent: messageId => lifecycle.onUserMessageSent(messageId),
+      onAssistantRendered: messageId => lifecycle.onAssistantRendered(messageId),
+      onChatChanged: async () => {
+        contextRevision += 1;
+        const revision = contextRevision;
+        clearingContext += 1;
+        activeTasks.clear();
+        const current = globalObject.EyonHistoryWorkbench as EyonHistoryWorkbenchFacade | undefined;
+        if (current) current.contextRevision = contextRevision;
+        generator.cancel('ruin');
+        generator.cancel('genealogy');
+        generator.cancel('biography');
+        generator.cancel('butterfly');
+        taskStatuses.clear();
+        globalThis.dispatchEvent(new CustomEvent(WORKBENCH_CONTEXT_EVENT));
+        try { await lifecycle.onChatChanged(); }
+        finally { clearingContext -= 1; }
+        if (current && revision === contextRevision) globalThis.dispatchEvent(new CustomEvent(WORKBENCH_READY_EVENT, { detail: current }));
+      },
+    },
     events.bridge,
     events.names,
     globalObject,
@@ -716,7 +774,11 @@ async function bootstrap(): Promise<void> {
     ));
   };
   const cancelTask = async (taskType: GenerationTaskType): Promise<void> => {
+    const stopping = Symbol('stopping');
+    activeTasks.set(taskType, stopping);
     generator.cancel(taskType);
+    emitTaskStatus(taskType, 'cancelled', `${taskLabel(taskType)}已停止`, { phase: 'cancelled', cancellable: false });
+    try {
     if (taskType === 'biography') {
       biographyPreSend.cancel();
       await biographyController.cancelPending();
@@ -724,16 +786,15 @@ async function bootstrap(): Promise<void> {
       genealogyController.cancelPending();
     } else if (taskType === 'ruin') {
       ruinController.cancelPending();
-      await ruinTask.cancelPending();
+      await Promise.all([ruinTask.cancelPending(), ruinEntry.cancelPending()]);
     } else {
       activeReturnTurnController?.abort(new Error('generation was cancelled'));
       activeReturnTurnController = null;
       butterflyController.cancelPending();
     }
-    emitTaskStatus(taskType, 'cancelled', `${taskLabel(taskType)}已停止`, {
-      phase: 'cancelled',
-      cancellable: false,
-    });
+    } finally {
+      if (activeTasks.get(taskType) === stopping) activeTasks.delete(taskType);
+    }
   };
   const onCancelTask = (event: Event): void => {
     const detail = (event as CustomEvent<{ taskType?: GenerationTaskType }>).detail;
@@ -759,6 +820,7 @@ async function bootstrap(): Promise<void> {
     void settings.read().workbenchEnabled;
   };
   const facade: EyonHistoryWorkbenchFacade = {
+    contextRevision,
     version: WORKBENCH_VERSION,
     resolveDisplayText: text => resolveWorkbenchDisplayText(text, globalObject),
     getSettings: () => settings.read(),
@@ -866,27 +928,59 @@ async function bootstrap(): Promise<void> {
       );
       return sources.listCharacterWorldbookEntries();
     },
-    generateRuin: async input => {
+    generateRuin: input => runTask('ruin', async assertActive => {
       assertWorkbenchEnabled();
       const record = await ruinController.generateFromPanel(input);
+      assertActive();
       publishDataChanged({ views: ['ruin'], reason: 'ruin-generated' });
       return record;
-    },
-    generateGenealogy: async input => {
+    }),
+    generateGenealogy: input => runTask('genealogy', async assertActive => {
+      const namespace = scopeReader.getNamespace();
       assertWorkbenchEnabled();
       const record = await genealogyController.generateFromPanel(input);
+      assertActive();
       // Selection storage is not a Canon cache. Keep choices so a rollback can restore them.
-      publishRuinReferences(await sources.projectRuinCharacters(await ruinReferences.read(scopeReader.getNamespace())));
+      const references = await sources.projectRuinCharacters(await ruinReferences.read(namespace));
+      const branch = await canon.getBranch(namespace);
+      assertActive();
+      publishRuinReferences(references);
       publishDataChanged({
         views: ['genealogy', 'ruin'],
         reason: 'genealogy-generated',
       });
-      return { ...record, localView: buildGenealogyLocalView(record, await canon.getBranch(scopeReader.getNamespace())) };
-    },
+      return { ...record, localView: buildGenealogyLocalView(record, branch) };
+    }),
     listGenealogies: async () => sources.getCurrentGenealogyRecords(),
+    clearCharacterGenealogy: mvuId => runTask('genealogy', assertActive => mutateReferences(async () => {
+      const namespace = scopeReader.getNamespace();
+      const character = (await sources.getCharacterSources()).map(toGenealogyCharacterOption)
+        .find(item => item.mvuId === mvuId);
+      assertActive();
+      if (!character) throw new Error('当前聊天 MVU 中没有这位人物，未清空任何谱系');
+      const current = await ruinReferences.read(namespace);
+      assertActive();
+      const deleted = await genealogies.clearCharacter(namespace, character);
+      const requestIds = new Set(deleted.map(record => record.requestId));
+      const next = pruneStaleGenealogyReferences(current, requestIds, mvuId);
+      // 已发起的本地写只作用于捕获的聊天；切换后不把旧结果写进新聊天设置。
+      await ruinReferences.write(namespace, next);
+      assertActive();
+      const draft = settings.read().ruinDraft;
+      if (draft) settings.update({ ruinDraft: {
+        ...draft,
+        selectedCharacters: pruneStaleGenealogyReferences(draft.selectedCharacters, requestIds, mvuId),
+      } });
+      const references = await sources.projectRuinCharacters(next);
+      assertActive();
+      publishRuinReferences(references);
+      publishDataChanged({ views: ['genealogy', 'ruin', 'settings'], reason: 'genealogy-cleared' });
+      return { deleted: deleted.length, recordKeys: deleted.map(record => record.key), references };
+    })),
     listRuinCharacterReferences: async () =>
       sources.projectRuinCharacters(await ruinReferences.read(scopeReader.getNamespace())),
-    toggleGenealogyNodeRuinReference: async (genealogyRecordKey, nodeId) => {
+    toggleGenealogyNodeRuinReference: (genealogyRecordKey, nodeId) => mutateReferences(async () => {
+      const context = contextRevision;
       const namespace = scopeReader.getNamespace();
       const record = await genealogies.get(genealogyRecordKey);
       if (!record || namespaceKey(record.namespace) !== namespaceKey(namespace)) {
@@ -897,6 +991,7 @@ async function bootstrap(): Promise<void> {
       const view = buildGenealogyLocalView(record, await canon.getBranch(namespace));
       const reference = genealogyNodeToRuinReference(record, node.id, view);
       const current = await ruinReferences.read(namespace);
+      if (context !== contextRevision) throw new GenerationCancelledError('genealogy');
       if (!reference) return sources.projectRuinCharacters(current);
       const referenceId = ruinCharacterReferenceIdentity(reference);
       const exists = current.some(item =>
@@ -907,40 +1002,45 @@ async function bootstrap(): Promise<void> {
         : [...current, reference];
       await ruinReferences.write(namespace, next);
       const saved = await sources.projectRuinCharacters(next);
+      if (context !== contextRevision) throw new GenerationCancelledError('genealogy');
       publishRuinReferences(saved);
       publishDataChanged({
         views: ['genealogy', 'ruin'],
         reason: 'ruin-references',
       });
       return saved;
-    },
-    removeRuinCharacterReference: async referenceId => {
+    }),
+    removeRuinCharacterReference: referenceId => mutateReferences(async () => {
+      const context = contextRevision;
       const namespace = scopeReader.getNamespace();
       const current = await ruinReferences.read(namespace);
+      if (context !== contextRevision) throw new GenerationCancelledError('ruin');
       const next = current.filter(item =>
         ruinCharacterReferenceIdentity(item) !== referenceId);
       await ruinReferences.write(namespace, next);
       const saved = await sources.projectRuinCharacters(next);
+      if (context !== contextRevision) throw new GenerationCancelledError('ruin');
       publishRuinReferences(saved);
       publishDataChanged({
         views: ['genealogy', 'ruin'],
         reason: 'ruin-references',
       });
       return saved;
-    },
+    }),
     fetchCustomApiModels: (apiurl, key) =>
       fetchCustomApiModels(globalObject, apiurl, key),
     listRuins: async () => ruins.list(scopeReader.getNamespace()),
-    retryRuinCandidate: async (recordKey, candidateId) => {
+    retryRuinCandidate: (recordKey, candidateId) => runTask('ruin', async assertActive => {
       assertWorkbenchEnabled();
       const record = await ruinController.retryCandidate(recordKey, candidateId);
+      assertActive();
       publishDataChanged({
         views: ['ruin'], reason: 'ruin-candidate-retried',
       });
       return record;
-    },
+    }),
     listBiographies: async () => biographies.list(scopeReader.getNamespace()),
-    deleteBiography: async recordKey => {
+    deleteBiography: recordKey => mutateReferences(async () => {
       const namespace = scopeReader.getNamespace();
       const record = await biographies.get(recordKey);
       if (!record || namespaceKey(record.namespace) !== namespaceKey(namespace)) {
@@ -958,10 +1058,10 @@ async function bootstrap(): Promise<void> {
         reason: 'biography-deleted',
       });
       return true;
-    },
+    }),
     listRuinBiographyReferences: () =>
       ruinReferences.readBiographies(scopeReader.getNamespace()),
-    toggleBiographyRuinReference: async recordKey => {
+    toggleBiographyRuinReference: recordKey => mutateReferences(async () => {
       const namespace = scopeReader.getNamespace();
       const record = await biographies.get(recordKey);
       if (!record || namespaceKey(record.namespace) !== namespaceKey(namespace)) {
@@ -986,8 +1086,8 @@ async function bootstrap(): Promise<void> {
         reason: 'biography-references',
       });
       return saved;
-    },
-    removeRuinBiographyReference: async referenceId => {
+    }),
+    removeRuinBiographyReference: referenceId => mutateReferences(async () => {
       const namespace = scopeReader.getNamespace();
       const current = await ruinReferences.readBiographies(namespace);
       const saved = await ruinReferences.writeBiographies(
@@ -999,7 +1099,7 @@ async function bootstrap(): Promise<void> {
         reason: 'biography-references',
       });
       return saved;
-    },
+    }),
     listButterflies: async () => butterflies.list(scopeReader.getNamespace()),
     listButterflyPending: async () => butterflies.listPending(scopeReader.getNamespace()),
     deleteButterfly: async runId => {
@@ -1055,10 +1155,12 @@ async function bootstrap(): Promise<void> {
         ),
       );
     },
-    clearGenerationCache: async () => {
+    clearGenerationCache: () => mutateReferences(async () => {
+      const context = contextRevision;
       const namespace = scopeReader.getNamespace();
       const references = await ruinReferences.read(namespace);
       const biographyReferences = await ruinReferences.readBiographies(namespace);
+      if (context !== contextRevision) throw new GenerationCancelledError('ruin');
       ruinController.cancelPending();
       genealogyController.cancelPending();
       butterflyController.cancelPending();
@@ -1073,6 +1175,7 @@ async function bootstrap(): Promise<void> {
       ]);
       await ruinReferences.write(namespace, []);
       await ruinReferences.writeBiographies(namespace, []);
+      if (context !== contextRevision) throw new GenerationCancelledError('ruin');
       publishRuinReferences([]);
       publishDataChanged({
         views: ['genealogy', 'ruin', 'settings', 'timeline'],
@@ -1086,10 +1189,10 @@ async function bootstrap(): Promise<void> {
         // internal.81 v19：缓存清理一并清除蝴蝶待结算快照（失败/残留/未归档）。
         butterflyPendingCleared: butterflyPending.length,
       };
-    },
+    }),
     clearErrorLog: () => settings.clearErrorLog(),
     getRuinPresenceDiagnostics: () => listRuinPresenceDiagnostics(),
-    enterRuin: async (recordKey, candidateId, nodeId) => {
+    enterRuin: (recordKey, candidateId, nodeId) => runTask('ruin', async assertActive => {
       assertWorkbenchEnabled();
       const composerText = readTavernComposerText(globalObject);
       if (composerText === null) {
@@ -1100,21 +1203,23 @@ async function bootstrap(): Promise<void> {
       // 让新墟境看起来像刚刚被遣返。
       generator.cancel('butterfly');
       await butterflyController.onRuinEntered();
+      assertActive();
       const submission = await ruinEntry.enter(
         recordKey,
         candidateId,
         nodeId,
         composerText,
       );
+      assertActive();
       // 发送成功后清空输入框:仅当内容仍等于已读文本(防覆盖用户中途新输入)
       clearTavernComposerText(composerText, globalObject);
       return submission;
-    },
+    }),
     getRuinTaskReview: () => ruinTask.readReview(),
-    generateRuinTaskDraft: request => {
+    generateRuinTaskDraft: request => runTask('ruin', async () => {
       assertWorkbenchEnabled();
       return ruinTask.generateDraft(request);
-    },
+    }),
     updateRuinTaskDraft: patch => {
       assertWorkbenchEnabled();
       return ruinTask.updateDraft(patch);
@@ -1133,29 +1238,35 @@ async function bootstrap(): Promise<void> {
         throw error;
       }
     },
-    returnRuin: () => {
+    returnRuin: () => runTask('butterfly', async assertActive => {
       assertWorkbenchEnabled();
       const controller = new AbortController();
       activeReturnTurnController = controller;
       return userTurns.sendUserTurn('遣返', {
         signal: controller.signal,
-        beforeCreate: expectedMessageId =>
-          butterflyController.prepareBeforeUserTurn('遣返', expectedMessageId)
-            .then(() => undefined),
-        afterCreate: messageId =>
-          butterflyController.confirmPreparedUserFloor('遣返', messageId),
+        beforeCreate: async expectedMessageId => {
+          assertActive();
+          await butterflyController.prepareBeforeUserTurn('遣返', expectedMessageId);
+          assertActive();
+        },
+        afterCreate: async messageId => {
+          assertActive();
+          await butterflyController.confirmPreparedUserFloor('遣返', messageId);
+          assertActive();
+        },
       }).finally(() => {
         if (activeReturnTurnController === controller) {
           activeReturnTurnController = null;
         }
       });
-    },
-    retryButterfly: async runId => {
+    }),
+    retryButterfly: runId => runTask('butterfly', async assertActive => {
       assertWorkbenchEnabled();
       const record = await butterflyController.retry(runId);
+      assertActive();
       publishDataChanged({ views: ['timeline', 'genealogy', 'ruin'], reason: 'butterfly-retried' });
       return record;
-    },
+    }),
     cancelTask,
     inspectCanonMemory: () => ({
       snapshot: canonMemory.snapshot(),
@@ -1586,7 +1697,8 @@ function emitStatus(
 function classifyStatusPhase(
   status: string,
 ): NonNullable<WorkbenchStatusDetail['phase']> {
-  if (/failed|error/u.test(status)) return 'error';
+  if (/failed|error/u.test(status) || status === 'butterfly_pending') return 'error';
+  if (status === 'awaiting_narrative' || status === 'ruin_task_awaiting_player') return 'info';
   if (/cancelled/u.test(status)) return 'cancelled';
   if (/retry/u.test(status)) return 'retrying';
   if (/ready|committed/u.test(status)) return 'success';

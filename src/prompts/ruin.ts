@@ -1003,6 +1003,7 @@ function buildReferenceDataSection(
     '先从人物完整条目、有效Canon与史料原句判断玩家是否在探讨一个已知事件。已知事件的当事人、亲属关系、事件年龄、日期、时刻、先后及结果先固定，骰材和候选差异只能补未知部分；不得为了制造不同候选给同一已知事件重排年份或改写年龄。补充习惯中的“对应经历”也是事件证据，不只是性格装饰。',
     '年龄属于紧邻的具体事件，不是人物当前年龄，不能把兄弟姐妹的不同经历互相挪用。“N岁生日当天/当晚”结合显式出生年月日，应落在出生年加N的同月同日；原句时刻同样保留。仅有“某岁时”则保留年龄窗口，未知月日可合理补齐，不伪称原文已有日期。生日月日前后的周岁要据原文校准，年差只是年份级参考。',
     '已知事件日期优先于自动可行时间带内的自由选日。若玩家明确范围与已知事件不相容，只能探索该范围内的前因/后果，不能把事件搬入范围。多个候选可解释同一事件尚未说明的原因、行动与视角，但共有的已知事实不变；采用alternative-interpretation，不用改名或改日期伪造不同事件。原文未说明的细节仍可自由创作。',
+    '当前有效蝴蝶日志的墟境行动记录与历史演变是本聊天已生成的历史。探讨其目击者、前因或后果时，承接其中已定的行为、地点、能力来源与结果；不得把已定事件的起因换成自然灾变或另一场袭击。候选差异只补日志未确定的细节，角色当前世界书用于补充而非抹掉干预。尊重有效Canon修订与原文时序，不把后世传播写成当时已有能力，也不因本轮换地点就搬走原事件。',
     '规划提交前先核对已知事件，再把正确日期与事实写入现有span/nodes/summary，沿用现有字段，无须新增年表或检查单。扩写只能承接这些已核对的冻结事实；若发现既定大纲与原文冲突，不可通过删除年龄、模糊日期或编造另一段经历掩盖冲突。未求值EJS分支仍是条件材料，不执行模板、不把各分支合并为硬事实。',
     '</KNOWN_EVENT_FAITHFULNESS_READ_ONLY>',
     '<HISTORICAL_AUTHORITY_READ_ONLY>',
@@ -1022,7 +1023,8 @@ function buildReferenceDataSection(
         `[${passage.passageId}][${passage.sourceType}][${passage.title}]`,
         `allowedUses=${JSON.stringify(qualification?.allowedUses ?? ['background', 'reference'])}`,
         `forbiddenUses=${JSON.stringify(qualification?.forbiddenUses ?? [])}`,
-        `factExcerpt=${referenceFactExcerpt(passage.content, scopeTerms)}`,
+        // 异地历史也是因果证据；不能在检索完整保留后又裁掉行动与演变。
+        `factExcerpt=${passage.sourceType === 'butterfly' ? passage.content : referenceFactExcerpt(passage.content, scopeTerms)}`,
         ...(contemporaryReferenceTag(passage, selectedCharacterNames(input)) ? [contemporaryReferenceTag(passage, selectedCharacterNames(input))] : []),
       ].join('\n');
     }),

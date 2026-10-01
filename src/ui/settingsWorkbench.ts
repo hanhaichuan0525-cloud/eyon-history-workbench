@@ -17,6 +17,7 @@ import {
   type WorkbenchIconName,
 } from './lucideIcons.ts';
 import { WorkbenchUiClient, type WorkbenchUiSnapshot } from './workbenchClient.ts';
+import { preserveDomState, ViewRefreshGuard } from './viewRefresh.ts';
 import { WORKBENCH_VERSION, WORKBENCH_VERSION_LABEL } from '../core/version.ts';
 
 type CanonConsumptionInspection = Awaited<
@@ -134,21 +135,36 @@ export function mountSettingsWorkbench(
   const customDrafts = new Map<GenerationTaskType, CustomApiSettings>();
   const dirtyCustomDrafts = new Set<GenerationTaskType>();
   let disposed = false;
+  const reads = new ViewRefreshGuard(() => client.contextRevision());
+  const mutations = new ViewRefreshGuard(() => client.contextRevision());
+  const beginOperation = () => { reads.invalidate(); return mutations.begin(); };
+  let modelRequest = 0;
+  const offReady = client.onReady(() => void refresh());
+  const offContext = client.onContextChanged(() => {
+    mutations.invalidate();
+    reads.invalidate(); modelRequest += 1; snapshot = null; worldbookEntries = [];
+    canonConsumption = null; canonMemory = null; continuityInspection = null;
+    busy = false; status = ''; error = ''; render();
+  });
 
   async function refresh(): Promise<void> {
     if (disposed || !client.isReady()) {
       render();
       return;
     }
+    const current = reads.begin();
     try {
-      [snapshot, worldbookEntries] = await Promise.all([
+      const [nextSnapshot, entries] = await Promise.all([
         client.readSnapshot(),
         client.listCharacterWorldbookEntries(),
       ]);
+      if (!current()) return;
+      snapshot = nextSnapshot; worldbookEntries = entries;
       appearance = snapshot.settings.appearance;
       syncCustomDrafts(snapshot.settings);
       error = '';
     } catch (cause) {
+      if (!current()) return;
       error = cause instanceof Error ? cause.message : String(cause);
     }
     render();
@@ -159,6 +175,8 @@ export function mountSettingsWorkbench(
   }
 
   function render(): void {
+    if (disposed) return;
+    const restore = preserveDomState(root);
     const current = settings();
     appearance = current?.appearance ?? appearance;
     host.dataset.theme = appearance.mode;
@@ -186,6 +204,7 @@ export function mountSettingsWorkbench(
     applyAppearance(host, appearance);
     hydrateWorkbenchIcons(root);
     bind();
+    restore();
   }
 
   function tabButton(item: typeof TABS[number]): string {
@@ -271,7 +290,7 @@ export function mountSettingsWorkbench(
                 <select id="api-model">
                   ${renderModelOptions(fetchedModels.get(task) ?? [], custom.model)}
                 </select>
-                <button class="quiet-button" type="button" data-action="fetch-models">
+                <button class="quiet-button" type="button" data-action="fetch-models" ${busy ? 'disabled' : ''}>
                   ${icon('refresh-cw')}拉取列表
                 </button>
               </div>`)}
@@ -523,10 +542,11 @@ export function mountSettingsWorkbench(
         render();
         return;
       }
-      await persist(
+      const saved = await persist(
         async () => client.applyGenerationToAll(next),
         '当前模块的独立 API 已应用到四个生成模块',
       );
+      if (!saved) return;
       TASKS.forEach(item => {
         customDrafts.set(item.id, cloneCustomDraft(next));
         dirtyCustomDrafts.delete(item.id);
@@ -545,29 +565,36 @@ export function mountSettingsWorkbench(
       await saveGeneration(readGenerationForm());
     });
     root.querySelector<HTMLButtonElement>('[data-action="fetch-models"]')?.addEventListener('click', async () => {
+      if (busy) return;
       updateCustomDraftFromForm();
       const requestedTask = task;
       const apiurl = root.querySelector<HTMLInputElement>('#api-url')?.value.trim() ?? '';
       const key = root.querySelector<HTMLInputElement>('#api-key')?.value ?? '';
+      const request = ++modelRequest;
+      const context = client.contextRevision();
+      const current = () => !disposed && request === modelRequest && context === client.contextRevision();
       busy = true;
       error = '';
       status = '正在从接口拉取模型列表';
       render();
       try {
         const models = await client.fetchCustomApiModels(apiurl, key);
+        if (!current()) return;
+        const liveDraft = customDraftFor(requestedTask);
+        if (liveDraft.apiurl.trim() !== apiurl || liveDraft.key !== key) return;
         fetchedModels.set(requestedTask, models);
         const draft = customDraftFor(requestedTask);
         customDrafts.set(requestedTask, {
           ...draft,
           model: models.includes(draft.model) ? draft.model : (models[0] ?? draft.model),
         });
-        status = `已读取 ${models.length} 个可用模型`;
+        if (task === requestedTask) status = `已读取 ${models.length} 个可用模型`;
       } catch (cause) {
+        if (!current() || task !== requestedTask) return;
         error = cause instanceof Error ? cause.message : String(cause);
         status = '';
       } finally {
-        busy = false;
-        render();
+        if (current()) { busy = false; render(); }
       }
     });
     root.querySelector<HTMLInputElement>('#api-url')?.addEventListener('input', updateCustomDraftFromForm);
@@ -604,23 +631,19 @@ export function mountSettingsWorkbench(
     root.querySelector<HTMLInputElement>('[data-worldbook-all]')?.addEventListener('change', async event => {
       const enabled = (event.currentTarget as HTMLInputElement).checked;
       const selectable = worldbookEntries.filter(entry => entry.enabledInTavern);
-      await updateWorldbookSelection(async () => {
-        worldbookEntries = await client.setCharacterWorldbookEntriesEnabled(
+      await updateWorldbookSelection(() => client.setCharacterWorldbookEntriesEnabled(
           selectable.map(entry => entry.key),
           enabled,
-        );
-      });
+        ));
     });
     root.querySelectorAll<HTMLInputElement>('[data-worldbook-key]').forEach(input => {
       input.addEventListener('change', async () => {
         const key = input.dataset.worldbookKey;
         if (!key) return;
-        await updateWorldbookSelection(async () => {
-          worldbookEntries = await client.setCharacterWorldbookEntryEnabled(
+        await updateWorldbookSelection(() => client.setCharacterWorldbookEntryEnabled(
             key,
             input.checked,
-          );
-        });
+          ));
       });
     });
     root.querySelector<HTMLButtonElement>('[data-action="check-data"]')?.addEventListener('click', async () => {
@@ -701,15 +724,21 @@ export function mountSettingsWorkbench(
       }).join('');
     });
     root.querySelector<HTMLButtonElement>('[data-action="refresh-canon"]')?.addEventListener('click', async () => {
+      const current = beginOperation();
       busy = true;
       error = '';
       render();
       try {
-        canonConsumption = await client.inspectCurrentArtifactCanonConsumption();
+        const next = await client.inspectCurrentArtifactCanonConsumption();
+        if (!current()) return;
+        reads.invalidate();
+        canonConsumption = next;
         status = `Canon 状态已刷新：revision ${canonConsumption.branch.headRevision}`;
       } catch (cause) {
+        if (!current()) return;
         error = cause instanceof Error ? cause.message : String(cause);
       } finally {
+        if (!current()) return;
         busy = false;
         render();
       }
@@ -723,15 +752,21 @@ export function mountSettingsWorkbench(
       showLocalStatus('Canon 局部状态已导出');
     });
     root.querySelector<HTMLButtonElement>('[data-action="refresh-continuity"]')?.addEventListener('click', async () => {
+      const current = beginOperation();
       busy = true;
       error = '';
       render();
       try {
-        continuityInspection = await client.inspectCurrentContinuityAnchors();
+        const next = await client.inspectCurrentContinuityAnchors();
+        if (!current()) return;
+        reads.invalidate();
+        continuityInspection = next;
         status = `连续性关系已刷新：当前 ${continuityInspection.counts.currentRelations} 条`;
       } catch (cause) {
+        if (!current()) return;
         error = cause instanceof Error ? cause.message : String(cause);
       } finally {
+        if (!current()) return;
         busy = false;
         render();
       }
@@ -745,16 +780,21 @@ export function mountSettingsWorkbench(
       showLocalStatus('低权连续性关系诊断已导出');
     });
     root.querySelector<HTMLButtonElement>('[data-action="refresh-canon-memory"]')?.addEventListener('click', async () => {
+      const current = beginOperation();
       busy = true;
       error = '';
       render();
       try {
         const snapshot = await client.refreshCanonMemory();
+        if (!current()) return;
+        reads.invalidate();
         canonMemory = { snapshot, failure: '' };
         status = `蝴蝶记忆已重算：常驻 ${snapshot.counts.resident} · 触发 ${snapshot.counts.triggered} · 未命中 ${snapshot.counts.unmatched} · 失效 ${snapshot.counts.filtered}`;
       } catch (cause) {
+        if (!current()) return;
         error = cause instanceof Error ? cause.message : String(cause);
       } finally {
+        if (!current()) return;
         busy = false;
         render();
       }
@@ -776,6 +816,8 @@ export function mountSettingsWorkbench(
   }
 
   async function saveGeneration(next: GenerationSettings): Promise<void> {
+    const selectedTask = task;
+    const context = client.contextRevision();
     const normalized = normalizeCustomSettings(next);
     if (!normalized.key) {
       error = '独立 API 密钥不能为空。请填写密钥后再保存。';
@@ -784,12 +826,13 @@ export function mountSettingsWorkbench(
       return;
     }
     const saved = await persist(
-      async () => client.setGeneration(task, normalized),
+      async () => client.setGeneration(selectedTask, normalized),
       `${TASKS.find(item => item.id === task)?.label ?? '模块'}设置已保存`,
     );
     if (saved) {
-      customDrafts.set(task, cloneCustomDraft(normalized));
-      dirtyCustomDrafts.delete(task);
+      if (disposed || context !== client.contextRevision()) return;
+      customDrafts.set(selectedTask, cloneCustomDraft(normalized));
+      dirtyCustomDrafts.delete(selectedTask);
     }
   }
 
@@ -818,21 +861,30 @@ export function mountSettingsWorkbench(
   }
 
   async function runDataAction(action: () => Promise<string>): Promise<void> {
+    const current = beginOperation();
     busy = true;
     error = '';
     render();
     try {
-      status = await action();
-      snapshot = await client.readSnapshot();
+      const message = await action();
+      if (!current()) return;
+      const next = await client.readSnapshot();
+      if (!current()) return;
+      reads.invalidate();
+      status = message;
+      snapshot = next;
     } catch (cause) {
+      if (!current()) return;
       error = cause instanceof Error ? cause.message : String(cause);
     } finally {
+      if (!current()) return;
       busy = false;
       render();
     }
   }
 
   async function checkForUpdate(): Promise<void> {
+    const current = beginOperation();
     busy = true;
     error = '';
     updateState = {
@@ -845,6 +897,7 @@ export function mountSettingsWorkbench(
       const response = await fetch(remoteManifestUrl, { cache: 'no-store' });
       if (!response.ok) throw new Error(`远程清单请求失败（HTTP ${response.status}）`);
       const manifest = await response.json() as { version?: unknown };
+      if (!current()) return;
       const latest = typeof manifest.version === 'string' ? manifest.version.trim() : '';
       if (!latest) throw new Error('远程清单没有可识别的版本号');
       const available = compareVersions(latest, CURRENT_EXTENSION_VERSION) > 0;
@@ -856,12 +909,14 @@ export function mountSettingsWorkbench(
           : `当前已是最新稳定版（${WORKBENCH_VERSION_LABEL}／${CURRENT_EXTENSION_VERSION}）。`,
       };
     } catch (cause) {
+      if (!current()) return;
       updateState = {
         ...updateState,
         message: `检查更新失败：${cause instanceof Error ? cause.message : String(cause)}`,
       };
       error = updateState.message;
     } finally {
+      if (!current()) return;
       busy = false;
       render();
     }
@@ -869,6 +924,7 @@ export function mountSettingsWorkbench(
 
   async function updateExtension(): Promise<void> {
     if (!updateState.available || !updateState.latest) return;
+    const current = beginOperation();
     busy = true;
     error = '';
     updateState = { ...updateState, message: `正在请求酒馆更新到 ${updateState.latest}…` };
@@ -888,6 +944,7 @@ export function mountSettingsWorkbench(
         throw new Error('当前酒馆未暴露 updateExtension 接口，请在扩展管理器中手动更新');
       }
       const response = await (updater as (extensionId: string) => Promise<Response>)(EXTENSION_ID);
+      if (!current()) return;
       if (!response?.ok) {
         throw new Error(`酒馆更新请求失败${response?.status ? `（HTTP ${response.status}）` : ''}`);
       }
@@ -898,19 +955,24 @@ export function mountSettingsWorkbench(
       };
       status = '更新请求已提交，请刷新酒馆使新版本生效。';
     } catch (cause) {
+      if (!current()) return;
       error = cause instanceof Error ? cause.message : String(cause);
       updateState = { ...updateState, message: error };
     } finally {
+      if (!current()) return;
       busy = false;
       render();
     }
   }
 
   async function persist(action: () => Promise<unknown> | unknown, message: string): Promise<boolean> {
+    const current = beginOperation();
     busy = true;
     error = '';
     try {
       const result = await action();
+      if (!current()) return false;
+      reads.invalidate();
       status = message;
       if (isWorkbenchSettings(result) && snapshot) {
         snapshot = { ...snapshot, settings: result };
@@ -918,7 +980,9 @@ export function mountSettingsWorkbench(
         // β1：启动开关已退役。旧版留下的 workbenchEnabled 只有 schema 兼容意义，
         // 不再驱动任何可见状态，也不再阻断工作流（避免历史 false 把工作台锁死）。
       } else if (client.isReady()) {
-        snapshot = await client.readSnapshot();
+        const next = await client.readSnapshot();
+        if (!current()) return false;
+        snapshot = next;
       } else {
         // Settings writes are still accepted while the runtime is waiting for
         // Tavern Helper/MVU; do not turn a valid write into a false
@@ -931,11 +995,11 @@ export function mountSettingsWorkbench(
       }
       return true;
     } catch (cause) {
+      if (!current()) return false;
       error = cause instanceof Error ? cause.message : String(cause);
       return false;
     } finally {
-      busy = false;
-      render();
+      if (current()) { busy = false; render(); }
     }
   }
 
@@ -969,17 +1033,25 @@ export function mountSettingsWorkbench(
     });
   }
 
-  async function updateWorldbookSelection(action: () => Promise<void>): Promise<void> {
+  async function updateWorldbookSelection(action: () => Promise<CharacterWorldbookEntryOption[]>): Promise<void> {
+    const current = beginOperation();
     busy = true;
     error = '';
     render();
     try {
-      await action();
+      const entries = await action();
+      if (!current()) return;
+      reads.invalidate();
+      worldbookEntries = entries;
       status = '工作台世界书资料范围已保存';
-      snapshot = await client.readSnapshot();
+      const next = await client.readSnapshot();
+      if (!current()) return;
+      snapshot = next;
     } catch (cause) {
+      if (!current()) return;
       error = cause instanceof Error ? cause.message : String(cause);
     } finally {
+      if (!current()) return;
       busy = false;
       render();
     }
@@ -1001,7 +1073,9 @@ export function mountSettingsWorkbench(
       applyAppearance(host, nextAppearance);
     },
     dispose() {
+      mutations.dispose();
       disposed = true;
+      reads.dispose(); modelRequest += 1; offReady(); offContext();
       container.replaceChildren();
     },
   };

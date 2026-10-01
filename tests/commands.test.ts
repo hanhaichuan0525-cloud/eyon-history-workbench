@@ -94,3 +94,32 @@ test('按钮命令不依赖自然语言猜测', () => {
     source: 'button',
   });
 });
+
+test('遣返识别保留呼语、拖长音、礼貌请求和独立末句', () => {
+  for (const text of [
+    '好了，遣返吧，伊雍——',
+    '遣返吧，伊雍……',
+    '伊雍，请把我送回现世吧。',
+    '伊雍，我要退出墟境了。',
+    '请遣返一下吧',
+    '任务完成。遣返吧。',
+    '**好了，遣返吧，伊雍——**',
+    '伊雍，带我们回现实好吗？',
+  ]) {
+    assert.equal(parseTextCommand(text)?.type, 'ruin.return', text);
+    assert.equal(parseTextCommand(text)?.raw, text.normalize('NFKC'), '保留原输入用于楼层绑定');
+  }
+});
+
+test('宽容遣返呼语不能放行否定、假设、转述和普通回去', () => {
+  for (const text of [
+    '先不要遣返，伊雍——',
+    '如果任务失败，再遣返吧，伊雍。',
+    '我担心会被遣返，伊雍。',
+    '她说：遣返吧，伊雍。',
+    '不要，遣返吧，伊雍。',
+    '我们回去吧，伊雍。',
+    '遣返？',
+    '如果退出墟境，是否会丢失任务？',
+  ]) assert.equal(parseTextCommand(text), null, text);
+});

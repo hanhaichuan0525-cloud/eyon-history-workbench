@@ -31,6 +31,7 @@ import type { CanonMemorySnapshot } from './canonMemoryChannel.ts';
 
 export const WORKBENCH_GLOBAL = 'EyonHistoryWorkbench';
 export const WORKBENCH_STATUS_EVENT = 'eyon-history-workbench:status';
+export const WORKBENCH_CONTEXT_EVENT = 'eyon-history-workbench:context-changed';
 export const WORKBENCH_CANCEL_TASK_EVENT = 'eyon-history-workbench:cancel-task';
 export const WORKBENCH_APPEARANCE_EVENT = 'eyon-history-workbench:appearance';
 export const WORKBENCH_READY_EVENT = 'eyon-history-workbench:ready';
@@ -54,6 +55,7 @@ export interface WorkbenchDataChangedDetail {
   reason:
     | 'cache-cleared'
     | 'genealogy-generated'
+    | 'genealogy-cleared'
     | 'ruin-generated'
     | 'ruin-candidate-retried'
     | 'ruin-task-requested'
@@ -75,6 +77,8 @@ export interface WorkbenchStatusDetail {
   progress?: {
     current: number;
     total: number;
+    /** 当前史稿序号，与已完成 current 不同；仅供运行时界面使用。 */
+    item?: number;
     /** 进行中任务的开始时间戳：宿主页据此自行计时，不依赖事件频率 */
     startedAt?: number;
   };
@@ -83,6 +87,9 @@ export interface WorkbenchStatusDetail {
     max: number;
   };
   technicalDetail?: string;
+  /** 仅运行时 UI 元数据，不参与模型契约或存档。 */
+  startedAt?: number;
+  request?: { label: string; startedAt: number };
 }
 
 export interface WorkbenchAppearanceDetail {
@@ -105,6 +112,7 @@ export interface GenealogyCharacterOption {
 
 export interface EyonHistoryWorkbenchFacade {
   version: string;
+  contextRevision?: number;
   /** 只展开工作台可见文本中的动态宿主宏；不修改存储或聊天正文。 */
   resolveDisplayText?(text: string): string;
   getSettings(): WorkbenchSettings;
@@ -158,6 +166,12 @@ export interface EyonHistoryWorkbenchFacade {
   ): Promise<CharacterWorldbookEntryOption[]>;
   generateGenealogy(input: GenealogyGenerationInput): Promise<GenealogyRecord>;
   listGenealogies(): Promise<GenealogyRecord[]>;
+  /** 清除当前聊天所选人物的全部谱系旧档及其临时引用，不修改 MVU 或 Canon。 */
+  clearCharacterGenealogy(mvuId: string): Promise<{
+    deleted: number;
+    recordKeys: string[];
+    references: RuinSelectedCharacter[];
+  }>;
   listRuinCharacterReferences(): Promise<RuinSelectedCharacter[]>;
   toggleGenealogyNodeRuinReference(
     genealogyRecordKey: string,

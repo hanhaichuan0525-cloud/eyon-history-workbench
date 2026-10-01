@@ -89,6 +89,7 @@ export class ButterflyController {
       this.repository.listPending(namespace),
       this.repository.list(namespace),
     ]);
+    this.assertActive(startedEpoch);
     const samePendingTrigger = (record: {
       request: PendingSettlement['request'];
     }) => (
@@ -157,6 +158,7 @@ export class ButterflyController {
       await this.repository.savePending(pending);
       return this.armPendingGuarded(pending, triggerRecord, startedEpoch);
     }
+    this.assertActive(startedEpoch);
     this.hooks.onStatus?.('freezing_butterfly', '正在收集这轮穿越留下的介入、见证与归返锚点');
     const frozen = await this.assembler.freeze({
       requestId: this.createRequestId(),
@@ -338,12 +340,15 @@ export class ButterflyController {
   }
 
   private async commitRenderedOnce(messageId: number): Promise<ButterflyRecord | null> {
+    const epoch = this.epoch;
     // 显示正则只认识 <butterfly_panel> 标签，无法判断标签来自脚本还是模型。
     // 因此在任何归档判断之前先做楼层授权：普通正文里由模型仿写的面板会
     // 被剥离；正式面板必须带脚本写入且属于当前 swipe 的请求元数据。
     await this.removeUnauthorizedButterflyPanels(messageId);
+    this.assertActive(epoch);
     const namespace = currentNamespace(this.runtime);
     const candidates = await this.repository.listPending(namespace);
+    this.assertActive(epoch);
     // internal.81 v18：候选必须与「渲染的 AI 楼」构成最新可见对之外，还要校验
     // 玩家楼实际文本与该 pending 的命令文本一致（防旧轮记录劫持当前轮提交——
     // 真机病历：5 条历史 pending 共享同一玩家楼 id，最旧的「遣返」记录 revision 连
@@ -369,13 +374,13 @@ export class ButterflyController {
       .sort((left, right) => right.updatedAt - left.updatedAt);
     const pending = matching[0] ?? null;
     if (!pending) return null;
-    const epoch = this.epoch;
     try {
       try {
         await this.narrativeShell.assertRenderedFloor(pending, messageId);
       } finally {
         await this.narrativeShell.clear(pending.request.requestId);
       }
+      this.assertActive(epoch);
       const request = this.assembler.attachReturnFloor(pending.request, messageId);
       const updated: PendingSettlement = {
         ...pending,
@@ -387,14 +392,16 @@ export class ButterflyController {
         failure: undefined,
       };
       await this.repository.updatePending(updated);
+      this.assertActive(epoch);
       this.hooks.onStatus?.('committing_butterfly', '正在把通过校验的变化写回现世与 Canon');
-      const record = await this.workflow.settle(updated);
-      if (epoch !== this.epoch) throw new Error('聊天切换后结算结果已被隔离');
+      const record = await this.workflow.settle(updated, () => this.assertActive(epoch));
+      this.assertActive(epoch);
       this.hooks.onStatus?.('butterfly_ready', '本轮历史余波已归档，现世记忆已更新');
       return record;
     } catch (error) {
-      if (isTaskCancellationError(error)) throw error;
+      if (epoch !== this.epoch || isTaskCancellationError(error)) throw error;
       const current = await this.repository.getPending(pending.key);
+      this.assertActive(epoch);
       if (current) {
         await this.repository.updatePending({
           ...current,
@@ -408,6 +415,7 @@ export class ButterflyController {
           updatedAt: this.now(),
         });
       }
+      this.assertActive(epoch);
       this.hooks.onStatus?.(
         'butterfly_pending',
         '蝴蝶效应尚未归档（遣返正文已保留），原因：'
@@ -418,20 +426,26 @@ export class ButterflyController {
   }
 
   async retry(runId: string): Promise<ButterflyRecord> {
+    if (this.preparations.size || this.renderedCommits.size) throw new Error('蝴蝶效应正在处理，请等待或停止当前任务');
+    const epoch = this.epoch;
     const namespace = currentNamespace(this.runtime);
     const pending = await this.repository.getPending(
       pendingSettlementKey(namespace, runId),
     );
+    this.assertActive(epoch);
     if (!pending) throw new Error('没有找到该轮次的待结算快照');
     // internal.81 v19：重试与正文渲染提交同款反馈——成功/失败都要点亮宿主
     // 任务通知，失败原因写回快照；此前重试是无声的（UI 既无成功也无失败提示）。
     try {
-      const record = await this.workflow.settle(pending);
+      this.hooks.onStatus?.('generating_butterfly', '正在重新核验冻结锚点与历史余波');
+      const record = await this.workflow.settle(pending, () => this.assertActive(epoch));
+      this.assertActive(epoch);
       this.hooks.onStatus?.('butterfly_ready', '本轮历史余波已归档，现世记忆已更新');
       return record;
     } catch (error) {
-      if (isTaskCancellationError(error)) throw error;
+      if (epoch !== this.epoch || isTaskCancellationError(error)) throw error;
       const current = await this.repository.getPending(pending.key).catch(() => null);
+      this.assertActive(epoch);
       if (current) {
         await this.repository.updatePending({
           ...current,
@@ -445,6 +459,7 @@ export class ButterflyController {
           updatedAt: this.now(),
         }).catch(() => undefined);
       }
+      this.assertActive(epoch);
       this.hooks.onStatus?.(
         'butterfly_pending',
         '蝴蝶效应尚未归档（遣返正文已保留），原因：'
@@ -516,19 +531,24 @@ export class ButterflyController {
     }
     // 重掷/重生成命中同一玩家楼的既有记录时，直接复用已冻结结果。
     // 不再调用 prepare，也不重新读取已经离开的历史现场。
-    const record = preparedRecord ?? await this.prepareRecord(armed);
+    this.assertActive(epoch);
+    const record = preparedRecord ?? await this.prepareRecord(armed, epoch);
     if (epoch !== this.epoch) {
       throw new GenerationCancelledError('butterfly');
     }
     await this.narrativeShell.arm(armed, record.result);
+    if (epoch !== this.epoch) await this.narrativeShell.clear(armed.request.requestId);
+    this.assertActive(epoch);
     return armed;
   }
 
-  private prepareRecord(pending: PendingSettlement): Promise<ButterflyRecord> {
+  private prepareRecord(pending: PendingSettlement, epoch: number): Promise<ButterflyRecord> {
+    this.assertActive(epoch);
     const existing = this.preparations.get(pending.key);
     if (existing) return existing;
+    if (this.preparations.size) throw new Error('蝴蝶效应正在准备，请等待或停止当前任务');
     this.hooks.onStatus?.('generating_butterfly', '正在判断余波会落向谁、由谁承担代价');
-    const task = this.workflow.prepare(pending)
+    const task = this.workflow.prepare(pending, () => this.assertActive(epoch))
       .finally(() => {
         if (this.preparations.get(pending.key) === task) {
           this.preparations.delete(pending.key);
@@ -536,6 +556,10 @@ export class ButterflyController {
       });
     this.preparations.set(pending.key, task);
     return task;
+  }
+
+  private assertActive(epoch: number): void {
+    if (epoch !== this.epoch) throw new GenerationCancelledError('butterfly');
   }
 
   /**
@@ -603,13 +627,14 @@ export class ButterflyController {
   private async armPendingGuarded(
     pending: PendingSettlement,
     preparedRecord?: ButterflyRecord,
-    startedEpoch?: number,
+    startedEpoch = this.epoch,
   ): Promise<PendingSettlement> {
     try {
       return await this.armPending(pending, preparedRecord, startedEpoch);
     } catch (error) {
-      if (isTaskCancellationError(error)) throw error;
+      if (startedEpoch !== this.epoch || isTaskCancellationError(error)) throw error;
       const current = await this.repository.getPending(pending.key).catch(() => null);
+      this.assertActive(startedEpoch);
       if (current) {
         const message = error instanceof Error ? error.message : String(error);
         await this.repository.updatePending({
@@ -624,6 +649,7 @@ export class ButterflyController {
           revision: current.revision + 1,
           updatedAt: this.now(),
         }).catch(() => undefined);
+        this.assertActive(startedEpoch);
         this.hooks.onStatus?.(
           'butterfly_pending',
           `蝴蝶效应尚未归档：${message.slice(0, 120)}`,

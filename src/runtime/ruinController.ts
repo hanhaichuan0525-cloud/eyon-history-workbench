@@ -21,7 +21,7 @@ export type RuinControllerStatus =
   | 'failed';
 
 export interface RuinControllerHooks {
-  onStatus?(status: RuinControllerStatus, detail?: string): void;
+  onStatus?(status: RuinControllerStatus, detail?: string, progress?: { current: number; total: number }): void;
 }
 
 export class RuinTransactionGuard {
@@ -104,16 +104,18 @@ export class RuinController {
     ].join('::');
     const existing = this.expansionInFlight.get(key);
     if (existing) return existing;
+    if (this.inFlight.size || this.expansionInFlight.size) throw new Error('墟境正在生成，请等待或停止当前任务');
     const task = (async () => {
       try {
         this.hooks.onStatus?.('retrying_candidate', '原稿仍在，正在单独补全这条历史岔路');
         const record = await this.workflow.retryCandidate(
           recordKey, candidateId, identity,
         );
+        this.transactionGuard.assertCurrent(identity.lifecycleEpoch);
         this.hooks.onStatus?.('ready', '这段墟境史稿已经补全');
         return record;
       } catch (error) {
-        if (isTaskCancellationError(error)) throw error;
+        if (identity.lifecycleEpoch !== this.transactionGuard.currentEpoch() || isTaskCancellationError(error)) throw error;
         this.hooks.onStatus?.(
           'failed', error instanceof Error ? error.message : String(error),
         );
@@ -143,12 +145,14 @@ export class RuinController {
     ].join('::');
     const existing = this.inFlight.get(key);
     if (existing) return existing;
+    if (this.inFlight.size || this.expansionInFlight.size) throw new Error('墟境正在生成，请等待或停止当前任务');
 
     const task = (async () => {
       try {
         this.hooks.onStatus?.('assembling_context', '正在对齐本次探查的时间、地点与参考史料');
         this.hooks.onStatus?.('generating_candidates', '已找到历史切口，正在展开候选岔路');
         const record = await this.workflow.generate(command, input, identity);
+        this.transactionGuard.assertCurrent(identity.lifecycleEpoch);
         const ready = record.result.candidates.filter(candidate =>
           ruinCandidateState(record, candidate.id).status === 'ready').length;
         this.hooks.onStatus?.(
@@ -156,10 +160,11 @@ export class RuinController {
           ready === record.result.candidates.length
             ? '候选墟境史稿已经全部完成'
             : `已完成${ready}份候选史稿，其余可单独重试`,
+          { current: ready, total: record.result.candidates.length },
         );
         return record;
       } catch (error) {
-        if (isTaskCancellationError(error)) throw error;
+        if (identity.lifecycleEpoch !== this.transactionGuard.currentEpoch() || isTaskCancellationError(error)) throw error;
         this.hooks.onStatus?.(
           'failed',
           error instanceof Error ? error.message : String(error),

@@ -37,7 +37,20 @@ export interface GenealogyRepository {
   save(record: GenealogyRecord): Promise<void>;
   get(key: string): Promise<GenealogyRecord | null>;
   list(namespace: WorkbenchNamespace): Promise<GenealogyRecord[]>;
+  clearCharacter(namespace: WorkbenchNamespace, character: { mvuId: string; name: string }): Promise<GenealogyRecord[]>;
   clear(namespace: WorkbenchNamespace): Promise<number>;
+}
+
+/** 优先稳定 MVU 身份；只对没有身份键的旧档使用精确归一化姓名。 */
+export function genealogyBelongsToCharacter(
+  record: GenealogyRecord,
+  character: { mvuId: string; name: string },
+): boolean {
+  const id = record.result.focusCharacterId || record.input.focusCharacter?.mvuId;
+  if (id) return id === character.mvuId;
+  const normalize = (value: string) => value.normalize('NFKC').replace(/\s+/gu, '').trim();
+  return Boolean(character.name.trim())
+    && normalize(record.result.focusCharacterName ?? '') === normalize(character.name);
 }
 
 export function genealogyRecordKey(
@@ -66,6 +79,12 @@ export class MemoryGenealogyRepository implements GenealogyRepository {
         record.namespace.characterKey === namespace.characterKey
         && record.namespace.chatId === namespace.chatId)
       .map(record => structuredClone(record));
+  }
+
+  async clearCharacter(namespace: WorkbenchNamespace, character: { mvuId: string; name: string }): Promise<GenealogyRecord[]> {
+    const records = (await this.list(namespace)).filter(record => genealogyBelongsToCharacter(record, character));
+    records.forEach(record => this.records.delete(record.key));
+    return records;
   }
 
   async clear(namespace: WorkbenchNamespace): Promise<number> {
@@ -118,6 +137,19 @@ export class IndexedDbGenealogyRepository implements GenealogyRepository {
     );
     await transactionComplete(transaction);
     return records.map(({ namespaceKey: _namespaceKey, ...record }) => record);
+  }
+
+  async clearCharacter(namespace: WorkbenchNamespace, character: { mvuId: string; name: string }): Promise<GenealogyRecord[]> {
+    const database = await historyDatabase();
+    const transaction = database.transaction(GENEALOGY_STORE, 'readwrite');
+    const store = transaction.objectStore(GENEALOGY_STORE);
+    const records = await requestResult<Array<GenealogyRecord & { namespaceKey: string }>>(
+      store.index('namespace').getAll(namespaceKey(namespace)),
+    );
+    const deleted = records.filter(record => genealogyBelongsToCharacter(record, character));
+    deleted.forEach(record => store.delete(record.key));
+    await transactionComplete(transaction);
+    return deleted.map(({ namespaceKey: _namespaceKey, ...record }) => record);
   }
 
   async clear(namespace: WorkbenchNamespace): Promise<number> {

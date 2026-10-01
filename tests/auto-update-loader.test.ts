@@ -12,7 +12,7 @@ const artifactPath = existsSync(originalArtifactPath) ? originalArtifactPath
   : resolve(root, 'release/酒馆助手脚本-伊雍历史工作台 自动更新.json');
 const remoteLoaderPath = resolve(root, 'extension/auto-loader.js');
 
-test('发行版本：界面名与清单一致，β1 固定加载器继续使用数字更新协议', async () => {
+test('源码版本与清单一致，固定β1加载器元信息可落后于当前运行时', async () => {
   const manifest = JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8'));
   const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
   const artifact = JSON.parse(await readFile(artifactPath, 'utf8'));
@@ -20,8 +20,13 @@ test('发行版本：界面名与清单一致，β1 固定加载器继续使用�
   assert.equal(manifest.version, WORKBENCH_VERSION);
   assert.equal(pkg.version, WORKBENCH_VERSION);
   assert.equal(manifest.displayVersion, WORKBENCH_VERSION_LABEL);
-  assert.ok(artifact.info.includes(WORKBENCH_VERSION_LABEL));
-  assert.ok(artifact.info.includes(WORKBENCH_VERSION));
+  // 固定加载器无需重新导入；说明是其打包时版本，不是当前运行时版本。
+  const packaged = artifact.info.match(/工作台 (β\d+(?:\.\d+)?)[,，]\s*更新协议 (\d+\.\d+\.\d+)/u);
+  assert.ok(packaged, '加载器须保留合法展示名与三段数字协议说明');
+  const current = WORKBENCH_VERSION.split('.').map(Number);
+  const shipped = packaged[2]!.split('.').map(Number);
+  const order = current.map((value, index) => value - shipped[index]!).find(delta => delta !== 0) ?? 0;
+  assert.ok(order >= 0, '加载器说明不得冒称尚未构建的未来运行时');
   assert.equal(artifact.id, 'eyon-history-workbench-auto-loader');
   assert.deepEqual(artifact.button, { enabled: true, buttons: [] });
   assert.deepEqual(artifact.data, {});

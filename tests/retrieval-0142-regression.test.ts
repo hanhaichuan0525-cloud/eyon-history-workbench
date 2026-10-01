@@ -6,6 +6,8 @@ import { UnifiedShadowRetrievalEngine } from '../src/retrieval/shadowEngine.ts';
 import { characterDocumentOwner, templateIndependentText } from '../src/retrieval/sourceOwnership.ts';
 import { extractRecordedAge } from '../src/retrieval/catalog.ts';
 import { resolveLifespanFromBaseline } from '../src/retrieval/temporal.ts';
+import type { GenealogyContextBundle } from '../src/core/context.ts';
+import { buildGenealogyApiPrompt, buildGenealogyRepairPrompt } from '../src/prompts/genealogy.ts';
 
 async function source(id: string, title: string, content: string, sourceType = 'worldbook' as const) {
   return createSourceSnapshot({ logicalId: `${sourceType}:fixture:${id}`, sourceType, title, content, metadata: {} });
@@ -115,3 +117,52 @@ test('生日只有月日、背景事件年龄或含糊实龄不会伪造生年',
     assert.equal(buildRetrievalIndex([snap]).catalog.entities.find(e => e.canonicalName === '测试少女')?.lifespan, undefined, content);
   }
 });
+
+for (const repair of [false, true]) {
+  test(`谱系${repair ? '纠正' : '初次'}提示词整条投递中心人物主档与补充，不裁切或堆入无关人物`, async () => {
+    const middle = '传承补充：前代实例是独立个体，不是亲生父亲。';
+    const raw = '<测试少女 角色详情>\n生日: 复兴纪元470年7月15日\n'
+      + '普通档案描述。\n'.repeat(1250) + middle + '\n'
+      + '普通档案描述。\n'.repeat(1250)
+      + '<% if (stage) { %>身份: 公主<% } else { %>身份: 执政官<% } %>\n主档末尾保留\n</测试少女 角色详情>';
+    const entries = [await source('long', '[角色][测试少女]测试少女', raw), ...(await fixtures()).slice(1),
+      await createSourceSnapshot({ logicalId: 'mvu:fixture:focus', sourceType: 'mvu', title: '测试少女',
+        content: JSON.stringify({ name: '测试少女', 介绍: '补充介绍。'.repeat(1800) + 'MVU末尾保留' }), metadata: {} })];
+    const result = await new UnifiedShadowRetrievalEngine(entries).retrieve({ requestId: 'genealogy-full-raw',
+      taskType: 'genealogy', mode: 'active', query: '测试少女宗族谱系', baselineWorldTime: '复兴纪元488年' });
+    const bundle = result.bundle;
+    const first = bundle.taskAnchorAttachments![0]!;
+    bundle.taskAnchorAttachments!.push(structuredClone(first), {
+      ...first, attachmentId: 'attachment:unrelated', entityId: 'entity:unrelated',
+      canonicalName: '无关人物', content: '无关人物完整主档不应堆入附件',
+    });
+    const sourceIndex = bundle.sourceSnapshots.map(snapshot => ({
+      sourceId: snapshot.logicalId, sourceType: snapshot.sourceType, title: snapshot.title,
+      content: bundle.passages.filter(passage => passage.snapshotId === snapshot.snapshotId)
+        .map(passage => passage.content).join('\n\n'), authority: 100,
+    }));
+    const context: GenealogyContextBundle = {
+      schema: 'eyon.context.v1', taskType: 'genealogy', requestId: 'genealogy-full-raw',
+      scope: { characterKey: 'fixture', chatId: 'fixture', triggerMessageId: 1 },
+      currentWorld: { time: '复兴纪元488年', location: '测试港' },
+      worldbookContext: sourceIndex, recentContext: [], characterContext: [], biographyRefs: [],
+      sourceIndex, evidenceBundle: bundle, warnings: [], sourceHash: 'fixture',
+    };
+    const before = structuredClone(context);
+    const input = { requestId: context.requestId, directive: '测试少女宗族谱系', context,
+      generationInput: { focusCharacter: { mvuId: 'fixture', name: '少女', aliases: ['测试少女'] },
+        depth: { ancestors: 4, descendants: 1, maxPerGeneration: 4 } },
+      rules: { generationContract: '' } };
+    const prompt = repair ? buildGenealogyRepairPrompt({ ...input, validationError: 'fixture' })
+      : buildGenealogyApiPrompt(input);
+    assert.ok(prompt.includes(raw), '长主档必须在模型提示词中保持完整');
+    const block = prompt.split('<GENEALOGY_CHARACTER_SOURCES_READ_ONLY>')[1]!
+      .split('</GENEALOGY_CHARACTER_SOURCES_READ_ONLY>')[0]!;
+    for (const entry of entries) assert.ok(block.includes(entry.content), '主档、习惯与组织补充都应完整投递');
+    assert.equal(block.split(middle).length - 1, 1, '重复附件只投递一次');
+    assert.ok(!block.includes('无关人物完整主档不应堆入附件'));
+    assert.match(block, /未求值.*条件|条件.*未求值/u);
+    assert.match(block, /当前.*Canon|Canon.*当前/u);
+    assert.deepEqual(context, before, '投递不改变检索证据、名册、引用及原文');
+  });
+}

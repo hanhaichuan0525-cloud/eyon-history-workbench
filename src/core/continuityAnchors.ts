@@ -5,7 +5,7 @@ import { fingerprintText } from '../runtime/transactionIdentity.ts';
 export const CONTINUITY_ANCHOR_SCHEMA = 'eyon.continuity.anchor.v1' as const;
 export const CONTINUITY_VIEW_SCHEMA = 'eyon.continuity.view.v1' as const;
 
-/** P4-A 的唯一投递预算。后续调参只改这里，不把限制散落到提示词。 */
+/** P4-A 按锚数量投递；旧字符字段保留兼容，不再用于裁剪或排除正文。 */
 export const CONTINUITY_VIEW_BUDGET = Object.freeze({
   maxAnchors: 6,
   maxTotalCharacters: 1_600,
@@ -283,9 +283,7 @@ export function recordContinuityViewFailure(message: string): void {
 }
 
 function normalizeClaim(value: string): string {
-  const claim = value.replace(/\s+/gu, ' ').trim();
-  if (claim.length <= CONTINUITY_VIEW_BUDGET.maxClaimCharacters) return claim;
-  return `${claim.slice(0, CONTINUITY_VIEW_BUDGET.maxClaimCharacters - 1).trimEnd()}…`;
+  return value.replace(/\s+/gu, ' ').trim();
 }
 
 function compactTemporalScope(

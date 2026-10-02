@@ -9,6 +9,7 @@ import {
   type RuntimeContextSourceProvider,
 } from './contracts.ts';
 import { selectRelevantContextSources } from './sourceSelection.ts';
+import { mayUseBiographySource } from './biographySourcePurpose.ts';
 import type { RetrievalShadowCapture } from '../retrieval/runtimeShadow.ts';
 import type { CanonBranch, CanonResolvedView, EvidenceBundle } from '../retrieval/contracts.ts';
 import { resolveActiveRetrieval } from './activeRetrieval.ts';
@@ -25,8 +26,6 @@ import { namespaceKey, type WorkbenchNamespace } from '../core/namespace.ts';
 
 const RECENT_MESSAGE_LIMIT = 6;
 const CURRENT_SCENE_MESSAGE_LIMIT = 12;
-const RECENT_CONTENT_LIMIT = 2000;
-const CONTENT_LIMIT = 12000;
 
 export class TavernBiographyContextAssembler implements BiographyContextAssembler {
   private readonly runtime: TavernRuntime;
@@ -80,7 +79,10 @@ export class TavernBiographyContextAssembler implements BiographyContextAssemble
       this.sources.getBiographySources(),
       this.sources.getButterflySources(),
     ]);
-    const worldbook = worldbookCorpus.sources;
+    // 原始语料与宿主开启回执不改；只限定传记可消费的资料用途，先于索引/人物附件。
+    const worldbook = worldbookCorpus.sources.filter(source => mayUseBiographySource(
+      { ...source, sourceType: 'worldbook' }, input.directive,
+    ));
     const recentWindow = this.buildRecentSources(
       input.triggerMessageId,
       CURRENT_SCENE_MESSAGE_LIMIT,
@@ -95,7 +97,7 @@ export class TavernBiographyContextAssembler implements BiographyContextAssemble
       input.directive,
       currentWorld.time,
       currentWorld.location,
-      ...recent.slice(-8).flatMap(item => [item.title, item.content.slice(0, 1800)]),
+      ...recent.slice(-8).flatMap(item => [item.title, item.content]),
     ].join('\n');
     const worldbookCandidates = mapSources(worldbook, 'worldbook', 100);
     const characterCandidates = mapSources(characters, 'mvu', 95);
@@ -108,25 +110,25 @@ export class TavernBiographyContextAssembler implements BiographyContextAssemble
     const worldbookContext = selectRelevantContextSources(
       worldbookCandidates,
       retrievalQuery,
-      { limit: 12, contentLimit: 3000, fallbackCount: 4 },
+      { limit: 12, fallbackCount: 4 },
     );
     const recentContext = mapSources(recent, 'chat', 80);
     const characterContext = selectRelevantContextSources(
       characterCandidates, retrievalQuery,
-      { limit: 8, contentLimit: 3500, fallbackCount: 2 },
+      { limit: 8, fallbackCount: 2 },
     );
     const genealogyContext = selectRelevantContextSources(
       genealogyCandidates, retrievalQuery,
-      { limit: 6, contentLimit: 3600, fallbackCount: 0 },
+      { limit: 6, fallbackCount: 0 },
     );
-    // 旧传记只注入结构化摘要（对象/跨度/总述/各段开头），不再携带全文正文。
+    // 传记保留各段完整正文，并补充确定性时间线；不硬切首尾。
     const biographyRefs = selectRelevantContextSources(
       biographyCandidates, retrievalQuery,
-      { limit: 6, contentLimit: 4200, fallbackCount: 0 },
+      { limit: 6, fallbackCount: 0 },
     );
     const butterflyRefs = selectRelevantContextSources(
       butterflyCandidates, retrievalQuery,
-      { limit: 5, contentLimit: 3200, fallbackCount: 0 },
+      { limit: 5, fallbackCount: 0 },
     );
     const legacySourceIndex = [
       ...worldbookContext,
@@ -145,7 +147,7 @@ export class TavernBiographyContextAssembler implements BiographyContextAssemble
       contextQuery: [
         currentWorld.time,
         currentWorld.location,
-        ...recent.slice(-8).flatMap(item => [item.title, item.content.slice(0, 1800)]),
+        ...recent.slice(-8).flatMap(item => [item.title, item.content]),
       ].join('\n'),
       runtimeCandidates: [
         ...worldbook.map(source => ({ ...source, sourceType: 'worldbook' as const })),
@@ -185,6 +187,7 @@ export class TavernBiographyContextAssembler implements BiographyContextAssemble
     const activeBiographyRefs = sourceIndex.filter(source => source.sourceType === 'biography');
     const activeButterflyRefs = sourceIndex.filter(source => source.sourceType === 'butterfly');
     const warnings: string[] = [];
+    if (worldbook.length !== worldbookCorpus.sources.length) warnings.push('biography_mechanism_sources_not_historical');
     if (activeWorldbookContext.length === 0) warnings.push('worldbook_context_empty');
     if (activeCharacterContext.length === 0) warnings.push('character_context_empty');
     if (sourceIndex.length === 0) warnings.push('active_retrieval_empty');
@@ -262,15 +265,14 @@ export class TavernBiographyContextAssembler implements BiographyContextAssemble
       .map(message => ({
         sourceId: `chat:${message.message_id}`,
         title: `${message.role} floor ${message.message_id}`,
-        content: message.message.slice(0, RECENT_CONTENT_LIMIT),
+        content: message.message,
       }));
   }
 }
 
 /**
- * 已提交传记以结构化 JSON 全文进入上下文时体积巨大（每篇可达上万字符）。
- * 只保留可锚定的摘要：对象、跨度、总述、每段首尾与结构化实体。
- * 首尾同时保留，避免只截开头而丢失事件结果、人物关系与阶段衔接。
+ * 为已提交传记补充确定性时间线与对象时间带；不改写正文。
+ * 各段完整保留，避免事件结果、人物关系与阶段衔接丢失。
  * v2.1（internal.76 收尾 B）：追加「事件时间线」——从原文明确纪年提取
  * {绝对年 → X纪元N年事件句}，按时间排序；未记载年份的事件不出行（不猜）。
  */
@@ -293,7 +295,7 @@ export function digestBiographySource(content: string): string {
       }>;
       status?: { title?: unknown; content?: unknown };
     };
-    if (!record || typeof record !== 'object') return content.slice(0, 1500);
+    if (!record || typeof record !== 'object') return content;
     return JSON.stringify({
       schema: 'eyon.biography.digest.v2.2',
       target: {
@@ -308,7 +310,7 @@ export function digestBiographySource(content: string): string {
       stages: (record.stages ?? []).map(stage => ({
         title: textOf(stage.title),
         span: textOf(stage.span),
-        content: continuityExcerpt(textOf(stage.content), 180, 220),
+        content: textOf(stage.content),
         people: textListOf(stage.people),
         factions: textListOf(stage.factions),
         objects: textListOf(stage.objects),
@@ -318,14 +320,14 @@ export function digestBiographySource(content: string): string {
       status: passageDigest(record.status),
     });
   } catch {
-    return content.slice(0, 1500);
+    return content;
   }
 }
 
 /**
  * 物件时间带 + 语境摘录（internal.77 三轮覆盖）：
  * ① 各段物件与该段跨度绑定输出显式行（时段归属）；
- * ② 每个物件附带**当前段原文语境**（在该段 prose 中按物件名提取 ≤72 字，
+ * ② 每个物件附带**当前段原文语境**（在该段 prose 中按物件名提取完整句，
  *    原样摘录、不解释语义）——模型因此看到「环=冰冷、扣在高领下」之类语境，
  *    而非一个可随意搬动的名字（真机病历：玲山把圣纹压制环「赠送」妹妹，
  *    与传记 476 扣环、488 仍在戴矛盾）；
@@ -345,8 +347,12 @@ export function extractObjectBands(content: string): string[] {
     const contextOf = (prose: string, name: string): string => {
       const index = prose.indexOf(name);
       if (index < 0) return '';
-      const from = Math.max(0, index - 26);
-      return prose.slice(from, index + name.length + 46).replace(/\s+/gu, ' ').trim();
+      const boundaries = '。！？；;\n';
+      let from = index, to = index + name.length;
+      while (from > 0 && !boundaries.includes(prose[from - 1]!)) from -= 1;
+      while (to < prose.length && !boundaries.includes(prose[to]!)) to += 1;
+      if (to < prose.length) to += 1;
+      return prose.slice(from, to).replace(/\s+/gu, ' ').trim();
     };
     const bands: string[] = [];
     const appeared = new Set<string>();
@@ -396,7 +402,7 @@ export function extractObjectBands(content: string): string[] {
  */
 export function extractBiographyTimeline(content: string): string[] {
   const byAbsoluteYear = new Map<number, string>();
-  const pattern = /(创世纪元|神明纪元|混乱纪元|英雄纪元|复兴纪元)(前)?\s*([0-9零〇一二两三四五六七八九十百千]+)\s*年[^。；;\n]{3,70}/gu;
+  const pattern = /(创世纪元|神明纪元|混乱纪元|英雄纪元|复兴纪元)(前)?\s*([0-9零〇一二两三四五六七八九十百千]+)\s*年[^。；;\n]{3,}/gu;
   for (const match of content.matchAll(pattern)) {
     const era = match[1];
     const yearText = match[3];
@@ -459,16 +465,13 @@ export function chineseYearToNumber(value: string): number | null {
 
 /**
  * 选中传记的全文参考（internal.76 收尾 B）：墟境「引用传记」强制入选时使用——
- * 原文（上限 8000 字，超出截断并标注）+ 事件时间线尾注。
+ * 完整原文 + 事件时间线尾注。
  * 让模型看到「连续生平 + 明确纪年事件」，人物与时间不错位有据可依。
  */
-export function biographyFullReference(content: string, limit = 8000): string {
+export function biographyFullReference(content: string, _legacyLimit?: number): string {
   const timeline = extractBiographyTimeline(content);
   const objectBands = extractObjectBands(content);
-  const body = content.length > limit
-    ? `${content.slice(0, limit)}…（传记全文过长，截断至 ${limit} 字）`
-    : content;
-  const sections: string[] = [body];
+  const sections: string[] = [content];
   if (objectBands.length > 0) {
     sections.push(`【物件时间带】（物件归属时段来自传记各段跨度；可跨段持续存在，首次出现不得晚于该段）\n${objectBands.map(line => `- ${line}`).join('\n')}`);
   }
@@ -483,13 +486,8 @@ function passageDigest(
 ): { title: string; content: string } {
   return {
     title: textOf(passage?.title),
-    content: continuityExcerpt(textOf(passage?.content), 220, 260),
+    content: textOf(passage?.content),
   };
-}
-
-function continuityExcerpt(content: string, head: number, tail: number): string {
-  if (content.length <= head + tail) return content;
-  return `${content.slice(0, head)}…${content.slice(-tail)}`;
 }
 
 function textOf(value: unknown): string {
@@ -510,7 +508,7 @@ function mapSources(
   const seen = new Set<string>();
   return sources.flatMap(source => {
     const sourceId = source.sourceId.trim();
-    const content = source.content.trim().slice(0, CONTENT_LIMIT);
+    const content = source.content.trim();
     if (!sourceId || !content || seen.has(sourceId)) return [];
     seen.add(sourceId);
     return [{

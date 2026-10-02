@@ -209,6 +209,7 @@ async function bootstrap(): Promise<void> {
   );
   const taskStatuses = new TaskStatusProjection();
   let contextRevision = 0;
+  let disposed = false;
   let clearingContext = 0;
   const activeTasks = new Map<GenerationTaskType, symbol>();
   const referenceWrites = new Map<string, Promise<unknown>>();
@@ -608,6 +609,7 @@ async function bootstrap(): Promise<void> {
     dataBindings,
     globalObject,
   );
+  const canonMemory = new CanonMemoryChannel(runtime);
   const registration = registerWorkbenchLifecycle(
     {
       beforeGeneration: type => lifecycle.beforeGeneration(type),
@@ -615,6 +617,9 @@ async function bootstrap(): Promise<void> {
       onAssistantRendered: messageId => lifecycle.onAssistantRendered(messageId),
       onChatChanged: async () => {
         contextRevision += 1;
+        timeKernel.onChatChanged();
+        // Clear synchronously at the context edge, before any old reads resume.
+        if (!disposed) void canonMemory.clear('chat-changed', Date.now());
         const revision = contextRevision;
         clearingContext += 1;
         activeTasks.clear();
@@ -638,22 +643,22 @@ async function bootstrap(): Promise<void> {
   // internal.86（蓝图 §6 步 A）：蝴蝶记忆注入通道。
   // 让「当前分支仍有效的改写历史」直接进入正文模型（不再依赖世界书激活）；
   // 刷新时机：正文生成前（最准）/ 切聊天 / 删楼回退 / AI 楼渲染后 / 手动。
-  const canonMemory = new CanonMemoryChannel(runtime);
-  const refreshCanonMemory = (trigger: string): void => {
-    let namespace: ReturnType<typeof scopeReader.getNamespace>;
-    try {
-      namespace = scopeReader.getNamespace();
-    } catch {
-      return; // 无活动聊天 → 跳过
-    }
-    void (async () => {
+  const loadCanonMemory = async (trigger: string) => {
+    const namespace = scopeReader.getNamespace();
+    const revision = contextRevision;
+    const isCurrent = () => {
+      if (disposed || revision !== contextRevision) return false;
+      try { return namespaceKey(scopeReader.getNamespace()) === namespaceKey(namespace); }
+      catch { return false; }
+    };
+    return canonMemory.refreshFromSource(async () => {
       const [records, tombstones, biographyRecords, branch] = await Promise.all([
         butterflies.list(namespace),
         butterflies.listMemoryTombstones(namespace),
         biographies.list(namespace),
         canon.getBranch(namespace),
       ]);
-      await canonMemory.refresh({
+      return {
         records,
         tombstones,
         biographies: biographyRecords,
@@ -661,8 +666,14 @@ async function bootstrap(): Promise<void> {
         trigger,
         currentInput: readTavernComposerText(globalObject) ?? '',
         now: Date.now(),
-      });
-    })().catch(error => console.error(
+      };
+    }, isCurrent);
+  };
+  const refreshCanonMemory = (trigger: string): void => {
+    if (disposed) return;
+    try { scopeReader.getNamespace(); }
+    catch { return; } // 无活动聊天 → 跳过
+    void loadCanonMemory(trigger).catch(error => console.error(
       '[Eyon History Workbench] canon memory refresh failed',
       error,
     ));
@@ -739,18 +750,26 @@ async function bootstrap(): Promise<void> {
   const onMessageDeleted = (messageId: unknown): void => {
     const id = typeof messageId === 'number' ? messageId : Number(messageId);
     if (Number.isInteger(id) && id >= 0) {
+      generator.cancel('butterfly');
+      butterflyController.cancelPending();
+      activeReturnTurnController?.abort(new Error('generation was cancelled'));
+      activeReturnTurnController = null;
       ruinEntry.onMessageDeleted(id);
       void ruinTask.onMessageDeleted(id).catch(error => console.error(
         '[Eyon History Workbench] failed to restore ruin task draft after message deletion',
         error,
       ));
       const namespace = scopeReader.getNamespace();
-      void (async () => {
+      const rollbackBarrier = (async () => {
         const rollback = await canon.rollbackByMessageId(namespace, id, Date.now());
         // G-12：即使本次回滚不由这里执行（清扫抢先 / 脚本未加载时由 Y 入口补清），
         // 也要按当前分支状态把记录状态对齐——回执仍按 receipt 附带留痕。
         await syncCanonRecordStatuses(namespace, rollback?.receipt);
-      })().catch(error => console.error(
+        await butterflyController.onMessageDeleted(id, namespace);
+      })();
+      lifecycle.resetReturnPreparation(rollbackBarrier);
+      emitTaskStatus('butterfly', 'cancelled', '聊天已回滚，旧的遣返准备已撤销');
+      void rollbackBarrier.catch(error => console.error(
           '[Eyon History Workbench] failed to rollback canon revision after message deletion',
           error,
         ));
@@ -791,6 +810,7 @@ async function bootstrap(): Promise<void> {
       activeReturnTurnController?.abort(new Error('generation was cancelled'));
       activeReturnTurnController = null;
       butterflyController.cancelPending();
+      lifecycle.resetReturnPreparation();
     }
     } finally {
       if (activeTasks.get(taskType) === stopping) activeTasks.delete(taskType);
@@ -1164,6 +1184,8 @@ async function bootstrap(): Promise<void> {
       ruinController.cancelPending();
       genealogyController.cancelPending();
       butterflyController.cancelPending();
+      generator.cancel('butterfly');
+      lifecycle.resetReturnPreparation();
       settings.update({ ruinDraft: null });
       const butterflyPending = await butterflies.listPending(namespace);
       const [genealogiesCleared, ruinsCleared] = await Promise.all([
@@ -1202,6 +1224,7 @@ async function bootstrap(): Promise<void> {
       // 否则旧请求晚返回时会重新点亮“遣返完成”提示或旧注入，
       // 让新墟境看起来像刚刚被遣返。
       generator.cancel('butterfly');
+      lifecycle.resetReturnPreparation();
       await butterflyController.onRuinEntered();
       assertActive();
       const submission = await ruinEntry.enter(
@@ -1273,26 +1296,15 @@ async function bootstrap(): Promise<void> {
       failure: canonMemory.lastFailure(),
     }),
     refreshCanonMemory: async () => {
-      const namespace = scopeReader.getNamespace();
-      const [records, tombstones, biographyRecords, branch] = await Promise.all([
-        butterflies.list(namespace),
-        butterflies.listMemoryTombstones(namespace),
-        biographies.list(namespace),
-        canon.getBranch(namespace),
-      ]);
-      const memorySnapshot = await canonMemory.refresh({
-        records,
-        tombstones,
-        biographies: biographyRecords,
-        branch,
-        trigger: 'manual',
-        currentInput: readTavernComposerText(globalObject) ?? '',
-        now: Date.now(),
-      });
+      const memorySnapshot = await loadCanonMemory('manual');
+      if (!memorySnapshot) throw new GenerationCancelledError('butterfly');
       publishDataChanged({ views: ['settings'], reason: 'canon-memory-refreshed' });
       return memorySnapshot;
     },
     dispose() {
+      if (disposed) return;
+      disposed = true;
+      contextRevision += 1;
       globalThis.removeEventListener(WORKBENCH_CANCEL_TASK_EVENT, onCancelTask);
       if (events.names.messageDeleted) {
         events.bridge.off?.(events.names.messageDeleted, onMessageDeleted);
@@ -1698,7 +1710,8 @@ function classifyStatusPhase(
   status: string,
 ): NonNullable<WorkbenchStatusDetail['phase']> {
   if (/failed|error/u.test(status) || status === 'butterfly_pending') return 'error';
-  if (status === 'awaiting_narrative' || status === 'ruin_task_awaiting_player') return 'info';
+  if (status === 'awaiting_narrative' || status === 'ruin_task_awaiting_player'
+    || status === 'butterfly_awaiting_narrative') return 'info';
   if (/cancelled/u.test(status)) return 'cancelled';
   if (/retry/u.test(status)) return 'retrying';
   if (/ready|committed/u.test(status)) return 'success';

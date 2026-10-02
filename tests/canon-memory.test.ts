@@ -7,11 +7,137 @@ import {
   assessRecordEffectiveness,
   buildCanonMemorySnapshot,
   CANON_MEMORY_STOPWORDS,
+  CanonMemoryChannel,
   extractHardKeywords,
   extractSoftKeywords,
   scoreEntry,
   createCanonMemoryTombstone,
 } from '../src/runtime/canonMemoryChannel.ts';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+function memoryRefreshFixture() {
+  const writes: Array<{ chat: string; text: string }> = [];
+  let chat = 'chat-A';
+  let revision = 0;
+  const channel = new CanonMemoryChannel({
+    getChatMessages: () => [{ message_id: 0, role: 'user', message: '尤娜' }],
+    setExtensionPrompt: (_key, text) => { writes.push({ chat, text }); },
+  });
+  const input = {
+    records: [record({ runId: 'run-A', revision: 1, deltaRef: 'd-A', title: 'A历史',
+      evolution: 'ONLY_FROM_A：尤娜的历史改写。', keywords: ['尤娜'] })],
+    branch: branch([delta({ deltaId: 'd-A', revision: 1, subjectNames: ['尤娜'] })]),
+    trigger: 'manual', now: 1,
+  };
+  const guard = () => {
+    const expectedChat = chat;
+    const expectedRevision = revision;
+    return () => chat === expectedChat && revision === expectedRevision;
+  };
+  return { channel, writes, input, guard,
+    switchTo: (next: string) => { chat = next; revision += 1; } };
+}
+
+test('异步A记忆晚于B清空完成，不能注入B聊天', async () => {
+  const fixture = memoryRefreshFixture();
+  const pending = deferred<typeof fixture.input>();
+  const oldRefresh = fixture.channel.refreshFromSource(() => pending.promise, fixture.guard());
+  fixture.switchTo('chat-B');
+  await fixture.channel.clear('chat-changed', 2);
+  pending.resolve(fixture.input);
+  assert.equal(await oldRefresh, null);
+  assert.equal(fixture.channel.snapshot(), null);
+  assert.deepEqual(fixture.writes, [{ chat: 'chat-B', text: '' }]);
+});
+
+test('即使尚未收到切卡清理事件，命名空间守卫也拒绝旧A记忆', async () => {
+  const fixture = memoryRefreshFixture();
+  const pending = deferred<typeof fixture.input>();
+  const oldRefresh = fixture.channel.refreshFromSource(() => pending.promise, fixture.guard());
+  fixture.switchTo('chat-B');
+  pending.resolve(fixture.input);
+  assert.equal(await oldRefresh, null);
+  assert.deepEqual(fixture.writes, []);
+});
+
+test('A→B→A后旧读取批次失效，但新A读取正常注入', async () => {
+  const fixture = memoryRefreshFixture();
+  const pending = deferred<typeof fixture.input>();
+  const oldRefresh = fixture.channel.refreshFromSource(() => pending.promise, fixture.guard());
+  fixture.switchTo('chat-B');
+  await fixture.channel.clear('chat-changed', 2);
+  fixture.switchTo('chat-A');
+  pending.resolve(fixture.input);
+  assert.equal(await oldRefresh, null);
+  const fresh = await fixture.channel.refreshFromSource(async () => fixture.input, fixture.guard());
+  assert.ok(fresh?.injectedText.includes('ONLY_FROM_A'));
+  assert.ok(fixture.writes.at(-1)?.text.includes('ONLY_FROM_A'));
+});
+
+test('同一聊天并发刷新只允许最新读取结果注入', async () => {
+  const fixture = memoryRefreshFixture();
+  const pending = deferred<typeof fixture.input>();
+  const oldRefresh = fixture.channel.refreshFromSource(() => pending.promise, fixture.guard());
+  const newest = await fixture.channel.refreshFromSource(async () => ({ ...fixture.input,
+    records: [], branch: branch([]), trigger: 'newest' }), fixture.guard());
+  pending.resolve(fixture.input);
+  assert.equal(await oldRefresh, null);
+  assert.equal(fixture.channel.snapshot(), newest);
+  assert.deepEqual(fixture.writes, [{ chat: 'chat-A', text: '' }]);
+});
+
+test('退役后旧资料读取不能重新建立记忆注入', async () => {
+  const fixture = memoryRefreshFixture();
+  const pending = deferred<typeof fixture.input>();
+  const oldRefresh = fixture.channel.refreshFromSource(() => pending.promise);
+  await fixture.channel.clear('dispose', 2);
+  pending.resolve(fixture.input);
+  assert.equal(await oldRefresh, null);
+  assert.deepEqual(fixture.writes, [{ chat: 'chat-A', text: '' }]);
+});
+
+test('退役后旧读取失败不会变成新聊天的报错', async () => {
+  const fixture = memoryRefreshFixture();
+  const pending = deferred<typeof fixture.input>();
+  const oldRefresh = fixture.channel.refreshFromSource(() => pending.promise);
+  await fixture.channel.clear('dispose', 2);
+  pending.reject(new Error('OLD_SOURCE_FAILED'));
+  assert.equal(await oldRefresh, null);
+  assert.equal(fixture.channel.lastFailure(), '');
+});
+
+test('已失效的刷新不会开始读取，当前来源故障仍正常暴露', async () => {
+  const fixture = memoryRefreshFixture();
+  let reads = 0;
+  assert.equal(await fixture.channel.refreshFromSource(async () => {
+    reads += 1;
+    return fixture.input;
+  }, () => false), null);
+  assert.equal(reads, 0);
+  await assert.rejects(fixture.channel.refreshFromSource(async () => {
+    throw new Error('CURRENT_SOURCE_FAILED');
+  }), /CURRENT_SOURCE_FAILED/);
+});
+
+test('旧注入接口的异步确认失败，不覆盖新聊天已清空的诊断', async () => {
+  const ack = deferred<void>();
+  let count = 0;
+  const channel = new CanonMemoryChannel({ getChatMessages: () => [],
+    setExtensionPrompt: () => ++count === 1 ? ack.promise : undefined });
+  const fixture = memoryRefreshFixture();
+  const old = channel.refresh(fixture.input);
+  await channel.clear('chat-changed', 2);
+  ack.reject(new Error('OLD_WRITE_ACK_FAILED'));
+  await old;
+  assert.equal(channel.snapshot(), null);
+  assert.equal(channel.lastFailure(), '');
+});
 
 function delta(input: {
   deltaId: string;
@@ -350,8 +476,8 @@ test('无命中且无有效记录时注入为空（清除语义，幂等）', ()
   assert.match(unmatched.injectedText, /<CANON_MEMORY/u);
 });
 
-test('注入块受字符预算约束（超长档案按 revision 降序截断）', () => {
-  const longEvolution = '尤娜'.repeat(200); // 400 字，截断到 320 后仍长
+test('已选 Canon 记忆按 revision 降序完整注入，不再裁掉长演变或整条事实', () => {
+  const longEvolution = '尤娜'.repeat(200);
   const deltas = Array.from({ length: 12 }, (_, index) =>
     delta({ deltaId: `d${index + 1}`, revision: index + 1, subjectNames: ['尤娜'] }));
   const records = Array.from({ length: 12 }, (_, index) =>
@@ -368,8 +494,8 @@ test('注入块受字符预算约束（超长档案按 revision 降序截断）'
   });
   const injectedLines = snapshot.injectedText.split('\n').filter(line => line.startsWith('[R'));
   assert.ok(injectedLines.length >= 2);
-  assert.ok(injectedLines.length < 12, '超出预算的条目不应全部注入');
-  assert.ok(snapshot.injectedText.length <= 2600, '注入块应有界');
+  assert.equal(injectedLines.length, 12);
+  assert.ok(injectedLines.every(line => line.includes(longEvolution)));
 });
 
 test('G-09 可见档案删除后仍以紧凑残片解释 active Canon；回滚后自动退出', () => {

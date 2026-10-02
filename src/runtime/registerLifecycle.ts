@@ -1,4 +1,5 @@
 import { isWorkbenchGuidanceError } from '../core/workbenchGuidance.ts';
+import { isTaskCancellationError } from './tavernGeneration.ts';
 import { resolveHostGlobal } from './tavernRuntimeAdapter.ts';
 
 export interface WorkbenchGenerationLifecycle {
@@ -33,13 +34,21 @@ export function registerBiographyLifecycle(
   globalObject: Record<string, unknown> = globalThis as Record<string, unknown>,
 ): LifecycleRegistration {
   const previous = globalObject.eyon_history_generateInterceptor;
+  let preparationSequence = 0;
   const prepare = async (type?: string): Promise<void> => {
     await lifecycle.beforeGeneration(type);
   };
   const failClosed = async (
     error: unknown,
+    sequence: number,
     abort?: (immediately: boolean) => void,
   ): Promise<void> => {
+    // 旧钩子晚失败不能停止新的生成或清空新准备。取消不是整台工作台故障。
+    if (sequence !== preparationSequence || isTaskCancellationError(error)) {
+      abort?.(true);
+      if (sequence === preparationSequence) stopHostGeneration(globalObject);
+      throw error;
+    }
     // β1.1：引导类问题（玩家话说得不全／该去工作台做）不再停生成。
     // 真机病历：聊天里只输入「墟境探索」→ 工作台草稿为空 → getInput 抛错 →
     // 这里 stopGeneration() 把整楼掐掉，玩家只看到自己那条消息。
@@ -66,10 +75,11 @@ export function registerBiographyLifecycle(
     abort: (immediately: boolean) => void,
     type?: string,
   ): Promise<void> => {
+    const sequence = ++preparationSequence;
     try {
       await prepare(type);
     } catch (error) {
-      await failClosed(error, abort);
+      await failClosed(error, sequence, abort);
     }
   };
   globalObject.eyon_history_generateInterceptor = interceptor;
@@ -78,10 +88,11 @@ export function registerBiographyLifecycle(
     const type = typeof args[0] === 'string' ? args[0] : undefined;
     const dryRun = args[2] === true;
     if (dryRun) return;
+    const sequence = ++preparationSequence;
     try {
       await prepare(type);
     } catch (error) {
-      await failClosed(error);
+      await failClosed(error, sequence);
     }
   };
 
@@ -108,6 +119,7 @@ export function registerBiographyLifecycle(
     });
   };
   const onChatChanged = () => {
+    preparationSequence += 1;
     void lifecycle.onChatChanged().catch(error => {
       console.error(
         '[Eyon History Workbench] failed to clear pending biography request',
@@ -128,6 +140,7 @@ export function registerBiographyLifecycle(
 
   return {
     dispose() {
+      preparationSequence += 1;
       events.off?.(eventNames.generationAfterCommands, onBeforeGeneration);
       events.off?.(eventNames.characterMessageRendered, onRendered);
       events.off?.(eventNames.chatChanged, onChatChanged);

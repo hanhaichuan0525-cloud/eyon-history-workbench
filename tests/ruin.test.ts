@@ -3205,6 +3205,25 @@ test('MESSAGE_SENT 对普通正文零副作用，缺失事件时生成前仍可�
   runtime.messages.get(8)!.message = '任务完成，遣返吧';
   assert.equal(await lifecycle.beforeGeneration('normal'), true);
   assert.equal(prepareCount, 1);
+
+  await lifecycle.onUserMessageSent(8);
+  assert.equal(prepareCount, 2);
+  assert.equal(await lifecycle.beforeGeneration('normal'), true);
+  assert.equal(prepareCount, 2, '同楼未变动仍复用 MESSAGE_SENT 准备');
+  let release!: () => void;
+  const rollback = new Promise<void>(resolve => { release = resolve; });
+  lifecycle.resetReturnPreparation(rollback);
+  let releaseSecond!: () => void;
+  const secondRollback = new Promise<void>(resolve => { releaseSecond = resolve; });
+  lifecycle.resetReturnPreparation(secondRollback);
+  lifecycle.resetReturnPreparation(); // 点击停止也不能绕过尚在对账的回滚。
+  const afterRollback = lifecycle.beforeGeneration('normal');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(prepareCount, 2, '须等待回滚存储对账完成');
+  releaseSecond(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(prepareCount, 2, '连续删楼需等全部回滚屏障，不只最后一个');
+  release(); assert.equal(await afterRollback, true);
+  assert.equal(prepareCount, 3, '回滚后不能复用同楼旧 Promise');
 });
 
 test('同一楼层同一输入的重复调用复用同一生成事务', async () => {
@@ -5727,12 +5746,13 @@ test('中文数字年份转换：阿拉伯/中文/带位权/零 全部确定性�
   assert.equal(chineseYearToNumber('千零一夜'), null); // 非法组合不推断
 });
 
-test('传记全文参考：选中传记带事件时间线尾注，超长截断并标注', () => {
+test('传记全文参考：超长原文完整保留并带事件时间线尾注', () => {
   const body = '复兴纪元477年，玲山深夜潜入圣纹工坊。\n' + '内容。'.repeat(9000);
   const ref = biographyFullReference(body, 8000);
   assert.ok(ref.includes('【事件时间线】'));
   assert.ok(ref.includes('- 复兴纪元477年，玲山深夜潜入圣纹工坊'));
-  assert.ok(ref.includes('传记全文过长，截断至 8000 字'));
+  assert.ok(ref.startsWith(body));
+  assert.doesNotMatch(ref, /截断至/u);
   const noDate = biographyFullReference('没有任何纪年的传记正文。');
   assert.ok(!noDate.includes('【事件时间线】'));
 });

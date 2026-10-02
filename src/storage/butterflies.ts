@@ -47,6 +47,8 @@ export interface PendingSettlement {
   triggerSwipeId?: number | null;
   assistantSwipeId: number | null;
   sourceHash: string;
+  /** 内部事务身份：完整可见行动楼摘要；不增加模型输出字段。 */
+  triggerEvidenceHash?: string;
   /** 引用来源身份规则版本；旧 pending 缺省时按兼容体检决定是否重新冻结。 */
   sourceIdentityVersion?: number;
   /** 最终 sourceIndex 的规范化集合摘要，用于拒绝复用来源合同已经漂移的 pending。 */
@@ -65,6 +67,7 @@ export interface ButterflyRecord {
   request: ButterflyRequest;
   result: ButterflyResult;
   sourceHash: string;
+  triggerEvidenceHash?: string;
   panel: string;
   archiveEntry: string;
   assistantMessageId: number;

@@ -549,6 +549,33 @@ test('残缺 sourceRef 编号不唯一时不修正并报 PLAN_SOURCE_NOT_FOUND',
   );
 });
 
+test('规划、扩写与批量复核区分资料用途，混合核心不包装成历史身份证', () => {
+  const rules = { sharedContext: '伊雍讲述规则与契约约束仍保留', retrievalContract: '',
+    validationContract: '', generationContract: '生成契约' };
+  const core: ContextSource = { sourceId: 'worldbook:mechanism', sourceType: 'worldbook',
+    title: '伊雍核心', content: '工作台操作说明：命定契约原文完整保留。', authority: 100 };
+  const plan = makePlan();
+  const passage = { passageId: 'stage-1', kind: 'stage' as const, title: '片段',
+    sourceRefs: [sourceId], eventAssignment: plan.eventAssignments.find(item => item.passageId === 'stage-1')! };
+  const ordinary = [
+    buildBiographyPlanPrompt({ requestId, directive, context: makeContext(), rules, stagePlan: makeStagePlan() }),
+    buildBiographyPassagePrompt({ requestId, plan, passage, rules, evidence: [core] }),
+    buildBiographyPassageBatchPrompt({ requestId, plan, passages: [passage], rules, evidence: [core] }),
+  ];
+  for (const prompt of ordinary) {
+    assert.match(prompt, /<BIOGRAPHY_SOURCE_PURPOSE>/u);
+    assert.match(prompt, /规划或首稿造出的名称只触发查证/u);
+    assert.match(prompt, /补查到同名条目并不证明/u);
+    assert.doesNotMatch(prompt, /工作台操作说明：命定契约原文完整保留/u);
+  }
+  assert.match(ordinary[0]!, /伊雍讲述规则与契约约束仍保留/u);
+  plan.playerDirective.raw = '对伊雍核心进行寻根溯源';
+  const explicit = buildBiographyPassageBatchPrompt({ requestId, plan, passages: [passage], rules, evidence: [core] });
+  assert.match(explicit, /伊雍核心｜机制与设定参考，不作历史身份证/u);
+  assert.match(explicit, /工作台操作说明：命定契约原文完整保留/u);
+  assert.match(explicit, /不可把伊雍核心无据实体化/u);
+});
+
 test('规划提示词只注入一份上下文（sourceIndex 权威清单，分组数组置空）', () => {
   const prompt = buildBiographyPlanPrompt({
     requestId,
@@ -1207,7 +1234,7 @@ test('P0-A：规划与扩写消费同一 PersonCanonView factId，不受旧 1500
       revisionRetired: null,
     }],
   }];
-  const lateCanon = `${'人物资料。'.repeat(400)}背景口述：玲山只知道官方声称铃羽被幻梦选中，她怀疑有人替女神写下了妹妹的名字。`;
+  const lateCanon = `${'人物资料。'.repeat(3000)}背景口述：玲山只知道官方声称铃羽被幻梦选中，她怀疑有人替女神写下了妹妹的名字。`;
   context.evidenceBundle.taskAnchorAttachments = [{
     schema: 'eyon.retrieval.task-anchor-attachment.v1',
     attachmentId: 'attachment:lingshan:fixture',
@@ -1222,6 +1249,8 @@ test('P0-A：规划与扩写消费同一 PersonCanonView factId，不受旧 1500
     charCount: lateCanon.length,
     purpose: 'direct-character-entry',
   }];
+  context.evidenceBundle.taskAnchorAttachments.push({ ...context.evidenceBundle.taskAnchorAttachments[0]!,
+    attachmentId: 'attachment:duplicate-document', entityId: 'entity:related-person' });
   const passage = context.evidenceBundle.passages[0]!;
   context.evidenceBundle.qualifiedEvidence = {
     schema: 'eyon.retrieval.qualified-evidence.v1',
@@ -1273,6 +1302,7 @@ test('P0-A：规划与扩写消费同一 PersonCanonView factId，不受旧 1500
     assert.match(prompt, /"startOffset":1700/u);
     assert.match(prompt, /<TASK_ANCHOR_ATTACHMENT>/u);
     assert.match(prompt, /官方声称铃羽被幻梦选中/u);
+    assert.equal(prompt.split(lateCanon).length - 1, 1, '完整长人物附件只投递一次，不被12000字门裁掉尾部');
     assert.match(prompt, /不得把机制性猜测升级为正史/u);
   }
   assert.match(expansionPrompt, /<QUALIFIED_EVIDENCE_VIEW>/u);

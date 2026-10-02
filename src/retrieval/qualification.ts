@@ -15,6 +15,7 @@ import type {
   WorldKnowledgeCatalog,
 } from './contracts.ts';
 import { normalizeRetrievalText } from './index.ts';
+import { extractEraNames } from './temporal.ts';
 
 export function buildQualifiedEvidenceView(input: {
   taskType: RetrievalTaskType;
@@ -25,8 +26,7 @@ export function buildQualifiedEvidenceView(input: {
   catalog: WorldKnowledgeCatalog;
   requestedLocations?: string[];
 }): QualifiedEvidenceView {
-  const requestedEras = unique(input.frame.temporalTerms.flatMap(term =>
-    term.match(/[\p{Script=Han}]{2,8}纪元/gu) ?? []));
+  const requestedEras = unique(input.frame.temporalTerms.flatMap(extractEraNames));
   const entitiesById = new Map(input.catalog.entities.map(entity => [entity.entityId, entity]));
   const entitiesBySnapshot = new Map<string, typeof input.catalog.entities>();
   for (const entity of input.catalog.entities) {
@@ -152,8 +152,7 @@ function qualifyTemporal(
   rawEvidenceScopes: string[],
   eraOrder: string[],
 ): QualifiedEvidencePassage['temporal'] {
-  const evidenceEras = unique(rawEvidenceScopes.flatMap(term =>
-    term.match(/[\p{Script=Han}]{2,8}纪元/gu) ?? []));
+  const evidenceEras = unique(rawEvidenceScopes.flatMap(extractEraNames));
   if (requestedEras.length === 0 || evidenceEras.length === 0) {
     return { fit: 'unknown', requestedEras, evidenceEras };
   }

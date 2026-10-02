@@ -13,9 +13,10 @@ import {
   buildCharacterCanonFacts,
   lifeAnchorsFromCharacterFacts,
 } from './characterFacts.ts';
-import { buildTemporalEligibilityLedger, parseWorldTime } from './temporal.ts';
+import { buildTemporalEligibilityLedger, extractEraNames, parseWorldTime } from './temporal.ts';
 import { GenealogyIdentitySchema } from '../schemas/genealogy.ts';
-import { characterDocumentOwner, templateIndependentText } from './sourceOwnership.ts';
+import { parseNumber } from './prosePersonReview.ts';
+import { characterDocumentOwner, characterReferenceIdentity, entityHeadingName, isEntityName, templateIndependentText } from './sourceOwnership.ts';
 
 interface EntitySeed {
   name: string;
@@ -98,6 +99,7 @@ export function buildWorldKnowledgeCatalog(
     if (anchors.length > 0) entity.lifeAnchors = anchors;
   }
   const aliases = aliasIndex(entities);
+  relationSeeds.push(...characterReferenceRelations(snapshots, aliases));
   const relations = materializeRelations(relationSeeds, aliases);
   const temporalEligibility = buildTemporalEligibilityLedger(snapshots, entities, relations);
   const adjacency = relationAdjacency(relations, 'forward');
@@ -137,6 +139,7 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
 } {
   const entities: EntitySeed[] = [];
   const relations: RelationSeed[] = [];
+  const literal = templateIndependentText(snapshot.content);
   const titleParts = [...snapshot.title.matchAll(/[【\[]([^】\]]+)[】\]]/gu)].map(match => match[1].trim());
   const cleanTitle = snapshot.title.replace(/[【\[][^】\]]+[】\]]/gu, '').trim();
   const taggedName = [...titleParts].reverse().find(part =>
@@ -147,10 +150,14 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
     || cleanTitle.startsWith(`${taggedName}（`)
   );
   const owner = characterDocumentOwner(snapshot);
-  const heading = templateIndependentText(snapshot.content).match(/^\s*#{1,6}\s+(.{2,50}?)\s*$/mu)?.[1]?.trim();
+  const heading = literal.match(/^\s*#{1,6}\s+(.{2,50}?)\s*$/mu)?.[1]?.trim();
   // 同一人的习惯/背景补充不能被标题误造为另一个人；但其经营的商会仍是独立实体。
   const separateTopic = Boolean(owner && heading && heading !== owner && cleanTitle === heading);
-  const titleName = separateTopic ? heading! : owner || (taggedNameOwnsTitle ? taggedName : cleanTitle || taggedName);
+  const referenceIdentity = separateTopic ? undefined : characterReferenceIdentity(snapshot);
+  const eventTag = titleParts.findIndex(part => part === '事件');
+  const eventGroup = eventTag >= 0 ? titleParts[eventTag + 1] : undefined;
+  const titleName = separateTopic ? heading! : referenceIdentity?.name || owner
+    || (eventGroup && isEntityName(eventGroup) ? eventGroup : taggedNameOwnsTitle ? taggedName : cleanTitle || taggedName);
   const explicitKind = separateTopic
     ? (/^\s*(?:总部|势力标识)\s*[:：]/mu.test(snapshot.content) ? 'organization' : null)
     : explicitTitleKind(titleParts);
@@ -164,14 +171,26 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
     && lifespanAnywhere !== undefined;
   const titleKind = snapshot.sourceType === 'mvu'
     ? 'person'
-    : explicitKind ?? (lifespanCanTypeTitle ? 'person' : inferKind(titleName, titleParts.join(' ')));
-  const titleTemporal = snapshot.content.match(/[\p{Script=Han}]{2,8}纪元/u)?.[0];
-  if (titleName.length >= 2 && !GENERIC_TITLES.has(titleName)) {
+    : referenceIdentity ? 'person' : explicitKind ?? (lifespanCanTypeTitle ? 'person' : inferKind(titleName, titleParts.join(' ')));
+  // 出生日期是人物自己的时间锚，不能被介绍里先出现的事件纪元替代。
+  // MVU 是当前人物记录，不因说明提到一次穿越就另造时代身份；无明确出生
+  // 时作为未定时代的参照，由下游“唯一身份 + 生卒无冲突”门关联主档。
+  const titleTemporal = titleKind === 'person'
+    ? lifespanAnywhere?.born?.era
+      ?? (snapshot.sourceType === 'mvu' ? undefined : extractEraNames(literal)[0])
+    : extractEraNames(literal)[0];
+  if (isEntityName(titleName) && !GENERIC_TITLES.has(titleName)) {
     entities.push({
       ...entitySeed(snapshot, titleName, titleKind, titleKind !== 'unknown'),
+      aliases: referenceIdentity?.aliases,
       tags: /(?:神明|神祇|女神|男神)/u.test(titleParts.join(' ')) ? ['deity'] : [],
       temporal: titleTemporal,
     });
+  }
+  if (referenceIdentity && eventGroup && isEntityName(eventGroup)) {
+    entities.push(entitySeed(snapshot, eventGroup, 'event', true));
+    relations.push({ subject: eventGroup, predicate: 'character_reference', object: titleName,
+      status: 'structural', snapshotId: snapshot.snapshotId });
   }
 
   // 人物时间资格：只接受人物资料源中的显式生卒字段或带字段名的年龄。
@@ -188,19 +207,30 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
   }
 
   const structured = extractStructuredSeeds(snapshot);
+  // JSON 的姓名种子与同一 MVU 主记录共用身份锚；不能在同一来源里再造
+  // 一份无生卒的同名人物。嵌套的其他人物不继承主记录的出生/时代。
+  if (snapshot.sourceType === 'mvu') {
+    for (const seed of structured.entities) {
+      if (normalize(seed.name) !== normalize(titleName)) continue;
+      seed.kind = titleKind;
+      seed.temporal = titleTemporal;
+      seed.lifespan ??= lifespanAnywhere;
+    }
+  }
   entities.push(...structured.entities);
   relations.push(...structured.relations);
 
   let currentGroup = '';
   let offset = 0;
-  for (const line of snapshot.content.split(/\r?\n/u)) {
+  for (const rawLine of literal.matchAll(/[^\r\n]+/gu)) {
+    const line = rawLine[0];
+    offset = rawLine.index;
     const lineStart = offset;
-    offset += line.length + 1;
     const markdown = line.match(/^\s*#{1,6}\s+(.{2,50}?)\s*$/u);
     if (markdown) {
       const name = markdown[1].trim();
-      if (!FIELD_NAMES.has(name) && !GENERIC_TITLES.has(name)) {
-        currentGroup = name;
+      currentGroup = name;
+      if (isEntityName(name) && !FIELD_NAMES.has(name) && !GENERIC_TITLES.has(name)) {
         entities.push(entitySeed(snapshot, name, inferKind(name, '群体'), true, lineStart));
       }
       continue;
@@ -212,7 +242,8 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
     if (!field) continue;
     const label = field[1].trim();
     const value = field[2].trim();
-    if (hasUnresolvedBranches(snapshot.content)) continue;
+    // 本人档案的全名标题不是一个独立的姓氏实体（A·B 不能再拆成 B）。
+    if (referenceIdentity && [referenceIdentity.name, ...referenceIdentity.aliases].includes(label)) continue;
     const relationField = /^(?:所属|所属组织|所属势力|归属|家族|神系|地点|位置|所在地|活动地点|活跃于)$/u.test(label);
     if (/^(?:身份|职务)$/u.test(label) && titleName && value) {
       entities.push({
@@ -258,13 +289,12 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
         }
       }
     }
-    if (FIELD_NAMES.has(label) && !relationField) continue;
-    const middleName = label.split(/[・·]/u).slice(1).join('・')
-      .replace(/[（(].*$/u, '').trim();
-    const canonical = middleName.length >= 2 ? middleName : label;
+    if ((!isEntityName(label) || FIELD_NAMES.has(label)) && !relationField) continue;
+    const canonical = entityHeadingName(label);
+    const relative = label.match(/^(父亲|母亲|姐姐|妹妹|哥哥|兄长|弟弟|配偶|主人|创造者|制造者)\s*[・·]\s*/u)?.[1];
     const deityDefinition = !value && /^(?:神明|圣灵)(?:\s|$|[（(])/u.test(currentGroup);
-    const kind = inferKind(canonical, deityDefinition ? `${label} 神明人物` : label);
-    if (!relationField && canonical.length >= 2 && canonical.length <= 40) {
+    const kind = relative ? 'person' : inferKind(canonical, deityDefinition ? `${label} 神明人物` : label);
+    if (!relationField && isEntityName(canonical) && canonical.length <= 40) {
       const tags = deityDefinition || /(?:女神|男神|神祇|神明|圣灵)/u.test(label)
         ? ['deity'] : [];
       const aliases = [...label.matchAll(/[（(]([^）)]+)[）)]/gu)]
@@ -285,6 +315,12 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
         tags,
         identity: label === canonical ? undefined : label,
       });
+      if (relative && titleKind === 'person' && titleName !== canonical) {
+        relations.push({ subject: titleName, predicate: ({ 父亲: 'father', 母亲: 'mother', 配偶: 'spouse',
+          创造者: 'creator', 制造者: 'creator', 主人: 'owner' } as Record<string, string>)[relative] ?? 'sibling',
+        object: canonical, status: 'explicit', snapshotId: snapshot.snapshotId,
+        span: { snapshotId: snapshot.snapshotId, startOffset: lineStart, endOffset: lineStart + line.length } });
+      }
       if (currentGroup && currentGroup !== canonical) {
         relations.push({
           subject: canonical,
@@ -444,7 +480,7 @@ function explicitSentenceRelations(snapshot: SourceSnapshot): RelationSeed[] {
     { pattern: /^(.{2,30}?)(?:导致|造成|引发)(.{2,30})$/u, predicate: 'caused' },
   ];
   const output: RelationSeed[] = [];
-  for (const raw of snapshot.content.split(/[。；;\n]/u)) {
+  for (const raw of templateIndependentText(snapshot.content).split(/[。；;\n]/u)) {
     const sentence = raw.trim();
     if (!sentence || /(?:不属于|不隶属|并非|未曾|没有)/u.test(sentence)) continue;
     for (const { pattern, predicate } of patterns) {
@@ -506,7 +542,7 @@ function extractLifespanAnywhere(content: string): KnowledgeEntity['lifespan'] |
   const description = content.match(
     /(?:^|[\n\r,{，]|\\n)\s*["']?(?:外貌|外观|介绍|简介)["']?\s*[:：]\s*["']?([^"'\n\r}]{1,180})/u,
   )?.[1];
-  const actualAge = description?.match(/(?:实际(?:年龄)?|实龄)\s*[:：]?\s*\d+\s*岁/u)?.[0];
+  const actualAge = description?.match(/(?:实际(?:年龄)?|实龄)\s*[:：]?\s*[0-9零〇一二两三四五六七八九十百千]+\s*岁/u)?.[0];
   const age = ageField ? extractRecordedAge(ageField) : actualAge ? extractRecordedAge(description!) : undefined;
   if (age !== undefined) {
     const arrivalBased = /界外来客|来自异界|穿越|异乡|书页.*门|另一.*世界|地球/u.test(content);
@@ -536,20 +572,21 @@ function recordedAgeBaseline(value: string): Partial<NonNullable<KnowledgeEntity
  *    硬门放行（不判死），原始文本仍在人物卡全文里交给模型自行理解（不猜）。
  */
 export function extractRecordedAge(text: string): number | undefined {
-  const explicit = [...text.matchAll(/(?:实际(?:年龄)?|实龄)\s*[:：]?\s*(\d+)\s*岁/gu)];
+  const digits = '[0-9零〇一二两三四五六七八九十百千]+';
+  if (new RegExp(`${digits}\\s*[-~～至或]\\s*${digits}`, 'u').test(text)
+    || /数十|数百|数千|几十|上百/u.test(text)) return undefined;
+  const explicit = [...text.matchAll(new RegExp(`(?:实际(?:年龄)?|实龄)\\s*[:：]?\\s*(${digits})\\s*岁`, 'gu'))];
   if (explicit.length === 1 && !/(?:岁\s*或|\d\s*[-~～至]\s*\d)/u.test(text)) {
-    const age = Number(explicit[0]![1]);
-    return Number.isSafeInteger(age) ? age : undefined;
+    const age = parseNumber(explicit[0]![1]);
+    return age !== null && Number.isSafeInteger(age) ? age : undefined;
   }
   if (explicit.length > 1 || /不详|未知|可能|或许|大约|大概|将近|接近|约|\d\s*[-~～至]\s*\d/u.test(text)) return undefined;
-  const cleaned = text.replace(
-    /(?:外貌|外观|心理|生理|视觉|看起来)[^\d]{0,6}\d+\s*岁/gu,
-    '',
-  );
-  const plain = [...cleaned.matchAll(/(?<![\d.])(\d+)\s*岁/gu)];
+  if (new RegExp(`^\\s*${digits}\\s*$`, 'u').test(text)) return parseNumber(text.trim()) ?? undefined;
+  const cleaned = text.replace(new RegExp(`(?:外貌|外观|外表|容貌|心理|生理|视觉|看起来|看上去)[^\\d]{0,6}?${digits}\\s*岁`, 'gu'), '');
+  const plain = [...cleaned.matchAll(new RegExp(`(?<![\\d.])(${digits})\\s*岁`, 'gu'))];
   if (plain.length !== 1) return undefined;
-  const number = Number(plain[0]![1]);
-  return Number.isSafeInteger(number) && number >= 0 ? number : undefined;
+  const number = parseNumber(plain[0]![1]);
+  return number !== null && Number.isSafeInteger(number) && number >= 0 ? number : undefined;
 }
 
 /** 原始 EJS 不执行；未求值分支只能作为原文资料，不能被拼成同一时点的硬事实。 */
@@ -577,7 +614,7 @@ function mergeSeeds(seeds: EntitySeed[]): KnowledgeEntity[] {
   const merged = new Map<string, KnowledgeEntity>();
   for (const seed of seeds) {
     const normalized = normalize(seed.name);
-    if (normalized.length < 2 || FIELD_NAMES.has(seed.name)) continue;
+    if (!isEntityName(seed.name) || FIELD_NAMES.has(seed.name)) continue;
     const temporal = seed.temporal ?? '';
     const key = `${normalized}|${normalize(temporal)}`;
     const entity = merged.get(key) ?? {
@@ -594,7 +631,7 @@ function mergeSeeds(seeds: EntitySeed[]): KnowledgeEntity[] {
       spans: [],
     };
     uniquePush(entity.kinds, seed.kind);
-    for (const alias of seed.aliases ?? []) uniquePush(entity.aliases, alias);
+    for (const alias of seed.aliases ?? []) if (isEntityName(alias)) uniquePush(entity.aliases, alias);
     for (const tag of seed.tags ?? []) uniquePush(entity.tags, tag);
     if (seed.temporal) uniquePush(entity.temporalScopes, seed.temporal);
     if (seed.location) uniquePush(entity.locationScopes, seed.location);
@@ -647,6 +684,33 @@ function mergeSeeds(seeds: EntitySeed[]): KnowledgeEntity[] {
     }
     absorbed.add(undated.entityId);
   }
+  // MVU 的年龄阶段标签可关联唯一世界书本人；不剥离身体/灵魂/分身标签。
+  const sourceTypes = new Map(seeds.map(seed => [seed.snapshot.snapshotId, seed.snapshot.sourceType]));
+  for (const stage of entities) {
+    if (absorbed.has(stage.entityId) || !stage.kinds.includes('person')
+      || !stage.sourceSnapshotIds.every(id => sourceTypes.get(id) === 'mvu')) continue;
+    const match = stage.canonicalName.match(/^(.+?)[（(](?:半岁|[零〇一二两三四五六七八九十百\d]+(?:岁|个月)|婴儿(?:期)?|幼年(?:期)?|童年(?:期)?|少年(?:期)?|青年(?:期)?|成年(?:期)?|老年(?:期)?)[）)]$/u);
+    if (!match) continue;
+    const anchors = entities.filter(entity => !absorbed.has(entity.entityId)
+      && entity.normalizedName === normalize(match[1]!) && entity.kinds.includes('person')
+      && entity.sourceSnapshotIds.some(id => sourceTypes.get(id) === 'worldbook'));
+    if (anchors.length !== 1) continue;
+    const anchor = anchors[0]!;
+    if ((['born', 'died'] as const).some(key => {
+      const a = anchor.lifespan?.[key], b = stage.lifespan?.[key];
+      return a && b && a.year != null && b.year != null
+        && (a.era !== b.era || a.year !== b.year);
+    })) continue;
+    uniquePush(anchor.aliases, stage.canonicalName);
+    for (const key of ['aliases', 'kinds', 'tags', 'locationScopes', 'identities', 'sourceSnapshotIds'] as const) {
+      for (const item of stage[key]) uniquePush(anchor[key] as string[], item);
+    }
+    for (const span of stage.spans) {
+      if (!anchor.spans.some(existing => sameSpan(existing, span))) anchor.spans.push(span);
+    }
+    // 阶段年龄不能覆盖世界书身份的生卒锚。
+    absorbed.add(stage.entityId);
+  }
   return entities.filter(entity => !absorbed.has(entity.entityId)).map(entity => {
     if (entity.kinds.includes('person')) entity.kinds = entity.kinds.filter(kind => kind !== 'unknown');
     return entity;
@@ -692,6 +756,33 @@ function materializeRelations(
   return [...output.values()].sort((a, b) => a.relationId.localeCompare(b.relationId));
 }
 
+/** 单跳资料关系：只连接已存在人物；原文关系不能来自作者题注或未求值模板。 */
+function characterReferenceRelations(
+  snapshots: SourceSnapshot[], aliases: Map<string, KnowledgeEntity[]>,
+): RelationSeed[] {
+  const people = [...aliases.entries()].filter(([, matches]) => matches.length === 1 && matches[0]!.kinds.includes('person'));
+  const output: RelationSeed[] = [];
+  for (const snapshot of snapshots) {
+    const identity = characterReferenceIdentity(snapshot);
+    if (!identity) continue;
+    const owners = aliases.get(normalize(identity.name)) ?? [];
+    if (owners.length !== 1 || !owners[0]!.sourceSnapshotIds.includes(snapshot.snapshotId)) continue;
+    const owner = owners[0]!;
+    for (const clause of templateIndependentText(snapshot.content).split(/[。！？；;，,\r\n]/u).map(s => s.trim()).filter(Boolean)) {
+      if (!/本体|分身|化身|宿主|前身|创造者|制造者|主人|导师|师父|搭档|孪生|父亲|母亲|兄弟|姐妹/u.test(clause)
+        || /并非|不是|无关/u.test(clause)) continue;
+      const normalized = normalize(clause);
+      for (const [name, matches] of people) {
+        const other = matches[0]!;
+        if (other.entityId === owner.entityId || !normalized.includes(name)) continue;
+        output.push({ subject: owner.canonicalName, predicate: 'character_reference', object: other.canonicalName,
+          status: 'explicit', snapshotId: snapshot.snapshotId, span: locateSpan(snapshot, clause) ?? undefined });
+      }
+    }
+  }
+  return output;
+}
+
 function relationAdjacency(
   relations: KnowledgeRelation[],
   direction: 'forward' | 'reverse',
@@ -726,7 +817,7 @@ function aliasIndex(entities: KnowledgeEntity[]): Map<string, KnowledgeEntity[]>
   for (const entity of entities) for (const value of [entity.canonicalName, ...entity.aliases]) {
     const key = normalize(value);
     const items = index.get(key) ?? [];
-    items.push(entity);
+    uniquePush(items, entity);
     index.set(key, items);
   }
   return index;
@@ -734,6 +825,10 @@ function aliasIndex(entities: KnowledgeEntity[]): Map<string, KnowledgeEntity[]>
 
 function inferKind(name: string, context: string): KnowledgeEntityKind {
   const value = `${context}${name}`;
+  if (/(?:指导|规则|属性|背景|开始|结束)$/u.test(name)) return 'unknown';
+  if (/(?:纪元|时代|时期)$/u.test(name)) return 'era';
+  if (/(?:宫廷|宫殿|教堂|圣殿|神殿|神龛|女神龛|女神像|之宫)$/u.test(name)) return 'place';
+  if (/(?:大赛|比赛|庆典)$/u.test(name)) return 'event';
   if (/(?:人物|角色|姓名|女神|男神|神祇|神明|国王|女王|皇帝|领主|祭司|法师)/u.test(value)) return 'person';
   // 「山/河/岛」常出现在人名里（如“玲山”），不能仅凭一个字把人名判成地点。
   // 上下文明确写地点时照常识别；仅看名称时只接受较强的地点后缀。

@@ -121,7 +121,6 @@ export function buildContinuityViewSafely(input: {
     }));
     const relevantSources = selectRelevantContextSources(candidates, input.query, {
       limit: candidates.length,
-      contentLimit: CONTINUITY_VIEW_BUDGET.maxClaimCharacters,
       fallbackCount: 0,
       minScore: CONTINUITY_VIEW_BUDGET.minimumSelectionScore,
     });
@@ -312,10 +311,10 @@ function committedProseExcerpts(
       ? record.biography.status
       : record.biography.stages.find(stage => stage.id === unitId);
   if (!passage) return {};
-  const excerpt = compactCommittedProse(passage.content, 640);
+  const excerpt = completeCommittedProse(passage.content);
   const targetName = record.biography.target.name.trim();
   const status = unitId !== 'status' && targetName && anchor.claim.includes(targetName)
-    ? compactCommittedProse(record.biography.status.content, 380)
+    ? completeCommittedProse(record.biography.status.content)
     : '';
   return {
     ...(excerpt ? { finalProseExcerpt: excerpt } : {}),
@@ -323,12 +322,8 @@ function committedProseExcerpts(
   };
 }
 
-function compactCommittedProse(value: string, limit: number): string {
-  const text = value.replace(/\s+/gu, ' ').trim();
-  if (text.length <= limit) return text;
-  // 开头常给出年份，结尾常给出事件结果；只做有界摘录，不据此抽取新事实。
-  const head = Math.floor(limit * 0.3);
-  return `${text.slice(0, head)}……${text.slice(-(limit - head - 2))}`;
+function completeCommittedProse(value: string): string {
+  return value.replace(/\s+/gu, ' ').trim();
 }
 
 export function inspectContinuityAnchors(input: {
@@ -425,7 +420,6 @@ function selectRelationAwareAnchors(
   const selectedIds = new Set<string>();
   const candidateIds = new Set(relevantIds);
   const groups: RelationAwareSelection['groups'] = [];
-  let used = 0;
   for (const cluster of clusters) {
     cluster.memberIds.forEach(id => candidateIds.add(id));
     const members = cluster.memberIds
@@ -436,15 +430,12 @@ function selectRelationAwareAnchors(
         || left.anchorId.localeCompare(right.anchorId));
     const pair = members.slice(0, 2);
     if (pair.length < 2 || selected.length + 2 > CONTINUITY_VIEW_BUDGET.maxAnchors) continue;
-    const cost = pair.reduce((sum, anchor) => sum + viewAnchorCharacterCost(anchor), 80);
-    if (used + cost > CONTINUITY_VIEW_BUDGET.maxTotalCharacters) continue;
     pair.forEach(anchor => {
       if (!selectedIds.has(anchor.anchorId)) {
         selected.push(anchor);
         selectedIds.add(anchor.anchorId);
       }
     });
-    used += cost;
     const direct = cluster.relations.find(relation =>
       pair.every(anchor => relation.memberAnchorIds.includes(anchor.anchorId)))
       ?? cluster.relations[0]!;
@@ -466,12 +457,9 @@ function selectRelationAwareAnchors(
   for (const anchor of relevant) {
     if (selectedIds.has(anchor.anchorId) || seenEvents.has(anchor.eventId)) continue;
     if (selected.length >= CONTINUITY_VIEW_BUDGET.maxAnchors) break;
-    const cost = viewAnchorCharacterCost(anchor);
-    if (used + cost > CONTINUITY_VIEW_BUDGET.maxTotalCharacters) continue;
     selected.push(anchor);
     selectedIds.add(anchor.anchorId);
     seenEvents.add(anchor.eventId);
-    used += cost;
   }
   return {
     selected,
@@ -527,14 +515,6 @@ function continuityDimensionLabel(value: ContinuityViewRelation['dimension']): s
     time: '时间', location: '地点', participant: '参与者', relationship: '关系',
     ownership: '归属', objectState: '物品状态', outcome: '结果',
   } as const)[value];
-}
-
-function viewAnchorCharacterCost(anchor: GeneratedContinuityAnchor): number {
-  return anchor.claim.length
-    + anchor.temporalScope.label.length
-    + anchor.participants.reduce((sum, item) => sum + item.name.length, 0)
-    + anchor.locations.reduce((sum, item) => sum + item.name.length, 0)
-    + 48;
 }
 
 function findProducerBinding(

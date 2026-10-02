@@ -6,6 +6,8 @@ import type {
   WorldKnowledgeCatalog,
 } from './contracts.ts';
 import { buildWorldKnowledgeCatalog } from './catalog.ts';
+import { characterReferenceIdentity, entityHeadingName, isEntityName, templateIndependentText } from './sourceOwnership.ts';
+import { extractTemporalScopes } from './temporal.ts';
 
 export interface IndexedRetrievalSource {
   snapshot: SourceSnapshot;
@@ -115,17 +117,20 @@ function sourceTerms(snapshot: SourceSnapshot): {
   search: string[];
   strong: string[];
 } {
-  const headingTerms = extractHeadingTerms(snapshot.content);
+  const literal = templateIndependentText(snapshot.content);
+  const headingTerms = extractHeadingTerms(literal);
+  const reference = characterReferenceIdentity(snapshot);
   const entities = [
     snapshot.title,
     cleanTitleEntity(snapshot.title),
-    ...extractAliases(snapshot.content),
+    ...extractAliases(literal),
+    ...(reference ? [reference.name, ...reference.aliases] : []),
     ...headingTerms.entities,
   ];
   const search = [
     ...entities,
     ...headingTerms.search,
-    ...extractTemporalTerms(snapshot.content),
+    ...extractTemporalTerms(literal),
   ];
   const strong = [...entities];
   if (isWorldbookMetadata(snapshot.metadata)) {
@@ -139,20 +144,20 @@ function sourceTerms(snapshot: SourceSnapshot): {
   const structured = parseRecord(snapshot.content);
   if (structured) collectStructuredTerms(structured, entities, search, strong);
   return {
-    entities: entities.map(normalizeRetrievalText).filter(term => term.length >= 2),
+    entities: entities.filter(isEntityName).map(normalizeRetrievalText),
     search: search.map(normalizeRetrievalText).filter(term => term.length >= 2),
     strong: strong.map(normalizeRetrievalText).filter(term => term.length >= 2),
   };
 }
 
 const GENERIC_RETRIEVAL_TERMS = new Set([
-  '世界', '当前', '历史', '资料', '设定', '内容', '规则', '系统',
+  '寻根溯源', '溯源', '进行', '历史探查', '传记生成', '世界', '当前', '历史', '资料', '设定', '内容', '规则', '系统',
   '人物', '组织', '势力', '地点', '时期', '时代', '纪元', '神明',
-  '大陆', '全境', '其他', '探索', '墟境', '墟境探索', '关系', '归属',
+  '大陆', '全境', '其他', '探索', '墟境', '墟境探索', '关系', '归属', '过往', '经历',
 ]);
 
 function isSpecificRetrievalTerm(term: string): boolean {
-  return term.length >= 2 && !GENERIC_RETRIEVAL_TERMS.has(term);
+  return isEntityName(term) && !GENERIC_RETRIEVAL_TERMS.has(term);
 }
 
 function isTemporalRetrievalTerm(term: string): boolean {
@@ -163,7 +168,7 @@ function extractClaims(snapshot: SourceSnapshot): EvidenceClaim[] {
   const claims: EvidenceClaim[] = [];
   const structured = parseRecord(snapshot.content);
   if (!structured) {
-    const sentences = snapshot.content.split(/[。；;\n，,]/u).map(value => value.trim()).filter(Boolean);
+    const sentences = templateIndependentText(snapshot.content).split(/[。；;\n，,]/u).map(value => value.trim()).filter(Boolean);
     for (const sentence of sentences) {
       if (/(?:不属于|不隶属于|不归属于|并非.{0,8}(?:所属|归属))/u.test(sentence)) continue;
       const field = sentence.match(/^(?:[-*]\s*)?([^:：]{2,10})[:：](.{2,30})$/u);
@@ -275,7 +280,7 @@ function authorityFor(sourceType: SourceSnapshot['sourceType']): EvidenceAuthori
 
 function addEntity(index: Map<string, Set<string>>, value: string, snapshotId: string): void {
   const normalized = normalizeRetrievalText(value);
-  if (normalized.length < 2) return;
+  if (!isEntityName(value)) return;
   const ids = index.get(normalized) ?? new Set<string>();
   ids.add(snapshotId);
   index.set(normalized, ids);
@@ -321,9 +326,9 @@ function extractHeadingTerms(content: string): { entities: string[]; search: str
     const match = line.match(/^\s*(?:#{1,6}\s*)?([^:：<>\[\]{}]{2,60})[:：]\s*(?:.*)?$/u);
     if (!match) continue;
     const label = match[1].trim().replace(/^[-*]\s*/u, '');
-    if (!label || HEADING_FIELD_STOPWORDS.has(label)) continue;
+    if (!isEntityName(label) || HEADING_FIELD_STOPWORDS.has(label)) continue;
     search.push(label);
-    const middleNames = label.split(/[・·]/u).slice(1);
+    const middleNames = /[・·]/u.test(label) ? [entityHeadingName(label)] : [];
     // 括号别名校验（与 catalog 同款结构字段净化）：括号内「类别/品质」标注
     // 不是别名——含斜杠（「物品/史诗」）或去空格后 ≤2 字无分隔的单字段
     // （「(史诗)」「(稀有)」）都跳过，防止「史诗」变成实体/搜索词，
@@ -336,7 +341,7 @@ function extractHeadingTerms(content: string): { entities: string[]; search: str
     });
     for (const raw of [...middleNames, ...aliases]) {
       const name = raw.replace(/[（(].*$/u, '').trim();
-      if (name.length < 2 || name.length > 20 || HEADING_FIELD_STOPWORDS.has(name)) continue;
+      if (!isEntityName(name) || name.length > 40 || HEADING_FIELD_STOPWORDS.has(name)) continue;
       entities.push(name);
       search.push(name);
     }
@@ -353,13 +358,13 @@ function isRelationEntity(value: string): boolean {
 
 function cleanTitleEntity(title: string): string {
   return title
-    .replace(/^[【\[].{1,12}?[】\]]/u, '')
+    .replace(/[【\[][^】\]]+[】\]]/gu, '')
     .replace(/^(?:人物|组织|势力|地点|家族)[:：]/u, '')
     .trim();
 }
 
 function extractTemporalTerms(content: string): string[] {
-  return content.match(/[\p{Script=Han}]{2,8}纪元(?:\d{1,4}年)?|\d{1,4}年/gu) ?? [];
+  return extractTemporalScopes(content);
 }
 
 function collectStructuredTerms(

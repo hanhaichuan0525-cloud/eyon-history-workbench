@@ -135,7 +135,8 @@ export class ButterflyWorkflow {
     // 此时不得复用旧文本（否则档案永远指向已被回滚的 Canon，形成「待人工判断」
     // 死结）——放行重新生成，用新版覆盖同 key 记录。仅 reverted 自动；
     // orphaned（上游连带失效）保持人工判断，不擅自改写。
-    if (existing && existing.canonStatus !== 'reverted') return existing;
+    if (existing && (existing.canonStatus === 'orphaned'
+      || (existing.canonStatus !== 'reverted' && existing.sourceHash === pending.sourceHash))) return existing;
 
     const prompt = buildButterflyApiPrompt({
       request: pending.request,
@@ -153,6 +154,7 @@ export class ButterflyWorkflow {
     // 角色卡与聊天；玩家楼已经由 controller 校验，完整双楼身份仍在
     // settle/resume 提交前校验。
     await this.assertNamespace(pending);
+    assertActive();
 
     const existingRecords = await this.repository.list(pending.namespace);
     assertActive();
@@ -172,6 +174,7 @@ export class ButterflyWorkflow {
       request: pending.request,
       result,
       sourceHash: pending.sourceHash,
+      triggerEvidenceHash: pending.triggerEvidenceHash,
       panel,
       archiveEntry,
       assistantMessageId: pending.request.trigger.returnAssistantMessageId,

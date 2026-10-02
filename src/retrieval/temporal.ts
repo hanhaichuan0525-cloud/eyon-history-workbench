@@ -11,6 +11,25 @@ import type {
 } from './contracts.ts';
 
 const ERA_LINE = /^\s*(?:[-*]\s*)?([\p{Script=Han}]{2,8}纪元)(?:\s*\([^)]*\))?\s*[:：]\s*(.*)$/u;
+
+/** 只规范纪元名称，不把“远古/战争末期”等相对阶段猜成精确年。 */
+export function extractEraNames(value: string): string[] {
+  return [...new Set([...value.normalize('NFKC').matchAll(/[\p{Script=Han}]{2,32}纪元/gu)]
+    .map(match => {
+      const raw = match[0];
+      const known = raw.match(/(?:创世|神明|混乱|英雄|复兴)纪元$/u)?.[0];
+      const prefix = known ? raw.slice(0, -known.length) : '';
+      // “新复兴纪元”可能是自定义纪元，不能只凭熟悉的后缀吞掉前缀。
+      if (known && (!prefix || /(?:的|在|于|至|到|为|是|进入|回到|之后|及|与|和)$/u.test(prefix))) return known;
+      return raw.replace(/^(?:发生在|属于|进入|回到|到了|在|于)(?=[\p{Script=Han}]{2,32}纪元$)/u, '');
+    }))];
+}
+
+export function extractTemporalScopes(value: string): string[] {
+  return [...new Set([...value.normalize('NFKC').matchAll(/[\p{Script=Han}]{2,32}纪元(?:前?\s*\d{1,6}年)?|\d{1,6}年/gu)]
+    .map(match => match[0].includes('纪元')
+      ? `${extractEraNames(match[0])[0]}${match[0].slice(match[0].indexOf('纪元') + 2)}` : match[0]))];
+}
 const INSTITUTION_SUBJECT = /(?:宗教|信仰|教会|教团|公会|制度|仪式)/u;
 
 /** 权威年表标题（纪元顺序的唯一权威来源）。 */

@@ -16,9 +16,6 @@ import {
   requestedEraFromText,
 } from './activeEvidence.ts';
 
-const REFERENCE_TOTAL_LIMIT = 60_000;
-const REFERENCE_ITEM_LIMIT = 8_000;
-const REFERENCE_ITEM_COUNT_LIMIT = 28;
 
 export interface GenealogyRuleSet {
   generationContract: string;
@@ -111,6 +108,11 @@ function renderGenealogyCharacterSources(input: GenealogyPromptInput): string[] 
     ?? input.context.evidenceBundle.personCanonViews ?? [];
   const entityIds = new Set(views.filter(view => [view.canonicalName, ...view.aliases]
     .some(name => names.has(normalize(name)))).map(view => view.entityId));
+  for (const entry of input.context.evidenceBundle.castManifest?.entries ?? []) {
+    if ([entry.identity.canonicalName, ...entry.identity.aliases].some(name => names.has(normalize(name)))) {
+      entityIds.add(entry.entityId);
+    }
+  }
   const seen = new Set<string>();
   const attachments = (input.context.evidenceBundle.taskAnchorAttachments ?? []).filter(attachment => {
     if (!names.has(normalize(attachment.canonicalName)) && !entityIds.has(attachment.entityId)) return false;
@@ -160,25 +162,12 @@ function buildReferenceDataSection(input: GenealogyPromptInput): string {
 /**
  * R-02：正式链不再二次选源。sourceIndex 已由统一检索按 receipt.selected 顺序、
  * 逐 EvidencePassage 原样投影（见 activeRetrieval.selectActivePassageSources），
- * 因此这里只做顺序保持的原样投影，统一 passage budget 是唯一预算。
- * 仅保留总量保险上限防极端体积，不做重新打分/过滤/截断选源。
+ * 因此这里只做顺序保持的完整投影，不二次按字符截断或删掉已选来源。
  */
 function projectActiveSources(input: GenealogyPromptInput): ContextSource[] {
-  const projected: ContextSource[] = [];
-  let usedCharacters = 0;
-  for (const source of input.context.sourceIndex) {
-    if (projected.length >= REFERENCE_ITEM_COUNT_LIMIT) break;
-    const remaining = REFERENCE_TOTAL_LIMIT - usedCharacters;
-    if (remaining <= 0) break;
-    const content = source.content.trim().slice(
-      0,
-      Math.min(REFERENCE_ITEM_LIMIT, remaining),
-    );
-    if (!content) continue;
-    projected.push({ ...source, content });
-    usedCharacters += content.length;
-  }
-  return projected;
+  return input.context.sourceIndex
+    .filter(source => source.content.trim())
+    .map(source => ({ ...source, content: source.content.trim() }));
 }
 
 

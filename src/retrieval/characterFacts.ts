@@ -15,7 +15,7 @@ import type {
   TaskAnchorAttachment,
 } from './contracts.ts';
 import { stableSha256 } from './sourceSnapshot.ts';
-import { characterDocumentOwner } from './sourceOwnership.ts';
+import { characterDocumentOwner, characterReferenceIdentity, templateIndependentText } from './sourceOwnership.ts';
 import { ContinuousStateSchema } from './continuousState.ts';
 
 const IDENTITY_FIELDS: Readonly<Record<string, string>> = {
@@ -257,7 +257,9 @@ export async function buildTaskPersonArtifacts(input: {
     for (const snapshotId of uniqueStrings([...entity.sourceSnapshotIds, ...ownedIds])) {
       const snapshot = snapshotsById.get(snapshotId);
       if (!snapshot || !['worldbook', 'mvu'].includes(snapshot.sourceType)) continue;
-      if (!isCharacterEntry(snapshot, entity)) continue;
+      if (!isCharacterEntry(snapshot, entity)
+        && !(entity.sourceSnapshotIds.includes(snapshotId)
+          && templateIndependentText(snapshot.content).includes(entity.canonicalName))) continue;
       const contentHash = await stableSha256(snapshot.content);
       taskAnchorAttachments.push({
         schema: 'eyon.retrieval.task-anchor-attachment.v1',
@@ -458,6 +460,8 @@ function makeFact(
 
 function isCharacterEntry(snapshot: SourceSnapshot, entity: KnowledgeEntity): boolean {
   const candidates = [entity.canonicalName, ...entity.aliases].map(normalizeRetrievalText);
+  const reference = characterReferenceIdentity(snapshot);
+  if (reference) return candidates.includes(normalizeRetrievalText(reference.name));
   const title = normalizeRetrievalText(snapshot.title);
   if (snapshot.sourceType === 'mvu' && candidates.some(name => title.includes(name))) return true;
   if (candidates.some(name => title.includes(name))) return true;

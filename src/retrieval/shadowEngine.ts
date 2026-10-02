@@ -39,6 +39,7 @@ import {
   assessPersonTimeline,
   describePersonLifespanWindow,
   entityTemporallyEligible,
+  extractEraNames,
   parseWorldTime,
   resolveLifespanFromBaseline,
 } from './temporal.ts';
@@ -126,12 +127,15 @@ export class UnifiedShadowRetrievalEngine {
     const castRequirementFrame = input.castRequirementQuery === undefined
       ? eventFrame
       : buildEventFrame(input.castRequirementQuery, this.index.catalog);
+    for (const id of castRequirementFrame.directEntityIds) {
+      if (!eventFrame.directEntityIds.includes(id)) eventFrame.directEntityIds.push(id);
+    }
     const initialCastManifest = buildCastManifest(eventFrame, this.index.catalog, {
       focusEntityNames: input.focusEntityNames,
       requiredDirectEntityIds: castRequirementFrame.directEntityIds,
+      actionQuery: input.castRequirementQuery,
     });
-    const requestedEras = [...new Set(eventFrame.temporalTerms.flatMap(term =>
-      term.match(/[\p{Script=Han}]{2,8}纪元/gu) ?? []))];
+    const requestedEras = [...new Set(eventFrame.temporalTerms.flatMap(extractEraNames))];
     const territorialNames = new Set(
       (input.territorialReferences ?? []).map(normalizeRetrievalText),
     );
@@ -617,7 +621,7 @@ function applyTemporalSourceGate(
 }
 
 function extractEraTerms(value: string): string[] {
-  return [...new Set(value.match(/[\p{Script=Han}]{2,8}纪元/gu) ?? [])];
+  return extractEraNames(value);
 }
 
 function expandRelations(
@@ -666,7 +670,7 @@ function boost(
 
 function queryFragments(value: string): string[] {
   const stripped = value.normalize('NFKC').toLocaleLowerCase('zh-CN')
-    .replace(/(?:请|帮我|检索|查询|生成|寻找|历史资料|相关资料|当前世界)/gu, ' ');
+    .replace(/(?:寻根溯源|溯源|进行|请|帮我|检索|查询|生成|寻找|历史资料|相关资料|当前世界)/gu, ' ');
   const coarse = stripped
     .split(/[\s，,。；;：:、!?！？|/]+/u)
     .map(term => term.trim())

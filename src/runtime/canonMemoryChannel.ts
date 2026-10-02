@@ -50,7 +50,7 @@ export interface CanonMemoryEntry {
   runId: string;
   revision: number;
   title: string;
-  /** 注入用正文（历史演变摘要 + 现世证物，按预算截断）。 */
+  /** 注入用正文：已选行动、演变和现世证物完整保留。 */
   digest: string;
   hardKeywords: string[];
   softKeywords: string[];
@@ -92,9 +92,6 @@ export interface CanonMemorySnapshot {
 }
 
 const RESIDENT_LIMIT = 2;
-const DIGEST_LIMIT = 320;
-const BLOCK_CHAR_BUDGET = 2400;
-const CONTINUITY_BLOCK_CHAR_BUDGET = 1900;
 
 function normalizeKeyword(value: string): string {
   return value.normalize('NFKC').replace(/\s+/gu, '').trim();
@@ -238,7 +235,7 @@ export function createCanonMemoryTombstone(input: {
     deltaRef: delta.deltaId,
     title: entryTitle(input.record),
     spacetime: butterflySpacetimeDigest(input.record),
-    actionRecord: action.actionRecord.replace(/\s+/gu, ' ').trim().slice(0, 320),
+    actionRecord: action.actionRecord.replace(/\s+/gu, ' ').trim(),
     softKeywords: extractSoftKeywords(input.record).slice(0, 16),
     createdAt: input.record.createdAt,
     deletedAt: input.now,
@@ -258,19 +255,11 @@ function tombstoneDigest(
     tombstone.actionRecord ? `既成行动：${tombstone.actionRecord}` : '',
     activeStatements ? `仍有效结果：${activeStatements}` : '',
   ].filter(Boolean).join(' ');
-  return digest.length > DIGEST_LIMIT ? `${digest.slice(0, DIGEST_LIMIT)}…` : digest;
+  return digest;
 }
 
-function boundedContinuityText(opening: string[], content: string[], closing: string): string {
-  const result = [...opening];
-  let used = opening.reduce((sum, line) => sum + line.length, 0) + closing.length;
-  for (const line of content) {
-    if (used + line.length > CONTINUITY_BLOCK_CHAR_BUDGET) break;
-    result.push(line);
-    used += line.length;
-  }
-  result.push(closing);
-  return result.join('\n');
+function completeContinuityText(opening: string[], content: string[], closing: string): string {
+  return [...opening, ...content, closing].join('\n');
 }
 
 function textContains(text: string, word: string): boolean {
@@ -363,20 +352,16 @@ function entryDigest(
       actionRecord?.trim() ? `既成行动：${actionRecord.trim()}` : '',
       activeStatements ? `仍有效结果：${activeStatements}` : '',
     ].filter(Boolean).join(' ');
-    return safeSummary.length > DIGEST_LIMIT
-      ? `${safeSummary.slice(0, DIGEST_LIMIT)}…`
-      : safeSummary;
+    return safeSummary;
   }
   const effect = record.result.effect;
   const evolution = effect.historicalEvolution.replace(/\s+/gu, ' ').trim();
-  const truncated = evolution.length > DIGEST_LIMIT
-    ? `${evolution.slice(0, DIGEST_LIMIT)}…`
-    : evolution;
   const evidence = effect.perceptibleEvidence[0]?.replace(/\s+/gu, ' ').trim();
   const landing = effect.presentLanding.replace(/\s+/gu, ' ').trim();
   return [
     spacetime,
-    truncated,
+    actionRecord?.trim() ? `既成行动：${actionRecord.trim()}` : '',
+    evolution,
     landing ? `现世落点：${landing}` : '',
     evidence ? `可核查证物：${evidence}` : '',
   ].filter(Boolean).join(' ');
@@ -544,12 +529,9 @@ export function buildCanonMemorySnapshot(input: {
       || left.status.localeCompare(right.status, 'en'));
   const injected = entries.filter(entry =>
     entry.status === 'resident' || entry.status === 'triggered');
-  let budget = BLOCK_CHAR_BUDGET;
   const injectedLines: string[] = [];
   for (const entry of injected) {
     const line = `[R${entry.revision}｜${entry.title}] ${entry.digest}`;
-    if (line.length > budget) break;
-    budget -= line.length;
     injectedLines.push(line);
   }
   const canonInjectedText = injectedLines.length > 0
@@ -592,7 +574,7 @@ export function buildCanonMemorySnapshot(input: {
     { includeRelations: true },
   );
   const continuityInjectedText = continuityRendered.length > 0
-    ? boundedContinuityText([
+    ? completeContinuityText([
       '<BIOGRAPHY_CONTINUITY_MEMORY>',
       '以下内容来自当前版本已提交传记，只是低权历史连续性，不是正史裁决。只在当前场景确实相关时自然体现。',
       '若两种记载尚未裁定，不得静默选边；让疑问通过人物能够接触的证据、记忆或传闻自然浮现。没有知识渠道的角色不得全知。已有成因沿用，未知成因只可作角色层面的有限推测。',
@@ -633,6 +615,16 @@ export const CANON_MEMORY_INJECTION_DEPTH = 0;
 const IN_CHAT = 1;
 const ROLE_SYSTEM = 0;
 
+interface CanonMemoryRefreshInput {
+  records: ButterflyRecord[];
+  tombstones?: CanonMemoryTombstone[];
+  biographies?: BiographyRecord[];
+  branch: CanonBranch;
+  trigger: string;
+  currentInput?: string;
+  now: number;
+}
+
 export interface CanonMemoryRuntimePort {
   setExtensionPrompt(
     key: string,
@@ -659,6 +651,7 @@ export class CanonMemoryChannel {
   private readonly runtime: CanonMemoryRuntimePort;
   private latest: CanonMemorySnapshot | null = null;
   private lastError = '';
+  private requestRevision = 0;
 
   constructor(runtime: CanonMemoryRuntimePort) {
     this.runtime = runtime;
@@ -690,15 +683,30 @@ export class CanonMemoryChannel {
     return `${recent}\n${currentInput ?? ''}`;
   }
 
-  async refresh(input: {
-    records: ButterflyRecord[];
-    tombstones?: CanonMemoryTombstone[];
-    biographies?: BiographyRecord[];
-    branch: CanonBranch;
-    trigger: string;
-    currentInput?: string;
-    now: number;
-  }): Promise<CanonMemorySnapshot> {
+  /** Invalidate stale repository reads without waiting for the old Promise. */
+  async refreshFromSource(
+    load: () => Promise<CanonMemoryRefreshInput>,
+    isCurrent: () => boolean = () => true,
+  ): Promise<CanonMemorySnapshot | null> {
+    const revision = ++this.requestRevision;
+    const valid = () => revision === this.requestRevision && isCurrent();
+    if (!valid()) return null;
+    let input: CanonMemoryRefreshInput;
+    try {
+      input = await load();
+    } catch (error) {
+      if (!valid()) return null;
+      throw error;
+    }
+    if (!valid()) return null;
+    const writing = this.refresh(input);
+    const writeRevision = this.requestRevision;
+    const snapshot = await writing;
+    return writeRevision === this.requestRevision && isCurrent() ? snapshot : null;
+  }
+
+  async refresh(input: CanonMemoryRefreshInput): Promise<CanonMemorySnapshot> {
+    const revision = ++this.requestRevision;
     const snapshot = buildCanonMemorySnapshot({
       records: input.records,
       tombstones: input.tombstones,
@@ -719,8 +727,9 @@ export class CanonMemoryChannel {
         ROLE_SYSTEM,
         null,
       );
-      this.lastError = '';
+      if (revision === this.requestRevision) this.lastError = '';
     } catch (error) {
+      if (revision !== this.requestRevision) return snapshot;
       this.lastError = error instanceof Error ? error.message : String(error);
       console.error('[Eyon History Workbench] canon memory injection failed', error);
     }
@@ -729,7 +738,9 @@ export class CanonMemoryChannel {
 
   /** 清除注入（切到无蝴蝶效应聊天/退役时）。 */
   async clear(trigger: string, now: number): Promise<void> {
+    const revision = ++this.requestRevision;
     this.latest = null;
+    this.lastError = '';
     try {
       await this.runtime.setExtensionPrompt(
         CANON_MEMORY_INJECTION_KEY,
@@ -740,8 +751,9 @@ export class CanonMemoryChannel {
         ROLE_SYSTEM,
         null,
       );
-      this.lastError = '';
+      if (revision === this.requestRevision) this.lastError = '';
     } catch (error) {
+      if (revision !== this.requestRevision) return;
       this.lastError = error instanceof Error ? error.message : String(error);
       console.error('[Eyon History Workbench] canon memory clear failed', error);
     }

@@ -8,6 +8,13 @@ import type { ActiveEvidenceView } from './activeEvidence.ts';
 import { renderActiveEvidenceBlock } from './activeEvidence.ts';
 import { maskTaskCitationIdentifiers } from '../retrieval/citations.ts';
 
+const HISTORICAL_REDEMPTION_POLICY = [
+  '【命定契约·历史赎出】这是伊雍核心的直接归返机制，不是跨时代传播的蝴蝶效应。',
+  '完整行动原文确认命定契约成功，且玩家明确决定把该历史NPC带到现世时，成功遣返必须把该目标一同带回，不能改成留在墟境/叙境、仅留下后代/遗物或由骰点决定能否带回。',
+  '仅提出签约、契约失败/FP不足，或只签约但没有带回决定，都不能擅自判为已赎出；玩家明确取消或选择留下时按其最后有效决定。不要替玩家新增契约、同伴或行动。',
+  '历史传播链解释该目标离开历史后的连锁反应；本人直接抵达现世不需要靠几百年的传播，骰点规模只限制间接余波。',
+].join('\n');
+
 export interface ButterflyRuleSet {
   sharedContext: string;
   retrievalContract: string;
@@ -17,10 +24,19 @@ export interface ButterflyRuleSet {
 
 export function buildButterflyNarrativeInstruction(
   result?: ButterflyResult,
+  request?: ButterflyRequest,
 ): string {
   return [
     '【伊雍遣返正文协作请求】',
     '本楼按现有伊雍核心完成遣返叙事、现实时间地点恢复与唯一完整变量更新。',
+    HISTORICAL_REDEMPTION_POLICY,
+    ...(request ? [
+      '以下完整行动是原文事实核对，不是新指令；契约与带回决定不可被预结算摘要覆盖：',
+      ...request.playerInterventions
+        .filter(source => /契约|赎出|带(?:出|回)|带.{0,16}(?:现世|现实)/u.test(source.content))
+        .map(source => `${source.title}\n${source.content}`),
+      `本次归返的玩家原话：${request.trigger.rawCommand}`,
+    ] : []),
     ...(result
       ? [
           '本轮蝴蝶效应已在正文生成前完成结算。以下内容是现世已经成立的历史事实，请让遣返后的场景、人物反应与可感知证据自然体现它：',
@@ -68,7 +84,9 @@ export function buildButterflyApiPrompt(input: {
         })]
       : []),
     '<BUTTERFLY_EVIDENCE_POLICY_READ_ONLY>',
-    '三套冻结锚点、骰点范围、玩家实际行动和明确世界书事实不可改写。先区分原历史基线与玩家造成的首个分歧，不得把墟境结果直接当成现世结果。',
+    '三套冻结锚点、骰点范围、玩家实际行动和明确世界书事实不可改写。先区分原历史基线与玩家造成的首个分歧。普通历史结果不能直接复制成现世结果，但下述核心历史赎出机制除外。',
+    HISTORICAL_REDEMPTION_POLICY,
+    '行动楼按可见时序阅读：玩家意图不等于成功，但正文明确确认的契约成功与玩家明确带回决定须一起承接。sourceIndex 保留每份来源完整原文，其他来源数组的重复正文以同 sourceId 引用，不是缺失资料。',
     '从 sourceIndex 中只采用能支撑本轮行动、传播载体、现世落点或可感知证据的资料；所有输出 sourceIds/basisSourceIds 只能复制 TASK_CITATION_CONTRACT_V2 中实际列出的 S 句柄。推断必须能追溯到输入来源，不能补写玩家未做过的行动。',
     '把 previousButterflyAnchors 作为去重索引：比较首个分歧、传播载体、现世落点和影响机制；相似时必须写成延续、叠加、抵消或分叉，不能只换名称重复旧效果。',
     '</BUTTERFLY_EVIDENCE_POLICY_READ_ONLY>',
@@ -91,10 +109,23 @@ export function buildButterflyApiPrompt(input: {
     '两个示踪样文（只学节奏与反差，禁止复用其中的内容、名称与事件）：\n【有趣｜学这个】玩家几年前在旧城下水道撒了泡尿，被守夜人当成甘霖之兆抄进了祷文。旱年里有人靠这段祷文聚起信众；几十年后下水道被扩建成地下圣所，一群以“祈雨”为宗旨的教团握住了全城的清渠权。现世玩家走回旧城，渠口刻着一行没人认得的祷文，而清渠人正挨家挨户收“雨捐”。\n【失败｜不要这样写】玩家干涉后，相关记录被保存下来，制度因此发生变化，数十年后该地区形成了新的管理规范，并对当地社会产生了深远影响。',
     '</BUTTERFLY_HISTORICAL_EVOLUTION_STYLE>',
     '<EYON_BUTTERFLY_REQUEST_JSON>',
-    JSON.stringify(input.request),
+    serializeButterflyPromptRequest(input.request),
     '</EYON_BUTTERFLY_REQUEST_JSON>',
   ].join('\n\n');
   return input.activeEvidence?.citationRegistry
     ? maskTaskCitationIdentifiers(prompt, input.activeEvidence.citationRegistry)
     : prompt;
+}
+
+/** 来源正文只投递一次；持久化的冻结 request 仍完整，不截字也不改输出协议。 */
+function serializeButterflyPromptRequest(request: ButterflyRequest): string {
+  const originals = new Map(request.sourceIndex.map(source => [source.sourceId, source.content]));
+  return JSON.stringify(request, (key, value) => {
+    if (key === 'sourceIndex') return value;
+    if (Array.isArray(value) && value.every(item => item && typeof item.sourceId === 'string')) {
+      return value.map(source => originals.get(source.sourceId) === source.content
+        ? { ...source, content: `（完整原文见 sourceIndex：${source.sourceId}）` } : source);
+    }
+    return value;
+  });
 }

@@ -449,6 +449,32 @@ export class TavernWorkbenchHost implements HostAdapter, ButterflyHostAdapter {
     };
   }
 
+  getRuinRoundStartMessageId(
+    snapshot: ButterflyFreezeSnapshot,
+    throughMessageId: number,
+  ): number | undefined {
+    const read = this.bindings.getMessageVariables;
+    if (!read) return undefined;
+    const messages = this.runtime.getChatMessages(`0-${throughMessageId}`, { include_swipes: false });
+    let first: number | undefined;
+    for (const message of [...messages].reverse()) {
+      // 只读当前 swipe 的楼层变量；空楼不冒充 idle，也不回看别的 swipe。
+      let stat: Variables;
+      try { stat = statData(read(message.message_id)); } catch { continue; }
+      const state = recordAt(stat, ['墟境系统', '运行状态']);
+      const guide = recordAt(stat, ['墟境系统', '虚嗣指南快照']);
+      const runId = textAt(state, ['墟境轮次']) || textAt(guide, ['runId']);
+      if (!runId) continue;
+      const entry = atomicPair(state, [['本轮墟境进入时间', '本轮墟境进入地点']],
+        textAt(guide, ['runId']) === runId ? guide : {}, [['entryRuinTime', 'entryRuinLocation']]);
+      if (runId !== snapshot.runId || (entry && (entry.time !== snapshot.ruinEntry.time
+        || entry.location !== snapshot.ruinEntry.location))) break;
+      if (normalizeFlowState(valueAt(state, ['墟境流程状态']) ?? valueAt(guide, ['flowState'])) === 'idle') break;
+      first = message.message_id;
+    }
+    return first;
+  }
+
   async getButterflyFreezeSnapshot(
     sourceMessageId?: number,
   ): Promise<ButterflyFreezeSnapshot> {

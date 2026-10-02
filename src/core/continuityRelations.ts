@@ -97,7 +97,7 @@ export function parseContinuityEventJudgeText(
       pairId,
       verdict,
       ...(dimension ? { dimension } : {}),
-      note: body.slice(0, 160),
+      note: body,
     });
   }
   return eventPairs.flatMap(pair => {

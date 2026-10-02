@@ -7,6 +7,7 @@ import {
 } from './contracts.ts';
 import { normalizeRetrievalText } from './index.ts';
 import { stableSha256 } from './sourceSnapshot.ts';
+import { extractTemporalScopes } from './temporal.ts';
 
 interface PassageCandidate {
   snapshot: SourceSnapshot;
@@ -28,7 +29,7 @@ export interface EvidencePassageAssembly {
   selected: RetrievalPassageDecision[];
   rejected: RetrievalPassageDecision[];
   usedChars: number;
-  /** R-04：预算不足被丢弃的 desired（P1/P2）覆盖锚，不抛错。 */
+  /** R-04：未覆盖的 desired（P1/P2）锚；旧字段保留回执兼容。 */
   omittedAnchors: string[];
 }
 
@@ -49,7 +50,7 @@ export async function assembleEvidencePassages(input: {
   const sectionsBySnapshot = new Map<string, PassageCandidate[]>();
   const candidates: PassageCandidate[] = [];
   for (const snapshot of input.snapshots) {
-    const sections = splitIntoSections(snapshot, input.budget)
+    const sections = fullSourceCandidates(snapshot)
       .map(section => scoreCandidate(section, anchors, input.claims));
     sectionsBySnapshot.set(snapshot.snapshotId, sections);
     candidates.push(...sections);
@@ -144,38 +145,22 @@ export async function assembleEvidencePassages(input: {
   const accepted: PassageCandidate[] = [];
   const rejected: RetrievalPassageDecision[] = [];
   let usedChars = 0;
-  let excerptBudgetChars = 0;
   for (const candidate of merged.sort(compareCandidate)) {
     const charCount = candidate.endOffset - candidate.startOffset;
-    const completeHistory = candidate.snapshot.sourceType === 'butterfly';
-    if (
-      !completeHistory
-      && !candidate.mandatory
-      && accepted.length > 0
-      && excerptBudgetChars + charCount > input.budget.softLimitChars
-    ) {
-      rejected.push(toDecision(candidate, 'soft-passage-budget-exhausted'));
-      continue;
-    }
-    if (!completeHistory && excerptBudgetChars + charCount > input.budget.hardLimitChars) {
-      rejected.push(toDecision(candidate, 'hard-passage-budget-exhausted'));
-      continue;
-    }
+    // 来源数量由上游筛选。旧字符预算只保留回执兼容，不得删掉已选原文。
     accepted.push(candidate);
     usedChars += charCount;
-    if (!completeHistory) excerptBudgetChars += charCount;
   }
 
   const coveredAnchors = new Set(accepted.flatMap(candidate => candidate.matchedAnchors));
   const uncovered = anchors.filter(anchor =>
     candidates.some(candidate => candidate.matchedAnchors.includes(anchor))
     && !coveredAnchors.has(anchor));
-  // R-04 失败分级：fatal 覆盖锚（required/group-required 的 P0）未保留 → 硬失败；
-  // desired 覆盖锚（P1/P2 普通查询锚与 recommended）预算不足 → 进 omittedAnchors，不抛错。
+  // 缺失必需证据仍硬失败，但不得由字符预算人为制造缺失。
   const fatalUncovered = uncovered.filter(anchor =>
     fatalAnchors.has(normalizeRetrievalText(anchor)));
   if (fatalUncovered.length > 0) {
-    throw new Error(`Evidence passage budget cannot preserve required anchors: ${fatalUncovered.join(',')}`);
+    throw new Error(`Evidence passages cannot preserve required anchors: ${fatalUncovered.join(',')}`);
   }
   const omittedAnchors = uncovered.map(normalizeRetrievalText);
 
@@ -229,124 +214,22 @@ export function attachClaimPassages(
   });
 }
 
-function splitIntoSections(
-  snapshot: SourceSnapshot,
-  budget: EvidencePassageBudget,
-): PassageCandidate[] {
-  const content = snapshot.content;
-  const headings: string[] = [];
-  const rawSections: PassageCandidate[] = [];
-  let sectionStart: number | null = null;
-  let sectionEnd = 0;
-  let sectionPath: string[] = [];
-  let hasHeadings = false;
-  const flush = () => {
-    if (sectionStart === null) return;
-    const [startOffset, endOffset] = trimOffsets(content, sectionStart, sectionEnd);
-    if (endOffset > startOffset) {
-      rawSections.push({
-        snapshot,
-        sectionPath,
-        startOffset,
-        endOffset,
-        extractionMode: 'section',
-        matchedAnchors: [],
-        temporalScopes: temporalScopes(content.slice(startOffset, endOffset)),
-        reasons: [],
-        score: 0,
-        mandatory: false,
-        priority: 3,
-      });
-    }
-    sectionStart = null;
-  };
-
-  for (const match of content.matchAll(/[^\r\n]*(?:\r\n|\n|\r|$)/gu)) {
-    const rawLine = match[0];
-    if (!rawLine) break;
-    const line = rawLine.replace(/(?:\r\n|\n|\r)$/u, '');
-    const start = match.index;
-    const heading = line.match(/^\s*(#{1,6})\s+(.+?)\s*$/u);
-    if (heading) {
-      flush();
-      hasHeadings = true;
-      const level = heading[1].length;
-      headings.splice(level - 1);
-      headings[level - 1] = heading[2].trim();
-      sectionPath = headings.filter(Boolean);
-      continue;
-    }
-    if (!line.trim() || /^\s*---+\s*$/u.test(line)) {
-      flush();
-      continue;
-    }
-    if (/^\s*<\/?[^>]+>\s*$/u.test(line)) continue;
-    if (sectionStart === null) {
-      sectionStart = start;
-      sectionPath = headings.filter(Boolean);
-    }
-    sectionEnd = start + line.length;
-  }
-  flush();
-
-  if (rawSections.length === 0 && content.trim()) {
-    const [startOffset, endOffset] = trimOffsets(content, 0, content.length);
-    rawSections.push({
-      snapshot,
-      sectionPath: [],
-      startOffset,
-      endOffset,
-      extractionMode: 'full',
-      matchedAnchors: [],
-      temporalScopes: temporalScopes(content.slice(startOffset, endOffset)),
-      reasons: [],
-      score: 0,
-      mandatory: false,
-      priority: 3,
-    });
-  }
-
-  if (snapshot.sourceType === 'butterfly'
-    || (!hasHeadings && content.trim().length <= budget.fullSourceLimitChars)) {
-    const [startOffset, endOffset] = trimOffsets(content, 0, content.length);
-    return [{
-      snapshot,
-      sectionPath: [],
-      startOffset,
-      endOffset,
-      extractionMode: 'full',
-      matchedAnchors: [],
-      temporalScopes: temporalScopes(content.slice(startOffset, endOffset)),
-      reasons: [],
-      score: 0,
-      mandatory: false,
-      priority: 3,
-    }];
-  }
-
-  const sections = rawSections.flatMap(section =>
-    splitOversizedSection(section, budget.maxWindowChars));
-  if (sections.length === 1 && content.length <= budget.maxWindowChars) {
-    sections[0].extractionMode = 'full';
-  }
-  return sections;
-}
-
-function splitOversizedSection(
-  section: PassageCandidate,
-  maxWindowChars: number,
-): PassageCandidate[] {
-  const length = section.endOffset - section.startOffset;
-  if (length <= maxWindowChars) return [section];
-  const output: PassageCandidate[] = [];
-  const overlap = Math.min(160, Math.floor(maxWindowChars / 8));
-  for (let start = section.startOffset; start < section.endOffset;) {
-    const end = Math.min(section.endOffset, start + maxWindowChars);
-    output.push({ ...section, startOffset: start, endOffset: end, extractionMode: 'window' });
-    if (end === section.endOffset) break;
-    start = end - overlap;
-  }
-  return output;
+/** 已选来源完整投递；不依赖标题、段落格式或旧字符窗口。 */
+function fullSourceCandidates(snapshot: SourceSnapshot): PassageCandidate[] {
+  if (!snapshot.content.trim()) return [];
+  return [{
+    snapshot,
+    sectionPath: [],
+    startOffset: 0,
+    endOffset: snapshot.content.length,
+    extractionMode: 'full',
+    matchedAnchors: [],
+    temporalScopes: temporalScopes(snapshot.content),
+    reasons: ['selected-source-full'],
+    score: 0,
+    mandatory: false,
+    priority: 3,
+  }];
 }
 
 function scoreCandidate(
@@ -437,17 +320,6 @@ async function toPassage(candidate: PassageCandidate): Promise<EvidencePassage> 
   };
 }
 
-function toDecision(candidate: PassageCandidate, reason: string): RetrievalPassageDecision {
-  return {
-    snapshotId: candidate.snapshot.snapshotId,
-    startOffset: candidate.startOffset,
-    endOffset: candidate.endOffset,
-    reason,
-    charCount: candidate.endOffset - candidate.startOffset,
-    score: candidate.score,
-  };
-}
-
 function compareCandidate(left: PassageCandidate, right: PassageCandidate): number {
   return Number(right.mandatory) - Number(left.mandatory)
     || left.priority - right.priority
@@ -473,13 +345,7 @@ function independentAnchors(values: string[], snapshots: SourceSnapshot[]): stri
 }
 
 function temporalScopes(content: string): string[] {
-  return unique(content.match(/[\p{Script=Han}]{2,8}纪元(?:\d{1,6}年)?|\d{1,6}年/gu) ?? []);
-}
-
-function trimOffsets(content: string, start: number, end: number): [number, number] {
-  while (start < end && /\s/u.test(content[start])) start += 1;
-  while (end > start && /\s/u.test(content[end - 1])) end -= 1;
-  return [start, end];
+  return unique(extractTemporalScopes(content));
 }
 
 function unique<T>(values: T[]): T[] {

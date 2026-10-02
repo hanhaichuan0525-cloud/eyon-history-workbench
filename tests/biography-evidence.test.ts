@@ -84,3 +84,26 @@ test('传记实体补召回不会阻止原创人物，直接冻结引用仍保�
     ['worldbook:玲山'],
   );
 });
+
+const mechanism = source('worldbook:mechanism', '[DLC][命定系统]伊雍核心(作者)',
+  '工作台操作说明：伊雍在雾晶港提供寻根溯源。\n命定契约：成功签约并决定带回才可赎出现世。');
+
+test('传记首稿造出的核心物件名或sourceRefs不能绕过资料用途门', () => {
+  assert.deepEqual(selectBiographyEvidence(['伊雍核心'], [], [], [mechanism]), []);
+  assert.deepEqual(selectBiographyEvidence([], [mechanism.sourceId], [mechanism], []), []);
+});
+
+test('明确研究核心或契约仍可补查完整原文，不凭伊雍呼语授权', () => {
+  for (const directive of ['对伊雍核心进行寻根溯源', '探讨命定契约的历史', '研究伊雍的来历']) {
+    assert.deepEqual(selectBiographyEvidence(['伊雍核心'], [], [], [mechanism], directive), [mechanism]);
+  }
+  assert.deepEqual(selectBiographyEvidence(['伊雍核心'], [], [], [mechanism], '伊雍，帮我研究这柄天平'), []);
+});
+
+test('普通核心器物和带EJS的角色不被当运行规则，年龄与长原文保留', () => {
+  const machine = source('worldbook:engine', '[器物]炼金炉核心', '炼金炉核心由铜制成，工坊于复兴纪元470年制造。');
+  const person = source('worldbook:girl', '[角色]米露',
+    `<% if (true) { %>米露十八岁；八岁生日当晚20:00失去姐姐。${'完整经历。'.repeat(5000)}末尾锚<% } %>`);
+  assert.deepEqual(selectBiographyEvidence(['炼金炉核心', '米露'], [], [], [machine, person]), [machine, person]);
+  assert.deepEqual(selectBiographyEvidence(['全新原创人'], [], [], [mechanism, person]), []);
+});

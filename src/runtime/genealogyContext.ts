@@ -18,7 +18,6 @@ import { buildContinuityViewSafely } from './continuityAnchors.ts';
 import { currentGenealogyHistoryReferences } from './genealogyContinuity.ts';
 
 const RECENT_MESSAGE_LIMIT = 24;
-const CONTENT_LIMIT = 12000;
 
 export class TavernGenealogyContextAssembler implements GenealogyContextAssembler {
   private readonly runtime: TavernRuntime;
@@ -100,7 +99,7 @@ export class TavernGenealogyContextAssembler implements GenealogyContextAssemble
         currentWorld.location,
         ...recentContext.slice(-8).flatMap(source => [
           source.title,
-          source.content.slice(0, 1800),
+          source.content,
         ]),
       ].join('\n'),
       runtimeCandidates: [
@@ -185,7 +184,7 @@ export class TavernGenealogyContextAssembler implements GenealogyContextAssemble
       .map(message => ({
         sourceId: `chat:${message.message_id}`,
         title: `${message.role} floor ${message.message_id}`,
-        content: message.message.slice(0, CONTENT_LIMIT),
+        content: message.message,
       }));
   }
 }
@@ -198,7 +197,7 @@ function mapSources(
   const seen = new Set<string>();
   return sources.flatMap(source => {
     const sourceId = source.sourceId.trim();
-    const content = source.content.trim().slice(0, CONTENT_LIMIT);
+    const content = source.content.trim();
     if (!sourceId || !content || seen.has(sourceId)) return [];
     seen.add(sourceId);
     return [{

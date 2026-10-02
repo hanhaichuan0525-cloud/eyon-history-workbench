@@ -36,6 +36,253 @@ import type { CanonFact } from '../src/retrieval/contracts.ts';
 import { resolveCanon } from '../src/retrieval/canonResolver.ts';
 import { continuousStateAt } from '../src/retrieval/continuousState.ts';
 import { fingerprintText } from '../src/runtime/transactionIdentity.ts';
+import type { RuntimeChatMessage, TavernRuntime } from '../src/runtime/contracts.ts';
+
+function rollbackGate<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+function rollbackHarness() {
+  const repository = new MemoryButterflyRepository();
+  const messages: RuntimeChatMessage[] = [
+    { message_id: 8, role: 'assistant', message: '契约成功，珊奈决定同行。' },
+    { message_id: 9, role: 'user', message: '遣返' },
+  ];
+  let freezeCalls = 0; let prepareCalls = 0; let runId = 'run-1';
+  const statuses: string[] = [];
+  const runtime: TavernRuntime = {
+    getCurrentCharacterName: () => namespace.characterKey,
+    getCurrentChatId: () => namespace.chatId,
+    getLastMessageId: () => messages.at(-1)!.message_id,
+    getMessageSwipeId: () => 0,
+    getChatMessages: range => typeof range === 'number'
+      ? messages.filter(item => item.message_id === range)
+      : messages.filter(item => item.message_id <= Number(range.split('-')[1])),
+    async setChatMessages() {}, async setExtensionPrompt() {},
+    async generate() { return ''; }, async generateRaw() { return ''; },
+  };
+  const assembler = {
+    async freeze(input: { userMessageId: number; requestId: string; rawCommand: string }) {
+      freezeCalls += 1;
+      return { request: { ...request(), runId, requestId: input.requestId,
+        trigger: { type: 'text', userMessageId: input.userMessageId, returnAssistantMessageId: 0, rawCommand: input.rawCommand } },
+      sourceHash: fingerprintText(JSON.stringify(messages)) };
+    },
+    attachReturnFloor(req: ButterflyRequest, id: number) {
+      return { ...req, trigger: { ...req.trigger, returnAssistantMessageId: id } };
+    },
+  } as unknown as TavernButterflyContextAssembler;
+  const workflow = {
+    async prepare(pending: PendingSettlement) {
+      prepareCalls += 1;
+      const record = rollbackRecord(pending);
+      const existing = await repository.getRecord(record.key);
+      if (existing && existing.sourceHash === pending.sourceHash) return existing;
+      if (existing) await repository.updateRecord(record); else await repository.saveRecord(record);
+      return record;
+    },
+    async settle(pending: PendingSettlement) { return rollbackRecord(pending); },
+  } as unknown as ButterflyWorkflow;
+  const controller = new ButterflyController({ assembler, workflow, repository, runtime,
+    createRequestId: () => `request-${freezeCalls + 1}`, roll: () => 68, now: () => 100,
+    hooks: { onStatus: status => { statuses.push(status); } },
+    narrativeShell: { async arm() {}, async clear() {}, async clearActive() {}, async assertRenderedFloor() {} },
+  });
+  return { controller, repository, runtime, messages, assembler, workflow, statuses,
+    calls: () => ({ freezeCalls, prepareCalls }), setRun: (value: string) => { runId = value; } };
+}
+
+function rollbackRecord(pending: PendingSettlement): ButterflyRecord {
+  return { key: butterflyRecordKey(namespace, pending.runId), namespace, runId: pending.runId,
+    requestId: pending.request.requestId, request: pending.request, result: result(),
+    sourceHash: pending.sourceHash, triggerEvidenceHash: pending.triggerEvidenceHash,
+    panel: '<butterfly_panel/>', archiveEntry: '归档', assistantMessageId: pending.request.trigger.returnAssistantMessageId,
+    status: 'validated', revision: 1, createdAt: 1, updatedAt: 1 };
+}
+
+test('遣返文本与按钮的收集失败均结束忙碌状态，不写半份 pending，原楼可重试', async () => {
+  for (const entry of ['text', 'button']) {
+    const h = rollbackHarness();
+    const freeze = h.assembler.freeze.bind(h.assembler);
+    h.assembler.freeze = async () => { throw new Error('人物证据关联失败'); };
+    const prepare = () => entry === 'text' ? h.controller.prepareText('遣返')
+      : h.controller.prepareBeforeUserTurn('遣返', 9);
+    await assert.rejects(prepare(), /人物证据关联失败/u);
+    assert.deepEqual(h.statuses, ['freezing_butterfly', 'butterfly_pending']);
+    assert.equal((await h.repository.listPending(namespace)).length, 0);
+    assert.equal(h.calls().prepareCalls, 0, '收集失败不能误称已调用模型');
+    h.assembler.freeze = freeze;
+    assert.ok(await prepare());
+    assert.equal(h.statuses.at(-1), 'butterfly_awaiting_narrative');
+  }
+});
+
+test('停止后的旧收集任务晚失败，不得覆盖新遣返任务状态', async () => {
+  const h = rollbackHarness();
+  const freeze = h.assembler.freeze.bind(h.assembler);
+  let rejectOld!: (error: Error) => void;
+  h.assembler.freeze = () => new Promise((_resolve, reject) => { rejectOld = reject; });
+  const old = h.controller.prepareText('遣返');
+  const cancelled = assert.rejects(old, /cancelled/u);
+  await new Promise(resolve => setImmediate(resolve));
+  h.controller.cancelPending(); await cancelled;
+  h.assembler.freeze = freeze;
+  assert.ok(await h.controller.prepareText('遣返'));
+  rejectOld(new Error('旧收集晚失败'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.statuses.at(-1), 'butterfly_awaiting_narrative');
+  assert.ok(!h.statuses.includes('butterfly_pending'));
+});
+
+test('同楼重roll复用，前置行动改变才重新冻结；准备完成不再显示仍在判断', async () => {
+  const h = rollbackHarness();
+  const original = await h.controller.prepareText('遣返');
+  await h.controller.prepareText('遣返');
+  assert.equal(h.calls().freezeCalls, 1);
+  h.messages[0].message = '取消之前的同行决定，珊奈留在历史中。';
+  const changed = await h.controller.prepareText('遣返');
+  assert.equal(h.calls().freezeCalls, 2);
+  assert.notEqual(changed?.sourceHash, original?.sourceHash);
+  assert.equal(h.statuses.at(-1), 'butterfly_awaiting_narrative');
+});
+
+test('相同遣返文字在新楼新墟境不复用旧轮pending', async () => {
+  const h = rollbackHarness();
+  await h.controller.prepareText('遣返');
+  h.setRun('run-new');
+  h.messages.push({ message_id: 50, role: 'assistant', message: '进入节点：另一段历史。' },
+    { message_id: 51, role: 'user', message: '遣返' });
+  const fresh = await h.controller.prepareText('遣返');
+  assert.equal(fresh?.runId, 'run-new'); assert.equal(fresh?.request.trigger.userMessageId, 51);
+  assert.equal(h.calls().freezeCalls, 2);
+  assert.equal(await h.repository.getPending(pendingSettlementKey(namespace, 'run-1')), null);
+});
+
+test('旧提交忽略取消时可同楼重试，旧finally不删除新提交锁', { timeout: 2000 }, async () => {
+  const h = rollbackHarness(); await h.controller.prepareText('遣返');
+  h.messages.push({ message_id: 10, role: 'assistant', message: '遣返回来。' });
+  const old = rollbackGate<ButterflyRecord>(); const fresh = rollbackGate<ButterflyRecord>();
+  let calls = 0;
+  h.workflow.settle = async (pending, assertActive) => {
+    const record = await (++calls === 1 ? old.promise : fresh.promise);
+    assertActive?.(); return record;
+  };
+  const first = h.controller.commitRendered(10);
+  const cancelled = assert.rejects(first, /cancelled/u);
+  await new Promise(resolve => setImmediate(resolve));
+  h.controller.cancelPending(); await cancelled;
+  const second = h.controller.commitRendered(10);
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(calls, 2);
+  const pending = (await h.repository.listPending(namespace))[0];
+  old.resolve(rollbackRecord(pending));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(await h.controller.commitRendered(10), null);
+  assert.equal(calls, 2, '旧任务收尾不得放开新互斥锁');
+  fresh.resolve(rollbackRecord(pending)); assert.ok(await second);
+});
+
+test('回滚撤销受影响pending与预生成结果，不删除已归档历史或更早准备', async () => {
+  const h = rollbackHarness(); const pending = await h.controller.prepareText('遣返'); assert.ok(pending);
+  const earlier = { ...pending, key: pendingSettlementKey(namespace, 'earlier'), runId: 'earlier',
+    request: { ...pending.request, trigger: { ...pending.request.trigger, userMessageId: 2 } } };
+  await h.repository.savePending(earlier);
+  const archive = { ...rollbackRecord(pending), key: butterflyRecordKey(namespace, 'archive'),
+    runId: 'archive', status: 'committed' as const };
+  await h.repository.saveRecord(archive);
+  h.controller.cancelPending(); await h.controller.onMessageDeleted(10);
+  assert.equal(await h.repository.getPending(pending.key), null);
+  assert.ok(await h.repository.getPending(earlier.key));
+  assert.equal((await h.repository.getRecord(butterflyRecordKey(namespace, pending.runId)))?.canonStatus, 'reverted');
+  assert.ok(await h.repository.getRecord(archive.key));
+});
+
+test('回滚清理捕获旧聊天，不因期间换聊天删除新聊天pending', async () => {
+  const h = rollbackHarness(); const old = await h.controller.prepareText('遣返'); assert.ok(old);
+  const nextNamespace = { ...namespace, chatId: 'next-chat' };
+  const next = { ...old, namespace: nextNamespace, key: pendingSettlementKey(nextNamespace, old.runId),
+    request: { ...old.request, chatId: nextNamespace.chatId } };
+  await h.repository.savePending(next);
+  h.runtime.getCurrentChatId = () => nextNamespace.chatId;
+  await h.controller.onMessageDeleted(10, namespace);
+  assert.equal(await h.repository.getPending(old.key), null);
+  assert.ok(await h.repository.getPending(next.key));
+});
+
+test('相同runId但来源已变化的预生成结果重建，orphaned仍不自动改写', async () => {
+  const h = rollbackHarness(); const pending = await h.controller.prepareText('遣返'); assert.ok(pending);
+  let generated = 0;
+  const workflow = new ButterflyWorkflow({ repository: h.repository, now: () => 10,
+    generator: { async generate() { generated += 1; return JSON.stringify(result()); } },
+    host: { async getNamespace() { return namespace; } } as ButterflyHostAdapter,
+    rules: { sharedContext: '', retrievalContract: '', validationContract: '', generationContract: '' },
+  });
+  // 使用标准 requestId，让真实 validator 验证输出，而非只检查 mock 调用。
+  const changed = { ...pending, request: request(), sourceHash: 'changed' };
+  const rebuilt = await workflow.prepare(changed);
+  assert.equal(generated, 1); assert.equal(rebuilt.sourceHash, 'changed');
+  await h.repository.updateRecord({ ...rebuilt, canonStatus: 'orphaned' });
+  await workflow.prepare({ ...changed, sourceHash: 'another' });
+  assert.equal(generated, 1);
+});
+
+test('契约事实与玩家最后决定同时进入后台和正文，不新增模型必填字段', () => {
+  const req = request();
+  req.playerInterventions = [
+    { sourceId: 'chat:6', title: 'assistant floor 6', content: '命定契约成功，所需FP已扣除。' },
+    { sourceId: 'chat:7', title: 'user floor 7', content: '把珊奈带到现实，跟我一起遣返。' },
+    { sourceId: 'chat:8', title: 'user floor 8', content: '取消带回决定，珊奈留在这里。' },
+  ];
+  req.sourceIndex = [...req.playerInterventions];
+  const rules = { sharedContext: '', retrievalContract: '', validationContract: '', generationContract: '' };
+  for (const prompt of [buildButterflyApiPrompt({ request: req, rules }), buildButterflyNarrativeInstruction(result(), req)]) {
+    for (const source of req.playerInterventions) assert.ok(prompt.includes(source.content));
+    assert.match(prompt, /契约失败\/FP不足/u); assert.match(prompt, /只签约但没有带回决定/u);
+    assert.match(prompt, /最后有效决定/u); assert.match(prompt, /骰点规模只限制间接余波/u);
+  }
+  assert.equal(buildButterflyApiPrompt({ request: req, rules }).match(/<EYON_BUTTERFLY_REQUEST_JSON>/gu)?.length, 1);
+});
+
+test('长楼末尾与旧窗口契约确认完整保留，玩家行动不被AI楼挤出', async () => {
+  const { TavernButterflyContextAssembler: Assembler } = await import('../src/runtime/butterflyContext.ts');
+  const confirmation = '普通场景。'.repeat(1000) + '\n命定契约成功，FP已扣除，双方约定可以同行。';
+  const messages: RuntimeChatMessage[] = [
+    { message_id: 1, role: 'assistant', message: '[RuinTrace]\nTitle:: 旧港\n[/RuinTrace]' },
+    { message_id: 2, role: 'user', message: '我决定将珊奈带到现实。' },
+    { message_id: 3, role: 'assistant', message: confirmation },
+    ...Array.from({ length: 64 }, (_, index) => ({ message_id: index + 4,
+      role: index % 2 ? 'assistant' as const : 'user' as const, message: `普通行动${index}` })),
+    { message_id: 68, role: 'user', message: '好了，遣返吧，伊雍——' },
+  ];
+  const h = rollbackHarness();
+  h.messages.splice(0, h.messages.length, ...messages);
+  const prompts: string[] = [];
+  h.runtime.setExtensionPrompt = async (_key, text) => { prompts.push(text); };
+  const assembler = new Assembler(h.runtime, {
+    async getWorldbookSources() { return []; }, async getCharacterSources() { return []; },
+    async getGenealogySources() { return []; }, async getBiographySources() { return []; },
+    async getButterflySources() { return []; },
+  } as never, {
+    async getButterflyFreezeSnapshot() { return { runId: 'long', ...request().anchors }; },
+    getRuinRoundStartMessageId() { return 1; },
+  } as never, {
+    async capture() { return { status: 'success', sourceMappings: [], receipt: { selected: [] },
+      bundle: { receipt: {}, passages: [], conflictGroupIds: [], sourceSnapshots: [] } }; },
+  } as never);
+  const frozen = await assembler.freeze({ requestId: 'long', namespace, userMessageId: 68,
+    rawCommand: '好了,遣返吧,伊雍——', triggerType: 'text', roll: 68 });
+  assert.ok(frozen.request.playerInterventions.some(source => source.content === confirmation));
+  assert.ok(frozen.request.playerInterventions.some(source => source.sourceId === 'chat:2'));
+  assert.ok(frozen.request.playerInterventions.some(source => source.sourceId === 'chat:38'));
+  assert.ok(frozen.request.playerInterventions.some(source => source.sourceId === 'chat:68'));
+  assert.ok(frozen.request.playerInterventions.some(source => source.sourceId === 'chat:15'), '本轮普通旧楼也是行动事实，不得靠窗口丢弃');
+  assert.equal(frozen.request.sourceIndex.filter(source => source.sourceId.startsWith('chat:')).length, 68);
+  const shell = new TavernButterflyNarrativeShell(h.runtime);
+  await shell.arm({ ...((await h.controller.prepareText(h.messages.at(-1)!.message))!), request: frozen.request }, result());
+  assert.ok(prompts.at(-1)?.includes(confirmation));
+  assert.ok(prompts.at(-1)?.includes('我决定将珊奈带到现实。'));
+});
 
 test('蝴蝶档案删除同时清理同轮待结算快照，且重复删除幂等', async () => {
   const repository = new MemoryButterflyRepository();
@@ -1224,7 +1471,7 @@ test('脚本授权且文本哈希匹配的正式蝴蝶面板在重复渲染时�
   assert.equal(lastWrite?.extra?.eyonButterflyRequest, undefined);
 });
 
-test('冻结体量瘦身：超长干预/来源内容被截到 1500 字以内（internal.81 v15）', async () => {
+test('完整干预不裁字，提示词中重复来源原文只投递一次', async () => {
   const { TavernButterflyContextAssembler } = await import('../src/runtime/butterflyContext.ts');
   const long = '超长内容。'.repeat(3000); // 9000 字
   const assembler = new TavernButterflyContextAssembler(
@@ -1294,11 +1541,13 @@ test('冻结体量瘦身：超长干预/来源内容被截到 1500 字以内（i
     ...request.relevantWorldbook.map(i => i.content),
     ...request.relevantChatFacts.map(i => i.content),
   ];
-  for (const text of sourceTexts) {
-    assert.ok(text.length <= 1500, `来源内容超过 1500 字：${text.length}`);
-  }
-  const allText = JSON.stringify(frozen.request);
-  assert.ok(allText.length < 40_000, `request JSON 应显著小于 72KB（瘦身目标），实际 ${allText.length}`);
+  assert.ok(sourceTexts.includes(long));
+  assert.ok(sourceTexts.includes('AI 楼内容。'.repeat(2000)));
+  const prompt = buildButterflyApiPrompt({ request: frozen.request, rules: {
+    sharedContext: '', retrievalContract: '', validationContract: '', generationContract: '',
+  } });
+  assert.equal(prompt.split(long).length - 1, 1, '完整来源只投递一次而非裁剪');
+  assert.match(prompt, /完整原文见 sourceIndex/u);
 });
 
 test('墟境行动记录长度走 20-400 容忍窗口，不再被 80 字隐形硬门误杀（internal.81 v16）', () => {

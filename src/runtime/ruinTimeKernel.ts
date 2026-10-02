@@ -94,6 +94,7 @@ const DEFAULT_RUNTIME: RuntimeState = {
 };
 
 export interface RuinTimeKernelRegistration {
+  onChatChanged(): void;
   dispose(): void;
 }
 
@@ -123,6 +124,32 @@ export function registerRuinTimeKernel(
   let saving = false;
   let lastCarriedUserId = -1;
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
+  let contextRevision = 0;
+  const readNamespace = (): string | null => {
+    try {
+      const character = runtime.getCurrentCharacterName()?.trim();
+      const chat = runtime.getCurrentChatId()?.trim();
+      return character && chat ? JSON.stringify([character, chat]) : null;
+    } catch {
+      return null;
+    }
+  };
+  let currentNamespace = readNamespace();
+  const invalidateContext = (): void => {
+    contextRevision += 1;
+    currentNamespace = readNamespace();
+    lastCarriedUserId = -1;
+    saving = false;
+    pendingTimers.forEach(clearTimeout);
+    pendingTimers.clear();
+  };
+  const captureContext = () => {
+    if (disposed) return null;
+    if (readNamespace() !== currentNamespace) invalidateContext();
+    return currentNamespace ? { namespace: currentNamespace, revision: contextRevision } : null;
+  };
+  const isCurrent = (context: { namespace: string; revision: number }): boolean =>
+    !disposed && context.revision === contextRevision && context.namespace === readNamespace();
 
   const previousAssistant = (messageId: number): RuntimeChatMessage | null => {
     const messages = runtime.getChatMessages(
@@ -153,19 +180,21 @@ export function registerRuinTimeKernel(
 
   const normalizeMessage = async (
     messageId: number,
-    variables?: Variables,
-    text?: string,
+    context: { namespace: string; revision: number },
+    expected: { role: string; text: string; swipeId: number | null },
   ): Promise<boolean> => {
-    if (disposed || saving || messageId < 0) return false;
+    if (!isCurrent(context) || saving || messageId < 0) return false;
     const message = runtime
       .getChatMessages(messageId, { include_swipes: false })
       .find(item => item.message_id === messageId);
     if (!message || message.is_hidden) return false;
+    if (message.role !== expected.role || message.message !== expected.text
+      || runtime.getMessageSwipeId(messageId) !== expected.swipeId) return false;
     const getMessage = bindings.getMessageVariables;
     const replaceMessage = bindings.replaceMessageVariables;
     if (!getMessage || !replaceMessage) return false;
 
-    const current = structuredClone(variables ?? getMessage(messageId) ?? {});
+    const current = structuredClone(getMessage(messageId) ?? {});
     let changed = false;
     if (message.role === 'user') {
       const previous = previousAssistant(messageId);
@@ -178,29 +207,38 @@ export function registerRuinTimeKernel(
       changed = normalizeRuinVariables(
         current,
         prior,
-        text ?? message.message,
+        message.message,
         returnAuthorized(messageId),
       );
     }
     if (!changed) return true;
+    // Message APIs target the current chat, not the chat at scheduling time.
+    // No await is permitted between this guard and invoking the host write.
+    if (!isCurrent(context)) return false;
     saving = true;
     try {
       await replaceMessage(messageId, current);
     } finally {
-      saving = false;
+      if (isCurrent(context)) saving = false;
     }
     return true;
   };
 
   const scheduleNormalize = (
     messageId: number,
-    text?: string,
     delays = [0, 90, 240, 520, 900],
   ) => {
+    const context = captureContext();
+    if (!context || messageId < 0) return;
+    const message = runtime.getChatMessages(messageId, { include_swipes: false })
+      .find(item => item.message_id === messageId);
+    if (!message || message.is_hidden) return;
+    const expected = { role: message.role, text: message.message,
+      swipeId: runtime.getMessageSwipeId(messageId) };
     delays.forEach(delay => {
       const timer = setTimeout(() => {
         pendingTimers.delete(timer);
-        void normalizeMessage(messageId, undefined, text).catch(error => {
+        void normalizeMessage(messageId, context, expected).catch(error => {
           console.warn('[Eyon History Workbench] time kernel replay failed', error);
         });
       }, delay);
@@ -215,6 +253,7 @@ export function registerRuinTimeKernel(
   };
 
   subscribe(events.COMMAND_PARSED, (...args) => {
+    if (!captureContext()) return;
     const commands = args.find(Array.isArray);
     const text = args.find(value => typeof value === 'string');
     if (!Array.isArray(commands) || typeof text !== 'string') return;
@@ -225,6 +264,7 @@ export function registerRuinTimeKernel(
   });
 
   subscribe(events.BEFORE_MESSAGE_UPDATE, (...args) => {
+    if (!captureContext()) return;
     const event = args.find(value => isRecord(value));
     if (!event) return;
     const messageId = runtime.getLastMessageId();
@@ -238,10 +278,11 @@ export function registerRuinTimeKernel(
       text ?? '',
       returnAuthorized(messageId),
     );
-    scheduleNormalize(messageId, text);
+    scheduleNormalize(messageId);
   });
 
   subscribe(events.VARIABLE_UPDATE_ENDED, (...args) => {
+    if (!captureContext()) return;
     const variables = args.find(value => isRecord(value));
     const messageId = runtime.getLastMessageId();
     const message = runtime
@@ -255,11 +296,11 @@ export function registerRuinTimeKernel(
         returnAuthorized(messageId),
       );
     }
-    scheduleNormalize(messageId, message?.message);
+    scheduleNormalize(messageId);
   });
 
   const carryWatcher = setInterval(() => {
-    if (disposed) return;
+    if (!captureContext()) return;
     const messageId = runtime.getLastMessageId();
     const message = runtime
       .getChatMessages(messageId, { include_swipes: false })
@@ -271,17 +312,19 @@ export function registerRuinTimeKernel(
       || messageId === lastCarriedUserId
     ) return;
     lastCarriedUserId = messageId;
-    scheduleNormalize(messageId, message.message, [40, 140, 340, 700]);
+    scheduleNormalize(messageId, [40, 140, 340, 700]);
   }, 400);
 
   scheduleNormalize(runtime.getLastMessageId());
 
   return {
+    onChatChanged() {
+      if (!disposed) invalidateContext();
+    },
     dispose() {
       disposed = true;
       clearInterval(carryWatcher);
-      pendingTimers.forEach(clearTimeout);
-      pendingTimers.clear();
+      invalidateContext();
       subscriptions.forEach(subscription => subscription.stop?.());
     },
   };

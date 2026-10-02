@@ -88,6 +88,70 @@ function withWorldbookKeys(source: SourceSnapshot, uid: number, keys: string[]):
   return source;
 }
 
+test('超长带章节的必需人物原文不受旧窗口、硬预算和排序占位影响', async () => {
+  const person = snapshot('worldbook:long-required', '[角色]米露',
+    `  # 起源\n姓名: 米露\n${'完整背景。'.repeat(4000)}\n# 末尾\n末尾契约：保留原界身份。  `);
+  const noise = snapshot('chat:noise', '米露的现场记录', '米露。'.repeat(8000), 'chat');
+  const result = await assembleEvidencePassages({
+    snapshots: [noise, person], queryAnchors: ['米露'], fatalCoverageAnchors: ['米露'],
+    requiredSourceAnchors: [{ anchor: '米露', snapshotIds: [person.snapshotId] }], claims: [],
+    budget: { strategyVersion: EVIDENCE_PASSAGE_STRATEGY_VERSION,
+      softLimitChars: 40, hardLimitChars: 60, fullSourceLimitChars: 30, maxWindowChars: 20 },
+  });
+  assert.equal(result.passages.find(p => p.sourceId === person.logicalId)?.content, person.content);
+  assert.equal(result.passages.find(p => p.sourceId === noise.logicalId)?.content, noise.content);
+  assert.ok(result.passages.every(p => p.extractionMode === 'full'));
+  assert.deepEqual(result.rejected, []);
+});
+
+test('MVU 年龄阶段称呼关联唯一世界书本人，但不覆盖原身份生卒', async () => {
+  const main = snapshot('worldbook:stage-person', '[角色]米露', '姓名: 米露\n身份: 花灵\n出生: 混乱纪元100年');
+  const stage = snapshot('mvu-character:米露（半岁）', '米露（半岁）',
+    JSON.stringify({ 姓名: '米露（半岁）', 种族: '花灵', 外貌: '实龄半岁。' }), 'mvu');
+  const catalog = buildWorldKnowledgeCatalog([main, stage], []);
+  const person = catalog.entities.find(p => p.canonicalName === '米露')!;
+  assert.ok(person.aliases.includes('米露（半岁）'));
+  assert.ok(person.sourceSnapshotIds.includes(stage.snapshotId));
+  assert.equal(person.lifespan?.born?.era, '混乱纪元');
+  assert.ok(!catalog.entities.some(p => p.canonicalName === '米露（半岁）'));
+  for (const taskType of ['biography', 'ruin', 'genealogy', 'butterfly'] as const) {
+    const result = await new UnifiedShadowRetrievalEngine([main, stage]).retrieve({
+      requestId: `stage-alias-${taskType}`, taskType, mode: 'active',
+      query: '神明纪元126年，米露（半岁）已经签约并决定同行。',
+    });
+    assert.ok(result.bundle.passages.some(p => p.sourceId === main.logicalId));
+    assert.ok(result.bundle.castManifest?.entries.some(p => p.identity.aliases.includes('米露（半岁）')));
+  }
+});
+
+test('阶段称呼不得合并跨纪元同名者、显式出生冲突或身体/灵魂/分身标签', () => {
+  const main = snapshot('worldbook:stage-older', '[角色]米露', '姓名: 米露\n身份: 祭司\n出生: 神明纪元100年');
+  const later = snapshot('worldbook:stage-later', '[角色]米露', '姓名: 米露\n身份: 学徒\n出生: 复兴纪元470年');
+  const stage = snapshot('mvu-character:stage', '米露（半岁）', '种族: 花灵', 'mvu');
+  assert.ok(buildWorldKnowledgeCatalog([main, later, stage], []).entities.some(p => p.canonicalName === stage.title));
+  const conflict = { ...stage, content: '种族: 花灵\n出生: 复兴纪元470年' };
+  assert.ok(buildWorldKnowledgeCatalog([main, conflict], []).entities.some(p => p.canonicalName === stage.title));
+  for (const label of ['身体', '灵魂', '分身', '夺舍前']) {
+    const distinct = { ...stage, title: `米露（${label}）` };
+    assert.ok(!buildWorldKnowledgeCatalog([main, distinct], []).entities
+      .find(p => p.canonicalName === '米露')?.aliases.includes(distinct.title));
+  }
+});
+
+test('泛用操作词寻根溯源不召回伊雍核心；明确查询契约或核心仍可读取', async () => {
+  const core = snapshot('worldbook:mechanism', '[DLC][命定系统]伊雍核心(作者)',
+    '寻根溯源: 可探查对象历史。\n命定契约: 允许将已签约人物带回现实。');
+  const engine = new UnifiedShadowRetrievalEngine([core]);
+  const generic = await engine.retrieve({ requestId: 'generic-operation', taskType: 'biography',
+    query: '对这柄黄铜天平进行寻根溯源' });
+  assert.ok(!generic.bundle.sourceSnapshots.some(p => p.logicalId === core.logicalId));
+  assert.ok(!buildWorldKnowledgeCatalog([core], []).entities.some(p => p.canonicalName === '寻根溯源'));
+  for (const query of [core.title, '命定契约']) {
+    const explicit = await engine.retrieve({ requestId: query, taskType: 'butterfly', query });
+    assert.ok(explicit.bundle.sourceSnapshots.some(p => p.logicalId === core.logicalId));
+  }
+});
+
 const butterflyContinuityArchive = [
   '### 《蝴蝶效应锚定日志3》',
   '',
@@ -161,6 +225,49 @@ test('跨纪元同名与出生冲突不能靠无日期补充条目强行合并',
   const unknown = snapshot('worldbook:unknown-namesake', '[角色]同名祭司', '习惯记录，人物所处时代不详。');
   const catalog = buildWorldKnowledgeCatalog([older, later, unknown], []);
   assert.equal(catalog.entities.filter(entity => entity.canonicalName === '同名祭司').length, 3);
+});
+
+test('跨时代人物资料：MVU 的事件纪元不是新身份，四模块保留原人物依据', async () => {
+  const main = snapshot('worldbook:cross-era-person', '[角色]二叶',
+    '身份: 花灵\n出身: 出生于距今5639年的混乱纪元，35岁时父母逝去。');
+  const current = snapshot('mvu-character:二叶', '二叶',
+    JSON.stringify({ 姓名: '二叶', 种族: '花灵', 说明: '神明纪元126年的契约已经成立。' }), 'mvu');
+  for (const sources of [[main, current], [current, main]]) {
+    const catalog = buildWorldKnowledgeCatalog(sources, []);
+    const people = catalog.entities.filter(entity => entity.canonicalName === '二叶');
+    assert.equal(people.length, 1, 'MVU 提到另一纪元不能把同一份人物记录拆成时代分身');
+    assert.equal(people[0].sourceSnapshotIds.length, 2);
+    for (const taskType of ['butterfly', 'ruin', 'biography', 'genealogy'] as const) {
+      const { bundle } = await new UnifiedShadowRetrievalEngine(sources).retrieve({
+        requestId: `cross-era-${taskType}`, taskType, mode: 'active',
+        query: '神明纪元126年二叶的经历与契约',
+      });
+      const actor = bundle.castManifest?.entries.find(entry => entry.identity.canonicalName === '二叶');
+      assert.ok(actor?.identity.passageIds.length);
+      assert.ok(bundle.passages.some(passage => passage.sourceId === main.logicalId));
+      assert.equal(main.content.includes('混乱纪元'), true, '不得改掉原出生年代');
+    }
+  }
+});
+
+test('出生时间优先于人物介绍中的事件纪元，明确同名出生冲突仍分开', () => {
+  const main = snapshot('worldbook:birth-anchor', '[角色]测试人物',
+    '身份: 旅行者\n出生: 混乱纪元120年');
+  const current = snapshot('mvu-character:测试人物', '测试人物',
+    JSON.stringify({ 姓名: '测试人物', 说明: '神明纪元的回忆', 出生: '混乱纪元120年' }), 'mvu');
+  const people = buildWorldKnowledgeCatalog([main, current], []).entities
+    .filter(entity => entity.canonicalName === '测试人物');
+  assert.equal(people.length, 1);
+  assert.deepEqual(people[0].lifespan?.born, { era: '混乱纪元', year: 120 });
+
+  const namesake = snapshot('mvu-character:同名祭司', '同名祭司',
+    JSON.stringify({ 姓名: '同名祭司', 出生: '复兴纪元470年' }), 'mvu');
+  const older = snapshot('worldbook:old-priest', '[角色]同名祭司',
+    '身份: 古代祭司\n出生: 神明纪元430年');
+  const distinct = buildWorldKnowledgeCatalog([older, namesake], []).entities
+    .filter(entity => entity.canonicalName === '同名祭司');
+  assert.equal(distinct.length, 2, '明确出生冲突不能因为 MVU 同名而合并');
+  assert.deepEqual(distinct.map(entity => entity.lifespan?.born?.year).sort(), [430, 470]);
 });
 
 test('检索查询会剔除时间碎片、流程缩写与纯标点噪声', async () => {
@@ -300,7 +407,7 @@ test('实体准入门保留完整目录，但泛词、结构句段和含女神�
   );
 });
 
-test('多章节世界书会读取1800字后的神明纪元与泰珂段，而不把头部地理当作证据', async () => {
+test('多章节世界书完整保留后部神明纪元与泰珂资料，不按章节或字符切断', async () => {
   const geographyNoise = Array.from(
     { length: 90 },
     (_, index) => `地理条目${index}：奥古斯提姆帝国拥有当前时代的议会与商会。`,
@@ -331,8 +438,9 @@ test('多章节世界书会读取1800字后的神明纪元与泰珂段，而不�
 
   assert.match(visibleEvidence, /神明纪元/u);
   assert.match(visibleEvidence, /泰珂/u);
-  assert.doesNotMatch(visibleEvidence, /奥古斯提姆帝国拥有当前时代/u);
-  assert.ok(result.bundle.passages.some(passage => passage.startOffset > 1_800));
+  assert.equal(visibleEvidence, source.content);
+  assert.equal(result.bundle.passages[0].startOffset, 0);
+  assert.equal(result.bundle.passages[0].endOffset, source.content.length);
   assert.equal(
     result.bundle.receipt.passageBudget.strategyVersion,
     EVIDENCE_PASSAGE_STRATEGY_VERSION,
@@ -554,7 +662,7 @@ test('Temporal v2：灭亡/改名事件类型被识别', async () => {
   assert.deepEqual(ledger.eraOrder, ['混乱纪元', '英雄纪元', '复兴纪元']);
 });
 
-test('四模块以证据段反推最终来源，可选来源超预算时降级而不让 Active 整项失败', async () => {
+test('四模块按来源数量筛选，已选证据不因字符预算丢失', async () => {
   const sources = Array.from({ length: 20 }, (_, index) => snapshot(
     `worldbook:evidence-first:${index}`,
     `共同史料 ${index}`,
@@ -577,7 +685,8 @@ test('四模块以证据段反推最终来源，可选来源超预算时降级�
       result.bundle.sourceSnapshots.map(source => source.snapshotId),
       result.bundle.receipt.selected.map(item => item.snapshotId),
     );
-    assert.ok(result.bundle.receipt.rejected.some(item => item.reason === 'passage-budget-exhausted'));
+    assert.ok(!result.bundle.receipt.rejected.some(item => item.reason === 'passage-budget-exhausted'));
+    for (const passage of result.bundle.passages) assert.equal(passage.content, sources.find(source => source.snapshotId === passage.snapshotId)?.content);
     assert.equal(
       result.bundle.receipt.selected.length + result.bundle.receipt.rejected.length,
       result.bundle.receipt.candidateSnapshotIds.length,
@@ -851,13 +960,13 @@ test('四类任务画像共同消费同一个 EvidencePassage 装配合同', asy
   }
 });
 
-test('R-04：普通（desired）锚预算不足只省略不失败；required（fatal）锚不足才硬失败', async () => {
+test('旧字符预算不再删除普通或必需锚的已选完整证据', async () => {
   const source = snapshot(
     'worldbook:passage-overflow',
     '预算夹具',
     `锚点甲${'甲'.repeat(70)}\n\n锚点乙${'乙'.repeat(70)}`,
   );
-  // desired 锚预算不足：不抛错，进入 omittedAnchors 警告。
+  // 旧预算字段仅为回执兼容，不能裁剪任何已选原文。
   const desired = await assembleEvidencePassages({
     snapshots: [source],
     queryAnchors: ['锚点甲', '锚点乙'],
@@ -870,15 +979,11 @@ test('R-04：普通（desired）锚预算不足只省略不失败；required（f
       maxWindowChars: 80,
     },
   });
-  assert.ok(
-    desired.omittedAnchors.length > 0,
-    '预算不足的普通锚必须进入 omittedAnchors 而不是抛错',
-  );
+  assert.deepEqual(desired.omittedAnchors, []);
+  assert.equal(desired.passages[0].content, source.content);
   assert.ok(desired.passages.length > 0, '任务必须成功，不能因普通锚整体终止');
 
-  // fatal 锚预算不足：仍显式失败。
-  await assert.rejects(
-    () => assembleEvidencePassages({
+  const required = await assembleEvidencePassages({
       snapshots: [source],
       queryAnchors: ['锚点甲', '锚点乙'],
       fatalCoverageAnchors: ['锚点甲', '锚点乙'],
@@ -890,9 +995,9 @@ test('R-04：普通（desired）锚预算不足只省略不失败；required（f
         fullSourceLimitChars: 80,
         maxWindowChars: 80,
       },
-    }),
-    /cannot preserve required anchors/u,
-  );
+    });
+  assert.deepEqual(required.omittedAnchors, []);
+  assert.equal(required.passages[0].content, source.content);
 });
 
 test('泰珂史案以历史世界书为首，并按锚点交叉索引既有三类成果', async () => {
@@ -1268,7 +1373,7 @@ test('合成规模满足冷索引与热检索首版性能预算', async () => {
   assert.ok(p95 <= 100, `热检索 p95=${p95.toFixed(2)}ms，应≤100ms`);
 });
 
-test('R-04：20 个普通锚 + 1 个 required actor，P0 必保留、P1 可省略且任务成功', async () => {
+test('20 个普通锚 + 1 个 required actor，按来源限额筛选且已选原文不被字符预算省略', async () => {
   const ordinary = Array.from({ length: 20 }, (_, index) =>
     `普通锚点${index}${'锚'.repeat(12)}`);
   const actorSource = snapshot(
@@ -1276,7 +1381,7 @@ test('R-04：20 个普通锚 + 1 个 required actor，P0 必保留、P1 可省�
     '泰珂',
     '泰珂是神明纪元的神明。',
   );
-  // 每条普通来源放大到约 1200 字，20 条约 24k，必然超过 16k 硬预算 → 触发 desired 省略。
+  // 放大原文超过旧字符预算，仍只按来源数量决定入选。
   const ordinarySources = ordinary.map((anchor, index) =>
     snapshot(
       `worldbook:ordinary-${index}`,
@@ -1297,13 +1402,8 @@ test('R-04：20 个普通锚 + 1 个 required actor，P0 必保留、P1 可省�
   );
   // 任务必须成功（不因普通锚预算不足抛错）。
   assert.ok(result.bundle.passages.length > 0);
-  // receipt 明确列出 omitted（desired）锚，且以 warnings 表达可恢复省略。
-  assert.ok(Array.isArray(result.bundle.receipt.omittedAnchors));
-  assert.ok(
-    result.bundle.receipt.omittedAnchors.length > 0
-    || result.bundle.receipt.warnings.length > 0,
-    '预算省略必须进入 receipt.omittedAnchors/warnings 而非错误字符串',
-  );
+  assert.deepEqual(result.bundle.receipt.omittedAnchors, []);
+  for (const passage of result.bundle.passages) assert.equal(passage.content, sources.find(source => source.snapshotId === passage.snapshotId)?.content);
 });
 
 test('人物时间锚：梅薇娜(488年基准88岁→出生400年)在310年标记 not-born 并给缺席叙事方针', async () => {

@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { ButterflyHostAdapter } from '../src/adapters/host.ts';
 import { TavernBiographyContextAssembler } from '../src/runtime/biographyContext.ts';
 import { TavernButterflyContextAssembler } from '../src/runtime/butterflyContext.ts';
+import { resolveActiveRetrieval } from '../src/runtime/activeRetrieval.ts';
 import type {
   RuntimeChatMessage,
   RuntimeContextSourceProvider,
@@ -170,6 +171,81 @@ const contextInput = {
   triggerMessageId: 3,
   directive: '检索圣翼议会与议长的历史',
 };
+
+test('四模块 Active 上下文保留超长世界书和所取楼层的完整正文', async () => {
+  const longBody = `# 圣翼议会\n${'完整组织历史。'.repeat(4000)}\n末尾事实：旧议会厅已经封存。`;
+  const longChat = `圣翼议会与议长的现场记录。\n${'普通现场。'.repeat(1000)}\n末尾行动：决定保留封存档案。`;
+  const book = { ...worldbookSource(), content: longBody };
+  const provider: RuntimeContextSourceProvider = {
+    ...sources,
+    async getWorldbookCorpus() {
+      const corpus = await sources.getWorldbookCorpus!();
+      return { ...corpus, sources: [book] };
+    },
+    async getWorldbookSources() { return [book]; },
+  };
+  const runtime = new ShadowRuntime();
+  const read = runtime.getChatMessages.bind(runtime);
+  runtime.getChatMessages = range => read(range).map(message =>
+    message.message_id === 3 ? { ...message, message: longChat } : message);
+  const observer = new RuntimeShadowRetrievalObserver();
+  const contexts = [
+    await new TavernBiographyContextAssembler(runtime, provider, observer).assemble(contextInput),
+    await new TavernGenealogyContextAssembler(runtime, provider, observer).assemble(contextInput),
+    await new TavernRuinContextAssembler(runtime, provider, async () => new Set(), observer).assemble(contextInput),
+  ];
+  const host = {
+    getRuinRoundStartMessageId() { return 2; },
+    async getButterflyFreezeSnapshot() { return {
+      flowState: 'exploring', runId: 'long-source',
+      reality: { time: '复兴纪元488年', location: '金谷城' },
+      ruinEntry: { time: '复兴纪元470年', location: '旧议会厅' },
+      ruinExit: { time: '复兴纪元471年', location: '旧议会厅' },
+    }; },
+  };
+  const butterfly = await new TavernButterflyContextAssembler(runtime, provider, host as never, observer).freeze({
+    requestId: 'long-butterfly', namespace: contextInput.namespace, userMessageId: 3,
+    rawCommand: '保留封存档案后遣返', triggerType: 'text', roll: 68,
+  });
+  for (const context of [...contexts, butterfly.request]) {
+    assert.ok(context.sourceIndex.some(source => source.content === longBody), '所选世界书不得在投影中截断');
+    assert.ok(context.sourceIndex.some(source => source.content === longChat), '所取楼层不得只留下前2000字');
+  }
+});
+
+test('跨时代 MVU 说明不拆散人物身份，正式 Active 证据门仍覆盖四模块', async () => {
+  const runtimeCandidates = [
+    {
+      sourceId: 'worldbook:二叶:761895', sourceType: 'worldbook' as const,
+      title: '[DLC][角色][二叶]二叶(二叶、银莳萝-花灵少女)',
+      content: '身份: 花灵\n出身: 出生于距今5639年的混乱纪元，35岁时父母逝去。',
+    },
+    {
+      sourceId: 'mvu-character:二叶', sourceType: 'mvu' as const, title: '二叶',
+      content: JSON.stringify({ 姓名: '二叶', 种族: '花灵', 说明: '神明纪元126年，已经成立带回契约。' }),
+    },
+    {
+      sourceId: 'chat:1', sourceType: 'chat' as const, title: 'assistant floor 1',
+      content: '神明纪元126年，二叶在幽谷溪畔，伊雍确认可以将二叶带到现世。',
+    },
+  ];
+  for (const taskType of ['butterfly', 'ruin', 'biography', 'genealogy'] as const) {
+    const result = await resolveActiveRetrieval({
+      retrieval: new RuntimeShadowRetrievalObserver(), taskType,
+      requestId: `cross-era-active-${taskType}`,
+      query: '神明纪元126年，二叶在幽谷溪畔。抱着小花灵带出墟境，遣返吧。',
+      runtimeCandidates,
+      contextCandidates: runtimeCandidates.map(source => ({ ...source, authority: 1 })),
+      legacySourceIds: [],
+      allowIncompleteCorpusForFixture: true,
+    });
+    const actors = result.bundle.castManifest?.entries.filter(entry =>
+      entry.identity.canonicalName === '二叶');
+    assert.equal(actors?.length, 1);
+    assert.ok(actors?.every(entry => entry.identity.passageIds.length > 0));
+    assert.ok(result.sourceIndex.some(source => source.content.includes('5639年的混乱纪元')));
+  }
+});
 
 test('宗族当前MVU准入名册完整读取，与active检索入选摘录分开', async () => {
   let currentCharacters = [

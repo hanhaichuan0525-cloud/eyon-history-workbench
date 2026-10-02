@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { TavernBiographyContextAssembler } from '../src/runtime/biographyContext.ts';
+import { createBiographyEvidenceResolver } from '../src/runtime/biographyEvidence.ts';
 import type {
   RuntimeChatMessage,
   RuntimeContextSourceProvider,
@@ -120,6 +121,57 @@ const scope = {
   directive: '生成维奥莱塔的历史资料',
 };
 
+function biographyPurposeProvider(): RuntimeContextSourceProvider {
+  const entries = [
+    { title: '[DLC][命定系统]伊雍核心(作者)',
+      content: '工作台操作说明：伊雍在雾晶港提供寻根溯源。\n命定契约：成功签约且决定带回才可赎出现世。',
+      keywords: ['寻根溯源', '伊雍核心', '命定契约'] },
+    { title: '[器物]黄铜天平', content: '雾晶港工匠的黄铜天平，用于称量盐与谷物。', keywords: ['黄铜天平'] },
+  ].map((item, uid): RuntimeWorldbookSource => ({
+    ...worldbookSource(), ...item, sourceId: `worldbook:purpose:${uid}`,
+    worldbook: { ...worldbookSource().worldbook, logicalId: `worldbook:purpose:${uid}`, uid,
+      strategy: { ...worldbookSource().worldbook.strategy, primaryKeys: item.keywords } },
+  }));
+  return {
+    ...sources,
+    async getCurrentWorld() { return { time: '复兴纪元488年', location: '雾晶港' }; },
+    async getWorldbookCorpus() {
+      const corpus = await sources.getWorldbookCorpus!();
+      return { sources: entries, receipt: { ...corpus.receipt,
+        counts: { ...corpus.receipt.counts, total: 2, enabled: 2, retrievable: 2 },
+        entries: entries.map(item => ({ ...corpus.receipt.entries[0]!,
+          sourceId: item.sourceId, logicalId: item.worldbook.logicalId, uid: item.worldbook.uid, title: item.title })),
+      } };
+    },
+  };
+}
+
+test('传记正式Active检索不把共享地点命中的运行核心投成史料', async () => {
+  const provider = biographyPurposeProvider();
+  const context = await new TavernBiographyContextAssembler(new ContextRuntime(),
+    provider, new RuntimeShadowRetrievalObserver()).assemble({
+    ...scope, directive: '雾晶港 黄铜天平 的历史',
+  });
+  assert.ok(context.worldbookContext.some(item => item.title.includes('黄铜天平')));
+  assert.ok(!context.sourceIndex.some(item => item.title.includes('伊雍核心')));
+  assert.ok(!context.evidenceBundle.sourceSnapshots.some(item => item.title.includes('伊雍核心')));
+  assert.ok(!context.evidenceBundle.taskAnchorAttachments?.some(item => item.content.includes('工作台操作说明')));
+  assert.equal(context.evidenceBundle.receipt.worldbookCorpus?.counts.enabled, 2);
+  assert.deepEqual(await createBiographyEvidenceResolver(provider)(['伊雍核心'], ['worldbook:purpose:0'], context), []);
+});
+
+test('传记明确研究伊雍核心仍可读取，其他模块的契约检索不变', async () => {
+  const provider = biographyPurposeProvider(), observer = new RuntimeShadowRetrievalObserver();
+  const context = await new TavernBiographyContextAssembler(new ContextRuntime(), provider, observer)
+    .assemble({ ...scope, directive: '对伊雍核心进行寻根溯源' });
+  assert.ok(context.sourceIndex.some(item => item.title.includes('伊雍核心')));
+  const supplement = await createBiographyEvidenceResolver(provider)(['伊雍核心'], [], context);
+  assert.ok(supplement.some(item => item.content.includes('成功签约且决定带回')));
+  const ruin = await new TavernRuinContextAssembler(new ContextRuntime(), provider, async () => new Set(), observer)
+    .assemble({ ...scope, directive: '命定契约' });
+  assert.ok(ruin.sourceIndex.some(item => item.title.includes('伊雍核心')));
+});
+
 test('传记生成读取已提交谱系，谱系生成读取已提交传记', async () => {
   const runtime = new ContextRuntime();
   const observer = new RuntimeShadowRetrievalObserver();
@@ -207,7 +259,7 @@ test('正式墟境上下文控制谱系演员来源，指定父亲被解析召�
   assert.deepEqual(ordinary.actorPolicy?.genealogyActors, []);
 });
 
-test('传记上下文收紧：聊天上限 6 条×2000 字，旧传记注入摘要而非全文', async () => {
+test('传记按楼层数量取聊天，已取正文与旧传记各段完整保留', async () => {
   const longChats: RuntimeChatMessage[] = Array.from({ length: 12 }, (_, index) => ({
     message_id: index + 1,
     role: (index % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
@@ -265,7 +317,7 @@ test('传记上下文收紧：聊天上限 6 条×2000 字，旧传记注入摘�
 
   assert.ok(context.recentContext.length <= 6, `聊天条数 ${context.recentContext.length} 应≤6`);
   for (const chat of context.recentContext) {
-    assert.ok(chat.content.length <= 2000, `聊天内容 ${chat.content.length} 应≤2000`);
+    assert.equal(chat.content, longChats.find(item => `chat:${item.message_id}` === chat.sourceId)?.message);
   }
   const bio = context.biographyRefs[0];
   assert.ok(bio, '应选中已提交传记');
@@ -273,7 +325,9 @@ test('传记上下文收紧：聊天上限 6 条×2000 字，旧传记注入摘�
     bio.content.startsWith('{"schema":"eyon.biography.digest.v2'),
     `应注入结构化摘要而非全文：${bio.content.slice(0, 80)}`,
   );
-  assert.ok(bio.content.length < 4200, `摘要长度 ${bio.content.length} 应<4200`);
-  assert.ok(bio.content.includes('…'), '长篇摘要应同时保留段首与段尾');
+  const full = JSON.parse(fullBiography), projected = JSON.parse(bio.content);
+  assert.equal(projected.origin.content, full.origin.content);
+  assert.deepEqual(projected.stages.map((stage: { content: string }) => stage.content), full.stages.map((stage: { content: string }) => stage.content));
+  assert.equal(projected.status.content, full.status.content);
   assert.ok(bio.content.includes('维奥莱塔'));
 });

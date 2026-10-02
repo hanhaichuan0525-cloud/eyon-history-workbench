@@ -38,7 +38,7 @@ implements ButterflyNarrativeShell {
     }
     await this.runtime.setExtensionPrompt(
       injectionKey(pending.request.requestId),
-      buildButterflyNarrativeInstruction(result),
+      buildButterflyNarrativeInstruction(result, pending.request),
       IN_CHAT,
       INJECTION_DEPTH,
       false,

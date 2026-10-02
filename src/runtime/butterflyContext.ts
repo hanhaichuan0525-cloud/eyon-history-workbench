@@ -41,16 +41,9 @@ import type {
 import { resolveCanon } from '../retrieval/canonResolver.ts';
 import { buildButterflySourceScope } from './butterflySources.ts';
 
-const RECENT_LIMIT = 36;
-// 全源内容上限（internal.81 v15 瘦身）：6000 → 1500。
-// 真机病历：蝴蝶请求体量 72,248 字符（线上约 216KB）——request JSON 集齐
-// 12 条干预全文×6000 + chat/worldbook/genealogy/biography 等全部 6KB 上限源后
-// 单次请求逼近 60s 超时线 → 反复重试 → 4 分钟级卡死（别模块 prompt 小所以快）。
-// 统一降到 1500：request JSON 约 72KB → ~18KB（-70%），单请求回到 15-30s 区间。
-// 导出供 ButterflyController 对历史遗留冻结快照做版本体检（internal.81 v16）：
-// 旧上限（6000）时代存下的 pending 若被直接复用，瘦身永不生效。
+// 仅用于识别旧版裁剪策略的 pending；新版选择完整楼/来源，不裁掉契约确认。
+// API prompt 对重复来源去重投递，控制体量而不切正文。
 export const BUTTERFLY_FREEZE_SOURCE_LIMIT = 1500;
-const CONTENT_LIMIT = BUTTERFLY_FREEZE_SOURCE_LIMIT;
 const RUIN_ENTRY_REQUEST_KEY = 'eyonHistoryRuinEntryRequest';
 
 /**
@@ -146,24 +139,26 @@ export class TavernButterflyContextAssembler {
     const snapshot = await this.host.getButterflyFreezeSnapshot(
       input.sourceMessageId,
     );
-    const messages = this.runMessages(input.userMessageId);
-    const entrySource = messages.find(isRuinEntryMessage);
+    const messages = this.runMessages(input.userMessageId, snapshot);
+    const entrySource = messages.find(isRuinEntryMessage)
+      ?? (messages[0]?.role === 'assistant' ? messages[0] : undefined);
     const chatSources = messages.map(message => ({
       sourceId: `chat:${message.message_id}`,
       title: `${message.role} floor ${message.message_id}`,
-      content: message.message.trim().slice(0, CONTENT_LIMIT),
+      content: message.message.trim(),
     }));
     const interventions = chatSources.filter(source =>
       source.sourceId !== (entrySource ? `chat:${entrySource.message_id}` : '')
-      && !/^(?:请)?(?:进入节点|遣返|返回现世|回到现实|结算蝴蝶效应)/u.test(source.content)
+      && !/^(?:请)?(?:进入节点|遣返|返回现世|回到现实|结算蝴蝶效应)[吧。！!\s]*$/u.test(source.content)
     );
-    const playerInterventions = (
-      interventions.filter(source => source.title.startsWith('user '))
-        .concat(interventions.filter(source => source.title.startsWith('assistant ')))
-        .slice(-12)
-    );
+    // 按可见楼顺序保留完整事实，不能先放玩家、后放AI再取尾部而挤掉玩家。
+    const playerInterventions = [...interventions];
     if (playerInterventions.length === 0) {
       throw new Error('本轮没有可追溯的玩家干涉正文，已拒绝建立空结算');
+    }
+    if (!playerInterventions.some(source => source.sourceId === `chat:${input.userMessageId}`)) {
+      playerInterventions.push({ sourceId: `chat:${input.userMessageId}`,
+        title: `user floor ${input.userMessageId}`, content: input.rawCommand });
     }
     const [
       worldbookCorpus,
@@ -184,7 +179,7 @@ export class TavernButterflyContextAssembler {
     const relevantGenealogy = trimSources(genealogies, 8);
     const relevantBiographies = trimSources(biographies, 8);
     const previousButterflyAnchors = trimSources(butterflies, 8);
-    const relevantChatFacts = trimSources(chatSources, 24);
+    const relevantChatFacts = [...chatSources];
     const currentRealityContext = [{
       sourceId: `frozen-reality:${snapshot.runId}`,
       title: 'frozen reality anchor',
@@ -254,6 +249,7 @@ export class TavernButterflyContextAssembler {
         legacyRequest.ruinHistory.historicalBackground,
         legacyRequest.ruinHistory.enteredAnomaly,
         ...legacyRequest.ruinHistory.locationChain,
+        entrySource?.message ?? '',
         ...legacyRequest.playerInterventions.flatMap(source => [source.title, source.content]),
       ].join('\n'),
       contextQuery: [
@@ -282,6 +278,7 @@ export class TavernButterflyContextAssembler {
     // 玩家实际行动和冻结现实是任务输入锚，不属于旧检索；即使证据预算未再次
     // 选中，也必须原样保留。其余知识来源只消费 Active EvidencePassage。
     const fixedAnchors = dedupeSources([
+      ...chatSources,
       ...playerInterventions,
       ...currentRealityContext,
     ]);
@@ -374,7 +371,7 @@ export class TavernButterflyContextAssembler {
     const source = {
       sourceId: `chat:${assistant.message_id}`,
       title: `assistant floor ${assistant.message_id}`,
-      content: assistant.message.trim().slice(0, CONTENT_LIMIT),
+      content: assistant.message.trim(),
     };
     return ButterflyRequestSchema.parse({
       ...request,
@@ -394,24 +391,44 @@ export class TavernButterflyContextAssembler {
     });
   }
 
-  private runMessages(userMessageId: number) {
+  private runMessages(userMessageId: number, snapshot: ButterflyFreezeSnapshot) {
     const messages = this.runtime
       .getChatMessages(`0-${userMessageId}`, { include_swipes: false })
       .filter(message => !message.is_hidden && message.message.trim());
-    let entryIndex = -1;
+    const recovered = this.host.getRuinRoundStartMessageId?.(snapshot, userMessageId);
+    if (recovered !== undefined) {
+      return messages.filter(message => message.message_id >= recovered);
+    }
+    let entranceCue = -1;
     for (let index = messages.length - 1; index >= 0; index -= 1) {
-      if (isRuinEntryMessage(messages[index])) {
+      const message = messages[index];
+      if (message.role === 'user'
+        && /^(?:(?:请)?进入节点(?:[\s，,：:]|$)|我(?:踏入|进入)这处历史特异点[。！!\s]*$)/u.test(message.message.trim())) {
+        entranceCue = index;
+        break;
+      }
+    }
+    // 同地点、同纪元反复进入时，旧 metadata 也可能匹配；新入场时刻优先，
+    // 且不能跨过更新的玩家入场楼去借旧史案。
+    const entryTime = compactAnchor(snapshot.ruinEntry.time);
+    const textEntry = messages.findIndex((message, index) => index >= entranceCue
+      && message.role === 'assistant' && entryTime
+      && compactAnchor(message.message).includes(entryTime));
+    if (textEntry >= 0) return messages.slice(textEntry);
+    let entryIndex = -1;
+    for (let index = messages.length - 1; index >= Math.max(0, entranceCue); index -= 1) {
+      if (isRuinEntryMessage(messages[index])
+        && entryMatchesSnapshot(messages[index], snapshot)) {
         entryIndex = index;
         break;
       }
     }
-    if (entryIndex < 0) return messages.slice(-RECENT_LIMIT);
-    const run = messages.slice(entryIndex);
-    if (run.length <= RECENT_LIMIT) return run;
-    // A long ruin run may exceed the ordinary recent-chat window. Preserve the
-    // authoritative entry floor for its structured history, then keep only the
-    // most recent intervention floors for retrieval and settlement.
-    return [run[0], ...run.slice(-(RECENT_LIMIT - 1))];
+    if (entryIndex >= 0) return messages.slice(entryIndex);
+    if (messages.some(isRuinEntryMessage)) {
+      throw new Error('无法确定本轮墟境入场楼；已拒绝借用上一轮资料，请恢复本轮楼层变量后重试');
+    }
+    // 首轮/兼容适配器没有任何旧轮标记：保留全部可见楼，不设最近楼窗口。
+    return messages;
   }
 }
 
@@ -456,7 +473,7 @@ function trimSources(
     .map(source => ({
       sourceId: source.sourceId.trim(),
       title: source.title.trim() || source.sourceId.trim(),
-      content: source.content.trim().slice(0, CONTENT_LIMIT),
+      content: source.content.trim(),
     }));
 }
 
@@ -485,7 +502,8 @@ function historyFromEntry(
   };
   return {
     title: stored?.title || field('史案标题') || traceField('Title'),
-    era: stored?.era || field('目标纪元') || traceField('Span') || traceField('Type'),
+    era: stored?.era || field('目标纪元') || traceField('Span') || traceField('Type')
+      || requestedEraFromText(snapshot.ruinEntry.time) || '',
     originalTrajectory:
       stored?.originalTrajectory || field('节点局势') || traceField('History'),
     historicalBackground:
@@ -505,6 +523,23 @@ function isRuinEntryMessage(message: RuntimeChatMessage): boolean {
   return storedRuinHistory(message) !== null
     || /\[RuinTrace\][\s\S]*?\[\/RuinTrace\]/u.test(message.message)
     || /^(?:请)?进入节点(?:[\s，,：:]|$)/u.test(message.message.trim());
+}
+
+function compactAnchor(value: string): string {
+  return value.normalize('NFKC').replace(/星期[一二三四五六日天]/gu, '')
+    .replace(/[\s\-年月日:：]/gu, '');
+}
+
+function entryMatchesSnapshot(message: RuntimeChatMessage, snapshot: ButterflyFreezeSnapshot): boolean {
+  const history = storedRuinHistory(message);
+  if (!history) {
+    const time = compactAnchor(snapshot.ruinEntry.time);
+    return !!time && compactAnchor(message.message).includes(time);
+  }
+  const era = requestedEraFromText(snapshot.ruinEntry.time);
+  return (!history.era || !era || history.era.includes(era))
+    && (!history.locationChain.length || history.locationChain.some(location =>
+      snapshot.ruinEntry.location.includes(location) || location.includes(snapshot.ruinEntry.location)));
 }
 
 function storedRuinHistory(message: RuntimeChatMessage | undefined) {

@@ -301,7 +301,7 @@ function personNameForms(name: string): string[] {
   return [...new Set(forms)];
 }
 
-function parseNumber(value: string): number | null {
+export function parseNumber(value: string): number | null {
   if (/^[0-9]+$/u.test(value)) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;

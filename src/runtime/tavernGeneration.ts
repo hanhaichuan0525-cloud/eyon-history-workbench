@@ -112,14 +112,19 @@ export class TavernGenerationAdapter implements GenerationAdapter {
     options: { progressLabel?: string; purpose?: 'semantic-evidence' | 'canon-reconcile' | 'ruin-task' } = {},
   ): Promise<string> {
     const epoch = this.epochs.get(taskType) ?? 0;
+    const controller = new AbortController();
+    this.trackController(taskType, controller);
     const previous = this.queues.get(taskType) ?? Promise.resolve();
-    const queued = previous.catch(() => undefined).then(() => {
+    const queued = awaitTaskCancellation(previous.catch(() => undefined).then(() => {
       if ((this.epochs.get(taskType) ?? 0) !== epoch) throw new GenerationCancelledError(taskType);
-      return this.generateActive(taskType, prompt, options, epoch);
-    });
+      return this.generateActive(taskType, prompt, options, epoch, controller);
+    }), controller.signal);
     this.queues.set(taskType, queued);
     try { return await queued; }
-    finally { if (this.queues.get(taskType) === queued) this.queues.delete(taskType); }
+    finally {
+      this.releaseController(taskType, controller);
+      if (this.queues.get(taskType) === queued) this.queues.delete(taskType);
+    }
   }
 
   private async generateActive(
@@ -127,17 +132,17 @@ export class TavernGenerationAdapter implements GenerationAdapter {
     prompt: string,
     options: { progressLabel?: string; purpose?: 'semantic-evidence' | 'canon-reconcile' | 'ruin-task' },
     epoch: number,
+    controller: AbortController,
   ): Promise<string> {
-    const controller = new AbortController();
-    this.trackController(taskType, controller);
     const assertActive = () => {
       if ((this.epochs.get(taskType) ?? 0) !== epoch) {
         throw new GenerationCancelledError(taskType);
       }
     };
-    try {
     assertActive();
-    const settings = parseGenerationSettings(await this.settings.get(taskType));
+    const settings = parseGenerationSettings(await awaitTaskCancellation(
+      this.settings.get(taskType), controller.signal,
+    ));
     assertActive();
     const maxRetries = Math.max(
       0,
@@ -160,11 +165,7 @@ export class TavernGenerationAdapter implements GenerationAdapter {
       },
     );
 
-      // 同模块队列由 generate() 持有，设置读取失败也释放 controller。
-      return await run();
-    } finally {
-      this.releaseController(taskType, controller);
-    }
+    return run();
   }
 
   private async runWithRetries(
@@ -268,7 +269,8 @@ export class TavernGenerationAdapter implements GenerationAdapter {
         customMaxTokens ?? settings.maxTokens,
       );
       if (this.runtime.generateCustomRaw) {
-        return this.runtime.generateCustomRaw({
+        // 本侧也持有取消/超时门：上游或宿主忽略 abort 时，不能占住重试队列。
+        return withRequestTimeout(() => this.runtime.generateCustomRaw!({
           messages: [
             { role: 'system', content: instruction },
             { role: 'user', content: activePrompt },
@@ -277,7 +279,7 @@ export class TavernGenerationAdapter implements GenerationAdapter {
           signal: controller.signal,
           timeoutMs,
           deepseekStructured,
-        });
+        }), timeoutMs, `Custom API request timed out after ${timeoutMs}ms`, controller.signal);
       }
       // 兜底通道（TavernHelper generateRaw + 显式 custom_api）：酒馆通道自身没有
       // 我们的超时控制，不包裹的话慢上游会无限等待（“停不下来”）。超时后底层请求
@@ -400,7 +402,7 @@ export class TavernGenerationAdapter implements GenerationAdapter {
           retriesUsed,
           this.hooks.random ?? Math.random,
         );
-        if (this.hooks.sleep) await this.hooks.sleep(wait);
+        if (this.hooks.sleep) await awaitTaskCancellation(this.hooks.sleep(wait), controller.signal);
         else await abortableDelay(wait, controller.signal);
         assertActive();
       }
@@ -409,6 +411,8 @@ export class TavernGenerationAdapter implements GenerationAdapter {
 
   cancel(taskType: GenerationTask): void {
     this.epochs.set(taskType, (this.epochs.get(taskType) ?? 0) + 1);
+    // 新 epoch 不等待旧物理请求；旧 finally 仍按 Promise 身份收尾。
+    this.queues.delete(taskType);
     for (const controller of this.activeControllers.get(taskType) ?? []) {
       controller.abort(new GenerationCancelledError(taskType));
     }
@@ -426,6 +430,13 @@ export class TavernGenerationAdapter implements GenerationAdapter {
     controllers.delete(controller);
     if (!controllers.size) this.activeControllers.delete(taskType);
   }
+}
+
+/** 取消等待而不依赖底层兑现 abort；迟到结果仍由调用方 epoch 隔离。 */
+export function awaitTaskCancellation<T>(task: Promise<T>, signal: AbortSignal): Promise<T> {
+  // 输入 Promise 已启动；即使 signal 此刻已取消，也观察其迟到拒绝。
+  if (signal.aborted) void task.catch(() => undefined);
+  return withRequestTimeout(() => task, 0, '', signal);
 }
 
 function systemInstruction(

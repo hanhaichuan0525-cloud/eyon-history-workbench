@@ -3,6 +3,7 @@ import type { RuinGenerationInput } from '../schemas/ruin.ts';
 import type { GenealogyGenerationInput } from '../schemas/genealogy.ts';
 import type { TavernRuntime } from './contracts.ts';
 import { findGenerationTriggerUserMessage } from './generationTrigger.ts';
+import { GenerationCancelledError } from './tavernGeneration.ts';
 import {
   noopRuinTurnGuard,
   type RuinTurnGuard,
@@ -80,6 +81,8 @@ export class WorkbenchLifecycle {
   private readonly ruinTask: RuinTaskLifecycleController;
   private readonly ruinTurnGuard: RuinTurnGuard;
   private readonly runtime: TavernRuntime;
+  private returnEpoch = 0;
+  private rollbackBarrier: Promise<void> = Promise.resolve();
   /**
    * MESSAGE_SENT 比输入框 DOM 更接近宿主事实：无论点击、回车还是其他扩展
    * 建楼，只要酒馆确认了玩家楼，就在这里启动同一份遣返准备。生成前钩子
@@ -132,6 +135,9 @@ export class WorkbenchLifecycle {
 
   async beforeGeneration(type?: string): Promise<boolean> {
     if (!SUPPORTED_GENERATION_TYPES.has(type)) return false;
+    const epoch = this.returnEpoch;
+    await this.rollbackBarrier;
+    this.assertReturnActive(epoch);
     const userMessage = findGenerationTriggerUserMessage(this.runtime, type);
     if (!userMessage) return false;
     await this.releaseStaleNarratives(userMessage.message_id);
@@ -146,6 +152,7 @@ export class WorkbenchLifecycle {
       await this.ruinTask.preparePlayerFloor?.(userMessage.message, userMessage.message_id);
     }
     await this.ruinTask.prepareGeneration?.(userMessage.message_id);
+    this.assertReturnActive(epoch);
     const command = parseTextCommand(userMessage.message);
     if (!command) {
       await this.ruinTurnGuard.prepareOrdinaryTurn();
@@ -175,9 +182,13 @@ export class WorkbenchLifecycle {
         && queued.messageId === userMessage.message_id
         && queued.rawCommand === command.raw
       ) {
-        return queued.result;
+        const result = await queued.result;
+        this.assertReturnActive(epoch);
+        return result;
       }
-      return (await this.butterfly.prepareText(userMessage.message)) !== null;
+      const result = (await this.butterfly.prepareText(userMessage.message)) !== null;
+      this.assertReturnActive(epoch);
+      return result;
     }
     return false;
   }
@@ -188,6 +199,14 @@ export class WorkbenchLifecycle {
    * 的 fail-closed 仍由 beforeGeneration 等待同一 Promise 后执行。
    */
   onUserMessageSent(messageId: number): Promise<boolean> {
+    const epoch = this.returnEpoch;
+    return this.rollbackBarrier.then(() => {
+      this.assertReturnActive(epoch);
+      return this.prepareSentUserFloor(messageId);
+    });
+  }
+
+  private prepareSentUserFloor(messageId: number): Promise<boolean> {
     const message = this.runtime
       .getChatMessages(messageId, { include_swipes: false })
       .find(item => item.message_id === messageId);
@@ -233,6 +252,7 @@ export class WorkbenchLifecycle {
   }
 
   async onAssistantRendered(messageId: number): Promise<void> {
+    const epoch = this.returnEpoch;
     // 任务终态卡与蝴蝶效应面板可能落在同一遣返楼。先让任务卡完成
     // 读改写，再让蝴蝶面板追加，避免两个模块并发覆盖同一条消息。
     const taskResult = await Promise.allSettled([
@@ -246,12 +266,14 @@ export class WorkbenchLifecycle {
     ]);
     if (
       this.returnPreparation
+      && epoch === this.returnEpoch
       && this.returnPreparation.messageId < messageId
     ) {
       this.returnPreparation = null;
     }
     if (
       this.taskConfirmationPreparation
+      && epoch === this.returnEpoch
       && this.taskConfirmationPreparation.messageId < messageId
     ) {
       this.taskConfirmationPreparation = null;
@@ -260,8 +282,8 @@ export class WorkbenchLifecycle {
   }
 
   async onChatChanged(): Promise<void> {
-    this.returnPreparation = null;
-    this.taskConfirmationPreparation = null;
+    this.rollbackBarrier = Promise.resolve();
+    this.resetReturnPreparation();
     this.ruin.cancelPending();
     this.genealogy.cancelPending();
     await settleIndependently([
@@ -271,6 +293,19 @@ export class WorkbenchLifecycle {
       this.ruinTask.cancelPending(),
       this.ruinTurnGuard.clear(),
     ]);
+  }
+
+  /** 停止/回滚/新墟境不能复用同 floor id 的旧 MESSAGE_SENT Promise。 */
+  resetReturnPreparation(rollback?: Promise<void>): void {
+    this.returnEpoch += 1;
+    this.returnPreparation = null;
+    this.taskConfirmationPreparation = null;
+    if (rollback) this.rollbackBarrier = Promise.all([this.rollbackBarrier, rollback]).then(() => undefined);
+    void this.rollbackBarrier.catch(() => undefined);
+  }
+
+  private assertReturnActive(epoch: number): void {
+    if (epoch !== this.returnEpoch) throw new GenerationCancelledError('butterfly');
   }
 
   private async releaseStaleNarratives(latestUserMessageId: number): Promise<void> {

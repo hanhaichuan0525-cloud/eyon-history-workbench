@@ -2,7 +2,8 @@ import type { ContextSource } from '../core/context.ts';
 
 interface SelectRelevantSourceOptions {
   limit: number;
-  contentLimit: number;
+  /** @deprecated 来源按数量筛选，正文不再按字符截断。 */
+  contentLimit?: number;
   fallbackCount?: number;
   /** 可选的确定性相关度门；旧调用缺省时保持原有“权威保底召回”行为。 */
   minScore?: number;
@@ -34,7 +35,7 @@ export function selectRelevantContextSources(
   query: string,
   options: SelectRelevantSourceOptions,
 ): ContextSource[] {
-  const { limit, contentLimit } = options;
+  const { limit } = options;
   const terms = retrievalTerms(query);
   const constants = sources.filter(source => source.strategyType === 'constant');
   const selective = sources.filter(source => source.strategyType !== 'constant');
@@ -72,7 +73,7 @@ export function selectRelevantContextSources(
     .slice(0, limit)
     .map(({ source }) => ({
       ...source,
-      content: source.content.slice(0, contentLimit),
+      content: source.content,
     }));
 }
 

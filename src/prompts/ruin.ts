@@ -30,11 +30,8 @@ import {
 import { renderContinuityView } from '../runtime/continuityAnchors.ts';
 import type { ContinuityView } from '../core/continuityAnchors.ts';
 
-const REFERENCE_TOTAL_LIMIT = 9_000;
-const REFERENCE_ITEM_LIMIT = 1_800;
 const REFERENCE_ITEM_COUNT_LIMIT = 8;
 const RECENT_CHAT_FALLBACK_LIMIT = 2;
-const RECENT_CHAT_ITEM_LIMIT = 1_200;
 
 const PERIOD_ANCHORING_BLOCK = [
   '<PERIOD_ANCHORING>',
@@ -565,7 +562,7 @@ export function buildRuinExpansionApiPrompt(
     JSON.stringify(buildRuinTaskSpine(input)),
     '</PLAYER_TASK_SPINE_READ_ONLY>',
     '<RUIN_RULES>',
-    input.rules.generationContract.trim().slice(0, 8_000),
+    input.rules.generationContract.trim(),
     '</RUIN_RULES>',
     buildReferenceDataSection(input, material, {
       era: input.generationInput.era,
@@ -1005,6 +1002,7 @@ function buildReferenceDataSection(
     '已知事件日期优先于自动可行时间带内的自由选日。若玩家明确范围与已知事件不相容，只能探索该范围内的前因/后果，不能把事件搬入范围。多个候选可解释同一事件尚未说明的原因、行动与视角，但共有的已知事实不变；采用alternative-interpretation，不用改名或改日期伪造不同事件。原文未说明的细节仍可自由创作。',
     '当前有效蝴蝶日志的墟境行动记录与历史演变是本聊天已生成的历史。探讨其目击者、前因或后果时，承接其中已定的行为、地点、能力来源与结果；不得把已定事件的起因换成自然灾变或另一场袭击。候选差异只补日志未确定的细节，角色当前世界书用于补充而非抹掉干预。尊重有效Canon修订与原文时序，不把后世传播写成当时已有能力，也不因本轮换地点就搬走原事件。',
     '规划提交前先核对已知事件，再把正确日期与事实写入现有span/nodes/summary，沿用现有字段，无须新增年表或检查单。扩写只能承接这些已核对的冻结事实；若发现既定大纲与原文冲突，不可通过删除年龄、模糊日期或编造另一段经历掩盖冲突。未求值EJS分支仍是条件材料，不执行模板、不把各分支合并为硬事实。',
+    '“远古时期”“入侵期间”“战争末期”等只表达原文阶段和先后关系，不自动等同于某纪元或某年。没有精确日期时可提出自洽的推演落点，但不能声称原文明确给了年份；有明确生日/事件年龄时仍按既有锚点核对。未发生的IF材料不是现行历史，档案主人的生卒/生日不能转借给其中的亲属或创造者。',
     '</KNOWN_EVENT_FAITHFULNESS_READ_ONLY>',
     '<HISTORICAL_AUTHORITY_READ_ONLY>',
     'These passages are qualified to describe the requested geographic stage. They are factual anchors, not examples. A passage with temporal.fit=unknown may support stable geography or background, but its named rulers, offices, families and organizations are not automatically contemporary actors. Never echo this block.',
@@ -1095,7 +1093,7 @@ function referenceFactExcerpt(content: string, scopeTerms: string[]): string {
     .sort((left, right) => left.index - right.index)
     .map(item => item.value)
     .join(' ');
-  return selected.slice(0, 640);
+  return selected;
 }
 
 function toPromptCastManifest(manifest: RuinContextBundle['evidenceBundle']['castManifest']) {
@@ -1364,6 +1362,14 @@ function renderCharacterCardsFull(input: RuinPromptInput): string[] {
       names.add(attachment.canonicalName);
     }
   }
+  // 上游已经以别名共证定位本人/关联资料；这里不能再要求输入包含全名。
+  for (const entry of input.context.evidenceBundle.castManifest?.entries ?? []) {
+    if (entry.reasons.includes('character-reference-read-only')
+      || entry.reasons.includes('relative-document-reference')
+      || [entry.identity.canonicalName, ...entry.identity.aliases].some(name => personMentionedIn(mentionText, name))) {
+      names.add(entry.identity.canonicalName);
+    }
+  }
   if (names.size === 0) return [];
   const lines: string[] = [];
   const delivered = new Set<string>();
@@ -1373,8 +1379,9 @@ function renderCharacterCardsFull(input: RuinPromptInput): string[] {
       || personNameMatches(item.title, name));
     if (matchedAttachments.length > 0) {
       for (const attachment of matchedAttachments) {
-        if (delivered.has(attachment.attachmentId)) continue;
-        delivered.add(attachment.attachmentId);
+        const key = `${attachment.snapshotId}\u0000${attachment.contentHash}`;
+        if (delivered.has(key)) continue;
+        delivered.add(key);
         lines.push(
           `【${attachment.canonicalName}｜attachmentId=${attachment.attachmentId}｜sha256=${attachment.contentHash}】`,
           attachment.content,
@@ -1389,7 +1396,7 @@ function renderCharacterCardsFull(input: RuinPromptInput): string[] {
   if (!lines.length) return [];
   return [
     '<CHARACTER_CARDS_FULL>',
-    '以下为选中重点参考人物的可追踪完整条目（只读：身份/生卒/背景口述/性格/装备等锁定事实；选择不等于要求出场，'
+    '以下为重点参考人物及明确关联人物的可追踪完整条目（只读：身份/生卒/背景口述/性格/装备等锁定事实；参考不等于要求出场，关联人物须按所选历史阶段判断是否存在及在场，'
     + '正文禁止改动其身份与既定背景，禁止复述本区块）：',
     ...lines,
     '</CHARACTER_CARDS_FULL>',
@@ -1476,19 +1483,12 @@ export function selectRuinReferenceSources(
 
   const selected: ContextSource[] = [];
   const selectedIds = new Set<string>();
-  let usedCharacters = 0;
   for (const { source } of expandedRanked) {
     if (selected.length >= REFERENCE_ITEM_COUNT_LIMIT) break;
-    const remaining = REFERENCE_TOTAL_LIMIT - usedCharacters;
-    if (remaining <= 0) break;
-    const content = source.content.trim().slice(
-      0,
-      Math.min(REFERENCE_ITEM_LIMIT, remaining),
-    );
+    const content = source.content.trim();
     if (!content) continue;
     selected.push({ ...source, content });
     selectedIds.add(source.sourceId);
-    usedCharacters += content.length;
   }
 
   const recentFallback = input.context.recentContext
@@ -1500,16 +1500,10 @@ export function selectRuinReferenceSources(
     .reverse();
   for (const source of recentFallback) {
     if (selected.length >= REFERENCE_ITEM_COUNT_LIMIT) break;
-    const remaining = REFERENCE_TOTAL_LIMIT - usedCharacters;
-    if (remaining <= 0) break;
-    const content = source.content.trim().slice(
-      0,
-      Math.min(RECENT_CHAT_ITEM_LIMIT, remaining),
-    );
+    const content = source.content.trim();
     if (!content) continue;
     selected.push({ ...source, content });
     selectedIds.add(source.sourceId);
-    usedCharacters += content.length;
   }
   return selected;
 }

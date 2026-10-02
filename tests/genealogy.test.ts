@@ -1130,7 +1130,7 @@ test('宗族旧式返回会触发一次严格 v2 纠正生成', async () => {
   assert.equal(record.result.schema, 'eyon.genealogy.v2');
 });
 
-test('宗族提示词只发送专用契约与限额只读资料，不携带通用上下文格式', () => {
+test('宗族提示词完整投递已选只读资料，不二次截断或携带通用上下文格式', () => {
   const context = makeContext();
   context.sourceIndex.push(...Array.from({ length: 40 }, (_, index) => ({
     sourceId: `worldbook:bulk:${index}`,
@@ -1159,7 +1159,8 @@ test('宗族提示词只发送专用契约与限额只读资料，不携带通�
   assert.match(prompt, /generated 人物与原创关系必须使用空 sourceRefs/u);
   assert.doesNotMatch(prompt, /"taskType":"genealogy"/u);
   assert.doesNotMatch(prompt, /"scope":/u);
-  assert.ok(prompt.length < 75_000);
+  const references = JSON.parse(prompt.match(/<REFERENCE_DATA_READ_ONLY>\n([\s\S]*?)\n<\/REFERENCE_DATA_READ_ONLY>/u)![1]);
+  for (const source of context.sourceIndex) assert.equal(references.sources.find((item: ContextSource) => item.title === source.title)?.content, source.content);
 });
 
 test('宗族资料包回显会触发一次干净纠正，纠正请求不复述错误回答', async () => {

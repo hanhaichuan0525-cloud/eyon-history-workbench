@@ -7,7 +7,8 @@ import type {
   KnowledgeEntity,
   WorldKnowledgeCatalog,
 } from './contracts.ts';
-import { entityTemporallyEligible } from './temporal.ts';
+import { entityTemporallyEligible, extractEraNames, extractTemporalScopes } from './temporal.ts';
+import { isEntityName } from './sourceOwnership.ts';
 
 const GENERAL_GROUP_LIMIT = 4;
 const EXHAUSTIVE_GROUP_LIMIT = 24;
@@ -30,9 +31,12 @@ export function buildEventFrame(query: string, catalog: WorldKnowledgeCatalog): 
     .sort((left, right) => queryOffset(query, left) - queryOffset(query, right)
       || right.canonicalName.length - left.canonicalName.length);
   const directEntityIds = removeContainedEntities(directEntities).map(entity => entity.entityId);
+  for (const relative of relativeSubjects(query, catalog).values()) {
+    if (relative && !directEntityIds.includes(relative)) directEntityIds.push(relative);
+  }
   const directPeople = directEntities.filter(entity => entity.kinds.includes('person'));
   const collectiveTargets: EventFrame['collectiveTargets'] = [];
-  const deity = query.match(/((?:所有|每位|逐一|全体)?(?:其他)?(?:众神|诸神|神明|神祇))/u);
+  const deity = query.match(/((?:所有|每位|逐一|全体)?(?:其他)?(?:众神|诸神|神明(?!纪元)|神祇))/u);
   if (deity) {
     collectiveTargets.push({
       phrase: deity[1],
@@ -55,7 +59,7 @@ export function buildEventFrame(query: string, catalog: WorldKnowledgeCatalog): 
     schema: 'eyon.retrieval.event-frame.v1',
     action: query.trim(),
     directEntityIds,
-    temporalTerms: query.match(/[\p{Script=Han}]{2,8}纪元(?:\d{1,6}年)?|\d{1,6}年/gu) ?? [],
+    temporalTerms: extractTemporalScopes(query),
     locationEntityIds: directEntities
       .filter(entity =>
         entity.kinds.includes('place')
@@ -80,6 +84,7 @@ export function buildCastManifest(
   options: {
     focusEntityNames?: string[];
     requiredDirectEntityIds?: string[];
+    actionQuery?: string;
   } = {},
 ): CastManifest {
   const byId = new Map(catalog.entities.map(entity => [entity.entityId, entity]));
@@ -88,6 +93,7 @@ export function buildCastManifest(
     ? null
     : new Set(options.requiredDirectEntityIds);
   const entries = new Map<string, CastManifestEntry>();
+  const relatives = relativeSubjects(options.actionQuery ?? frame.action, catalog);
   for (const entityId of frame.directEntityIds) {
     const entity = byId.get(entityId);
     if (!entity || !isDirectCastEntity(entity)) continue;
@@ -98,13 +104,14 @@ export function buildCastManifest(
       entityNames(entity).some(name => focusNames.has(normalize(name)))
       || (requiredDirectIds !== null && !requiredDirectIds.has(entityId))
     );
+    const documentReference = relatives.has(entityId);
     // 补充方向直接点名的实体仍是 required；工作台勾选的人物只是重点参考，
     // 保持 recommended，让资料被召回但不把人物强塞进实际演员表。
     entries.set(entityId, castEntry(
       entity,
-      focusReference ? 'recommended' : 'required',
-      focusReference ? 'participant' : 'actor',
-      temporalCompatible(entity, frame.temporalTerms, catalog)
+      focusReference || documentReference ? 'recommended' : 'required',
+      documentReference ? 'context' : focusReference ? 'participant' : 'actor',
+      documentReference ? 'relative-document-reference' : temporalCompatible(entity, frame.temporalTerms, catalog)
         ? focusReference ? 'selected-focus-reference' : 'direct-query-entity'
         : focusReference
           ? 'selected-focus-reference-temporal-conflict'
@@ -157,8 +164,9 @@ export function buildCastManifest(
     });
   }
 
-  const selectedIds = new Set([...frame.directEntityIds, ...[...entries.values()]
+  const selectedIds = new Set([...frame.directEntityIds.filter(id => !relatives.has(id)), ...[...entries.values()]
     .filter(entry => entry.disposition !== 'optional' && entry.disposition !== 'excluded')
+    .filter(entry => !entry.reasons.includes('relative-document-reference'))
     .map(entry => entry.entityId)]);
   for (const relation of catalog.relations) {
     const neighborId = selectedIds.has(relation.subjectEntityId)
@@ -167,6 +175,12 @@ export function buildCastManifest(
     const entity = byId.get(neighborId);
     // 关系扩展保持“人物优先”，避免从一个国家/地点把整套机构树拖进演员表。
     if (!entity || !isPersonCastEntity(entity) || entries.has(entity.entityId)) continue;
+    // 身世关联的跨时代档案是只读参照，不是当时必定在场的人物。
+    if (relation.predicate === 'character_reference') {
+      entries.set(entity.entityId, castEntry(entity, 'recommended', 'context',
+        'character-reference-read-only', affiliationsFor(entity, catalog, byId)));
+      continue;
+    }
     if (!temporalCompatible(entity, frame.temporalTerms, catalog)) {
       entries.set(entity.entityId, castEntry(
         entity, 'excluded', 'context', 'temporal-scope-incompatible',
@@ -323,11 +337,30 @@ function affiliationsFor(
 
 function isAdmissibleDirectReference(value: string): boolean {
   const name = referenceCore(value);
-  return name.length >= 2
+  return isEntityName(name)
     && name.length <= 40
     && !DIRECT_REFERENCE_STOPWORDS.has(name)
     && !STRUCTURAL_REFERENCE_PREFIX.test(name)
     && !ERA_REFERENCE.test(name);
+}
+
+/** 有明确亲属边才解析“某人的父亲”；无名/多义亲属仍留给原文，不造人物。 */
+function relativeSubjects(query: string, catalog: WorldKnowledgeCatalog): Map<string, string | null> {
+  const result = new Map<string, string | null>();
+  const roles: Record<string, string> = { 父亲: 'father', 母亲: 'mother', 配偶: 'spouse',
+    创造者: 'creator', 制造者: 'creator', 主人: 'owner' };
+  for (const owner of catalog.entities) {
+    if (!owner.kinds.includes('person')) continue;
+    for (const [role, predicate] of Object.entries(roles)) {
+      const phrase = new RegExp(`(?:${entityNames(owner).filter(isAdmissibleDirectReference).map(escapeRegExp).join('|')})(?:的)?${role}`, 'gu');
+      const remainder = query.replace(phrase, '');
+      if (remainder === query || entityNames(owner).some(name => remainder.includes(name))) continue;
+      const relatives = [...new Set(catalog.relations.filter(relation => relation.subjectEntityId === owner.entityId
+        && relation.predicate === predicate).map(relation => relation.objectEntityId))];
+      result.set(owner.entityId, relatives.length === 1 ? relatives[0]! : null);
+    }
+  }
+  return result;
 }
 
 function referenceCore(value: string): string {
@@ -339,8 +372,8 @@ function temporalCompatible(
   requested: string[],
   catalog: WorldKnowledgeCatalog,
 ): boolean {
-  const requestedEras = requested.flatMap(term => term.match(/[\p{Script=Han}]{2,8}纪元/gu) ?? []);
-  const entityEras = entity.temporalScopes.flatMap(term => term.match(/[\p{Script=Han}]{2,8}纪元/gu) ?? []);
+  const requestedEras = requested.flatMap(extractEraNames);
+  const entityEras = entity.temporalScopes.flatMap(extractEraNames);
   const explicitCompatible = !requestedEras.length || !entityEras.length
     || requestedEras.some(era => entityEras.includes(era));
   return explicitCompatible && requestedEras.every(era =>

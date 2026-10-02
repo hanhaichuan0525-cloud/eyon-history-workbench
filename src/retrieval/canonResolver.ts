@@ -236,7 +236,7 @@ export function resolveCanon(
       const delta = appliedDeltaByRef.get(action.actionId);
       return {
         revision: delta?.revision ?? 0,
-        record: (action.actionRecord ?? '').slice(0, 240),
+        record: action.actionRecord ?? '',
         time: action.occurredAt?.label,
         locations: delta?.cascadeScope.locations ?? [],
       };

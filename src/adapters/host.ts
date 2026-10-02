@@ -39,6 +39,11 @@ export interface HostAdapter {
 }
 
 export interface ButterflyHostAdapter extends HostAdapter {
+  /** 只读当前分支各楼 MVU，恢复升级后缺少入场 extra 的轮次边界。 */
+  getRuinRoundStartMessageId?(
+    snapshot: ButterflyFreezeSnapshot,
+    throughMessageId: number,
+  ): number | undefined;
   getButterflyFreezeSnapshot(
     sourceMessageId?: number,
   ): Promise<ButterflyFreezeSnapshot>;

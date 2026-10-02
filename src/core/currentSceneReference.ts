@@ -30,7 +30,6 @@ export interface TaskSubjectBoundaryInput {
 
 const CURRENT_SCENE_DEICTIC = /(?:这里|此处|当前(?:所在|所处)?(?:地点|场景)?|眼前|我们所在(?:的)?|这(?:座|个|间|片|处|所)[^，。；！？\n]{0,18}|这[^，。；！？\n]{1,18}(?:中|里|内|上|下|旁|附近)(?:的)?)/u;
 const CURRENT_SCENE_EVIDENCE_LIMIT = 4;
-const CURRENT_SCENE_EVIDENCE_CHARS = 900;
 
 /**
  * 玩家使用当前场景指示语，或直接点名当前地点链末端的具名对象时，
@@ -110,7 +109,7 @@ export function buildCurrentSceneSnapshot(
       .sort((left, right) => left.index - right.index)
       .map(({ source }) => ({
         ...source,
-        content: source.content.trim().slice(0, CURRENT_SCENE_EVIDENCE_CHARS),
+        content: source.content.trim(),
       })),
   };
 }

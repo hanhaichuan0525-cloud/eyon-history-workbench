@@ -60,6 +60,57 @@ function deferredRuntime<T>() {
   return { promise, resolve };
 }
 
+test('蝴蝶自定义API忽略abort，停止仍立即释放队列且旧结果不污染新请求', { timeout: 2000 }, async () => {
+  const old = deferredRuntime<string>();
+  class IgnoringAbortRuntime extends FakeRuntime {
+    calls = 0;
+    async generateCustomRaw() { this.calls += 1; return this.calls === 1 ? old.promise : '{"fresh":true}'; }
+  }
+  const runtime = new IgnoringAbortRuntime();
+  const adapter = new TavernGenerationAdapter(runtime, { async get() { return {}; }, getCustomApiTimeoutMs: () => 0 }, () => 'rollback');
+  const first = adapter.generate('butterfly', 'old');
+  const failed = assert.rejects(first, GenerationCancelledError);
+  await new Promise(resolve => setImmediate(resolve));
+  adapter.cancel('butterfly');
+  await failed; // 不依赖旧上游响应取消。
+  assert.equal(await adapter.generate('butterfly', 'new'), '{"fresh":true}');
+  old.resolve('{"stale":true}');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(runtime.calls, 2);
+});
+
+test('准备设置挂起和排队请求可一并停止，新蝴蝶请求不用等待旧设置', { timeout: 2000 }, async () => {
+  const old = deferredRuntime<unknown>(); let settingsCalls = 0;
+  const adapter = new TavernGenerationAdapter(new FakeRuntime(), {
+    get: () => ++settingsCalls === 1 ? old.promise : Promise.resolve({}),
+  }, () => 'settings');
+  const first = adapter.generate('butterfly', 'old');
+  const queued = adapter.generate('butterfly', 'queued');
+  const failed = Promise.all([assert.rejects(first, GenerationCancelledError), assert.rejects(queued, GenerationCancelledError)]);
+  await new Promise(resolve => setImmediate(resolve));
+  adapter.cancel('butterfly'); await failed;
+  await adapter.generate('butterfly', 'fresh');
+  assert.equal(settingsCalls, 2); old.resolve({});
+});
+
+test('旧生成钩子晚取消不停止新正文，也不清掉新准备', async () => {
+  let rejectOld!: (error: Error) => void; let calls = 0; let cleared = 0; let stopped = 0;
+  const old = new Promise<boolean>((_resolve, reject) => { rejectOld = reject; });
+  const listeners = new Map<string, (...args: unknown[]) => unknown>();
+  const globals = { SillyTavern: { getContext: () => ({ stopGeneration: () => { stopped += 1; return true; } }) } };
+  const registration = registerBiographyLifecycle({
+    beforeGeneration: () => ++calls === 1 ? old : Promise.resolve(true),
+    async onAssistantRendered() {}, async onChatChanged() { cleared += 1; },
+  }, { on: (event, listener) => { listeners.set(event, listener); } }, {
+    generationAfterCommands: 'before', characterMessageRendered: 'rendered', chatChanged: 'changed',
+  }, globals);
+  const first = listeners.get('before')!('normal');
+  const failed = assert.rejects(first as Promise<void>, GenerationCancelledError);
+  await listeners.get('before')!('normal');
+  rejectOld(new GenerationCancelledError('butterfly')); await failed;
+  assert.equal(stopped, 0); assert.equal(cleared, 0); registration.dispose();
+});
+
 test('停止传记时入口资料读取仍挂起，不得以新epoch复活', async () => {
   const scope = deferredRuntime<BiographyPreparation['scope']>();
   const runtime = new FakeRuntime();

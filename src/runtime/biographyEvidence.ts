@@ -1,7 +1,7 @@
 import type { BiographyContextBundle, ContextSource } from '../core/context.ts';
 import { loadRuntimeWorldbookCorpus, type RuntimeContextSourceProvider } from './contracts.ts';
+import { mayUseBiographySource } from './biographySourcePurpose.ts';
 
-const ENTRY_CONTENT_LIMIT = 12000;
 const PASSAGE_EVIDENCE_LIMIT = 8;
 
 export type BiographyEvidenceResolver = (
@@ -30,7 +30,7 @@ export function createBiographyEvidenceResolver(
       catalogByContext.set(context, catalogPromise);
     }
     const catalog = await catalogPromise;
-    return selectBiographyEvidence(names, sourceRefs, context.sourceIndex, catalog);
+    return selectBiographyEvidence(names, sourceRefs, context.sourceIndex, catalog, context.evidenceBundle.query);
   };
 }
 
@@ -39,8 +39,11 @@ export function selectBiographyEvidence(
   sourceRefs: readonly string[],
   frozenSources: readonly ContextSource[],
   identityCatalog: readonly ContextSource[],
+  directive = '',
 ): ContextSource[] {
-  const all = mergeSources(frozenSources, identityCatalog);
+  // sourceRefs 和初稿具名物件也必须经过同一个用途门，不能把误写自证成史实。
+  const all = mergeSources(frozenSources, identityCatalog)
+    .filter(source => mayUseBiographySource(source, directive));
   const byId = new Map(all.map(source => [source.sourceId, source]));
   const picked: ContextSource[] = [];
   const seen = new Set<string>();
@@ -82,7 +85,7 @@ async function loadIdentityCatalog(
       sourceId: source.sourceId,
       sourceType: 'worldbook' as const,
       title: source.title.trim() || source.sourceId,
-      content: source.content.trim().slice(0, ENTRY_CONTENT_LIMIT),
+      content: source.content.trim(),
       authority: 100,
       strategyType: source.strategyType,
       keywords: source.keywords,
@@ -91,7 +94,7 @@ async function loadIdentityCatalog(
       sourceId: source.sourceId,
       sourceType: 'mvu' as const,
       title: source.title.trim() || source.sourceId,
-      content: source.content.trim().slice(0, ENTRY_CONTENT_LIMIT),
+      content: source.content.trim(),
       authority: 95,
     })),
   );

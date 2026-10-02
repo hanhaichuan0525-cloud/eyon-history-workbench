@@ -29,10 +29,6 @@ import { applyRuinActorPolicy, scopeRuinGenealogy } from './ruinActorPolicy.ts';
 
 const RECENT_MESSAGE_LIMIT = 8;
 const CURRENT_SCENE_MESSAGE_LIMIT = 12;
-const RECENT_CONTENT_LIMIT = 2000;
-const CONTENT_LIMIT = 12000;
-/** 中心人物完整卡注入上限（背景口述/声部/装备全保留；仅用于 characterCards，不参与检索）。 */
-const CHARACTER_CARD_LIMIT = 24000;
 
 export class TavernRuinContextAssembler implements RuinContextAssembler {
   private readonly runtime: TavernRuntime;
@@ -134,7 +130,7 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       retrievalDirective,
       currentWorld.time,
       currentWorld.location,
-      ...recent.slice(-8).flatMap(item => [item.title, item.content.slice(0, 1800)]),
+      ...recent.slice(-8).flatMap(item => [item.title, item.content]),
     ].join('\n');
     const worldbookCandidates = mapSources(worldbook, 'worldbook', 100);
     const characterCandidates = mapSources(characters, 'mvu', 95);
@@ -162,22 +158,22 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
     const butterflyCandidates = mapSources(butterflies, 'butterfly', 70);
     const legacyWorldbookContext = selectRelevantContextSources(
       worldbookCandidates, retrievalQuery,
-      { limit: 18, contentLimit: 4200, fallbackCount: 5 },
+      { limit: 18, fallbackCount: 5 },
     );
     const legacyCharacterContext = selectRelevantContextSources(
       characterCandidates, retrievalQuery,
-      { limit: 12, contentLimit: 4800, fallbackCount: 2 },
+      { limit: 12, fallbackCount: 2 },
     );
     const legacyGenealogyRefs = selectRelevantContextSources(
       genealogyCandidates, retrievalQuery,
-      { limit: 8, contentLimit: 3600, fallbackCount: 0 },
+      { limit: 8, fallbackCount: 0 },
     );
     // 引用传记 legacy 观察路径（正式注入由 forced 通道 + 全文/摘要候选承担）。
     const legacyBiographyRefs = biographyCandidates.filter(source =>
       allowedBiographyIds.has(source.sourceId.replace(/^biography:/u, '')));
     const legacyButterflyRefs = selectRelevantContextSources(
       butterflyCandidates, retrievalQuery,
-      { limit: 6, contentLimit: 3200, fallbackCount: 0 },
+      { limit: 6, fallbackCount: 0 },
     );
     const legacySourceIndex = [
       ...legacyWorldbookContext,
@@ -196,7 +192,7 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       contextQuery: [
         currentWorld.time,
         currentWorld.location,
-        ...recent.slice(-8).flatMap(item => [item.title, item.content.slice(0, 1800)]),
+        ...recent.slice(-8).flatMap(item => [item.title, item.content]),
       ].join('\n'),
       runtimeCandidates: [
         ...worldbook.map(source => ({ ...source, sourceType: 'worldbook' as const })),
@@ -290,7 +286,7 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       evidenceBundle: active.bundle,
       ...(continuityView ? { continuityView } : {}),
       // 完整人物卡（原始全文，不参与检索；上限放宽——中心人物整条注入用）。
-      characterCards: mapSources(characters, 'mvu', 95, CHARACTER_CARD_LIMIT),
+      characterCards: mapSources(characters, 'mvu', 95),
       ...(scopedGenealogy ? { actorPolicy: scopedGenealogy.policy } : {}),
       warnings,
       sourceHash: await hashSources(
@@ -344,7 +340,7 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       .map(message => ({
         sourceId: `chat:${message.message_id}`,
         title: `${message.role} floor ${message.message_id}`,
-        content: message.message.slice(0, RECENT_CONTENT_LIMIT),
+        content: message.message,
       }));
   }
 }
@@ -371,12 +367,11 @@ function mapSources(
   sources: Array<{ sourceId: string; title: string; content: string }>,
   sourceType: ContextSource['sourceType'],
   authority: number,
-  contentLimit: number = CONTENT_LIMIT,
 ): ContextSource[] {
   const seen = new Set<string>();
   return sources.flatMap(source => {
     const sourceId = source.sourceId.trim();
-    const content = source.content.trim().slice(0, contentLimit);
+    const content = source.content.trim();
     if (!sourceId || !content || seen.has(sourceId)) return [];
     seen.add(sourceId);
     return [{

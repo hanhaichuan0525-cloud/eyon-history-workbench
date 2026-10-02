@@ -1,7 +1,7 @@
 export const SOURCE_SNAPSHOT_SCHEMA = 'eyon.retrieval.source-snapshot.v1' as const;
 export const EVIDENCE_BUNDLE_SCHEMA = 'eyon.retrieval.evidence-bundle.v1' as const;
 export const RETRIEVAL_RECEIPT_SCHEMA = 'eyon.retrieval.receipt.v1' as const;
-export const EVIDENCE_PASSAGE_STRATEGY_VERSION = 'eyon.retrieval.passage.v1' as const;
+export const EVIDENCE_PASSAGE_STRATEGY_VERSION = 'eyon.retrieval.passage.v2-full' as const;
 export const WORLD_KNOWLEDGE_CORPUS_SCHEMA = 'eyon.retrieval.worldbook-corpus.v1' as const;
 export const WORLD_KNOWLEDGE_CATALOG_SCHEMA = 'eyon.retrieval.world-knowledge-catalog.v1' as const;
 export const RETRIEVAL_STRATEGY_V12 = 'v1.2-catalog-cast' as const;
@@ -1033,6 +1033,7 @@ export interface QualifiedEvidenceView {
 
 export interface EvidencePassageBudget {
   strategyVersion: typeof EVIDENCE_PASSAGE_STRATEGY_VERSION;
+  /** 旧回执兼容字段：v2-full 不再用字符数截断、分窗或排除已选来源。 */
   softLimitChars: number;
   hardLimitChars: number;
   fullSourceLimitChars: number;

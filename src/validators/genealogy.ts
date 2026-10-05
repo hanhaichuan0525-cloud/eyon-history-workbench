@@ -232,10 +232,9 @@ export function parseAndValidateGenealogy(
           && focusChronology.mode === 'model-inferred'
         ) {
           if (node.birth.status !== 'known' || !node.birth.era || node.birth.year === null) {
-            throw new GenealogyValidationError(
-              'Focus birth must contain an approximate inferred year when no source age is available',
-              'FOCUS_BIRTH_REQUIRED',
-            );
+            node.birth = unknownDate();
+            warn('focus-birth-unresolved', node.id);
+            continue;
           }
           if (
             focusChronology.basedOn

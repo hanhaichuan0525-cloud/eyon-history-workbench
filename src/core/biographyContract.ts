@@ -7,9 +7,8 @@
 
 export const BIOGRAPHY_CONTRACT = {
   // 单块正文长度（去空白后的**字符总数，含标点**）
-  // 断代志凝练目标：330~450 字/段；给模型的推荐下限抬到 330——
-  // 让模型在 300 上下 ±10 的自然落点抖动永远跌不过校验硬门（minPassageChars=300）。
-  minPassageChars: 300,          // 推荐下限（提示词要求；不再是判死硬门）
+  // 断代志凝练目标：330~450字/段；长度与文学自评不能互相冒充硬协议。
+  minPassageChars: 300,          // 保留旧推荐值供兼容消费者使用，不是校验门
   softMinPassageChars: 260,      // 校验软下限（internal.79 v5：260~299 放行——字数下限是「防敷衍」
                                  // 的软质量代理，不是机器协议；79 v3 柔性方向使段落自然偏短，
                                  // 300 一刀切误杀擦边段落（真机 298 拒）；低于 260 仍拒并带扩写指引）
@@ -28,6 +27,6 @@ export const BIOGRAPHY_CONTRACT = {
   // 阶段节奏标签（骰表锁定，表示叙事节奏，与「变化轴 changeAxis」正交）
   stageTypes: ['stable', 'transition', 'turbulent'] as const,
 
-  // 每段正文必须满足的内容要素（断代志体：落地/立人/决定性瞬间；因果不再是硬要素）
+  // 既有软自评字段（允许false）；不作为文学评分拒收门，保留协议键。
   passageElements: ['sceneGrounded', 'figureVivid', 'decisiveMoment'] as const,
 } as const;

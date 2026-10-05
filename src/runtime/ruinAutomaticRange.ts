@@ -65,7 +65,11 @@ export function resolveAutomaticRuinRange(
   // 年的婴儿），自动窗口必须能够覆盖到他们。
   const selectedPersons = (context.evidenceBundle.personTimeline ?? [])
     .filter(entry => context.actorPolicy
-      ? context.actorPolicy.requestedSubjects.some(name => personNameMatches(entry.name, name))
+      ? (context.evidenceBundle.castManifest?.entries ?? []).some(actor =>
+          actor.disposition === 'required' && actor.reasons.includes('role-grounded-subject')
+          && actor.identity.kinds.includes('person')
+          && personNameMatches(entry.name, actor.identity.canonicalName))
+        || context.actorPolicy.requestedSubjects.some(name => personNameMatches(entry.name, name))
         || input.selectedCharacters.some(character => personNameMatches(entry.name, character.name)
           && !context.actorPolicy!.referenceNames.some(name => personNameMatches(entry.name, name)))
       : input.selectedCharacters.some(character =>

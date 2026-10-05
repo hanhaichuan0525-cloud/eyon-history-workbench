@@ -69,7 +69,9 @@ export interface RuinWorkflowDependencies {
   assertCurrent(identity: RuinRequestIdentity): Promise<void>;
   canonRepository?: CanonRepository;
   resolveSelectedCharacters?(selected: RuinGenerationInput['selectedCharacters']): Promise<RuinGenerationInput['selectedCharacters']>;
+  onOutlineReady?(recordKey: string): void;
   onCandidateProgress?(event: {
+    recordKey?: string;
     stage: 'running' | 'success' | 'failed';
     candidateIndex: number;
     completed: number;
@@ -229,6 +231,8 @@ export class RuinWorkflow {
     // validation and request-identity checks, then swap the chat namespace once.
     await this.dependencies.assertCurrent(identity);
     await this.dependencies.repository.replaceNamespace(record);
+    await this.dependencies.assertCurrent(identity);
+    this.dependencies.onOutlineReady?.(record.key);
 
     // 提纲只负责固定候选之间可比较的历史骨架；在把结果交给玩家选择前，
     // 依次扩写全部候选史稿。单项失败由 expandOne 留在该候选状态中，
@@ -333,6 +337,7 @@ export class RuinWorkflow {
     };
     await this.dependencies.repository.replace(running);
     this.dependencies.onCandidateProgress?.({
+      recordKey: running.key,
       stage: 'running', candidateIndex, completed: readyCount(running), total,
     });
 
@@ -479,6 +484,7 @@ export class RuinWorkflow {
       await this.dependencies.repository.replace(next);
       await this.dependencies.assertCurrent(identity);
       this.dependencies.onCandidateProgress?.({
+        recordKey: next.key,
         stage: 'success', candidateIndex, completed: readyCount(next), total,
       });
       return next;
@@ -504,6 +510,7 @@ export class RuinWorkflow {
           await this.dependencies.repository.replace(failed);
           await this.dependencies.assertCurrent(identity);
           this.dependencies.onCandidateProgress?.({
+            recordKey: failed.key,
             stage: 'failed', candidateIndex,
             completed: readyCount(failed), total,
           });

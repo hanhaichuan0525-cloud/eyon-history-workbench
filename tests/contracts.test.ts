@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { namespaceKey, recordKey } from '../src/core/namespace.ts';
 import { createSlot } from '../src/core/slots.ts';
-import { serializeButterflyPanel } from '../src/renderers/butterfly.ts';
+import { serializeButterflyArchive, serializeButterflyPanel } from '../src/renderers/butterfly.ts';
 import { validateRootTrace } from '../src/renderers/rootTrace.ts';
 import { serializeRuinTrace } from '../src/renderers/ruinTrace.ts';
 
@@ -76,4 +76,13 @@ test('蝴蝶效应面板只序列化已校验结果', () => {
   assert.match(output, /\[墟境行动记录\|<user>截留水文残卷。\]/u);
   assert.doesNotMatch(output, /玩家/u);
   assert.match(output, /\[历史关键词\|水文残卷、锈水镇\]/u);
+});
+
+test('控制台生成结果不把兼容编号当成骰点展示，旧记录仍保留原格式', () => {
+  const effect = { roll: 1, scope: '国家', presentLanding: '旅行时遇见新风俗。', perceptibleEvidence: ['沿途的歌谣'], ruinActionRecord: '留下了一首歌。', historicalEvolution: '歌谣逐代传唱。', historicalKeywords: ['歌谣'] };
+  assert.match(serializeButterflyPanel(effect, { creativeReferences: true }), /\[波及范围\|顺势演化\|国家\]/u);
+  assert.match(serializeButterflyPanel(effect), /\[波及范围\|1\|国家\]/u);
+  const anchors = { reality: { time: '今天', location: '港口' }, ruinEntry: { time: '从前', location: '山村' }, ruinExit: { time: '从前', location: '山村' } };
+  assert.match(serializeButterflyArchive({ title: '归档', effect, anchors, creativeReferences: true }), /\| 波及范围 \| 国家 \|/u);
+  assert.match(serializeButterflyArchive({ title: '旧归档', effect, anchors }), /\| 波及范围 \| 1 \/ 国家 \|/u);
 });

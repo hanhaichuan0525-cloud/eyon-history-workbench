@@ -1,13 +1,19 @@
 import type { RuntimeChatMessage, TavernRuntime } from './contracts.ts';
 import type { TavernDataBindings } from './tavernHost.ts';
-import { parseTextCommand } from '../core/commands.ts';
+import { isWorkbenchReturnAuthorized } from './butterflyReturnAuthorization.ts';
+import { fingerprintText } from './transactionIdentity.ts';
 import { resolveGlobalMvu } from './globalBindings.ts';
+import type { PendingSettlement } from '../storage/butterflies.ts';
+import { isLatestVisibleTurnPair } from './visibleTurns.ts';
 import {
   resolveTavernHelperFunction,
 } from './tavernRuntimeAdapter.ts';
 
 type Variables = Record<string, unknown>;
 type RuntimeState = Record<string, unknown>;
+type FrozenReturn = Pick<PendingSettlement, 'runId' | 'namespace'> & {
+  request: Pick<PendingSettlement['request'], 'requestId' | 'trigger' | 'anchors'>;
+};
 type PatchOperation = {
   op: string;
   path: string;
@@ -94,6 +100,8 @@ const DEFAULT_RUNTIME: RuntimeState = {
 };
 
 export interface RuinTimeKernelRegistration {
+  authorizeReturn(pending: PendingSettlement): boolean;
+  restoreAuthorizedReturn(pending: PendingSettlement): Promise<boolean>;
   onChatChanged(): void;
   dispose(): void;
 }
@@ -135,11 +143,13 @@ export function registerRuinTimeKernel(
     }
   };
   let currentNamespace = readNamespace();
+  let frozenReturn: FrozenReturn | null = null;
   const invalidateContext = (): void => {
     contextRevision += 1;
     currentNamespace = readNamespace();
     lastCarriedUserId = -1;
     saving = false;
+    frozenReturn = null;
     pendingTimers.forEach(clearTimeout);
     pendingTimers.clear();
   };
@@ -164,7 +174,50 @@ export function registerRuinTimeKernel(
     return null;
   };
 
+  const authorizeReturn = (pending: PendingSettlement): boolean => {
+    if (!captureContext()) return false;
+    const { request } = pending;
+    const user = runtime.getChatMessages(request.trigger.userMessageId, { include_swipes: false })
+      .find(message => message.message_id === request.trigger.userMessageId);
+    if (request.trigger.type !== 'button' || request.runId !== pending.runId
+      || pending.namespace.characterKey !== runtime.getCurrentCharacterName()?.trim()
+      || pending.namespace.chatId !== runtime.getCurrentChatId()?.trim()
+      || !user || !isWorkbenchReturnAuthorized(runtime, user, pending.runId)
+      || !Object.values(request.anchors).every(pair => text(pair.time) && text(pair.location))) return false;
+    frozenReturn = { runId: pending.runId, namespace: { ...pending.namespace },
+      request: { requestId: request.requestId, trigger: { ...request.trigger },
+        anchors: structuredClone(request.anchors) } };
+    return true;
+  };
+  const frozenReturnFor = (messageId: number): FrozenReturn | null => {
+    const pending = frozenReturn;
+    if (!captureContext() || !pending || frozenReturn !== pending
+      || !isLatestVisibleTurnPair(runtime, pending.request.trigger.userMessageId, messageId)) return null;
+    const user = runtime.getChatMessages(pending.request.trigger.userMessageId, { include_swipes: false })
+      .find(message => message.message_id === pending.request.trigger.userMessageId);
+    if (!user || !isWorkbenchReturnAuthorized(runtime, user, pending.runId)) return null;
+    const current = runtimeState(bindings.getMessageVariables?.(messageId) ?? null);
+    if (current && ACTIVE_FLOWS.has(text(current.墟境流程状态))
+      && text(current.墟境轮次) && text(current.墟境轮次) !== pending.runId) return null;
+    return pending;
+  };
+
   const returnAuthorized = (messageId: number): boolean => {
+    const previous = previousAssistant(messageId);
+    const previousState = runtimeState((previous ? bindings.getMessageVariables?.(previous.message_id) : null) ?? null);
+    const runId = text(previousState?.墟境轮次);
+    // 旧版已成功归档的真实面板仍可重放；不能把历史返程重新锁回墟境。
+    const assistant = runtime.getChatMessages(messageId, { include_swipes: false })
+      .find(message => message.message_id === messageId);
+    const metadata = asRecord(assistant?.extra?.eyonButterflyRequest
+      ?? asRecord(assistant?.data?.extra).eyonButterflyRequest);
+    const currentState = runtimeState(bindings.getMessageVariables?.(messageId) ?? null);
+    const panels = [...(assistant?.message ?? '').matchAll(/<butterfly_panel>[\s\S]*?<\/butterfly_panel>/gu)];
+    if (runId && assistant?.role === 'assistant' && !assistant.is_hidden
+      && text(currentState?.墟境流程状态) === 'idle' && currentState?.归档轮次 === runId
+      && typeof metadata.requestId === 'string' && !!metadata.requestId
+      && metadata.swipeId === runtime.getMessageSwipeId(messageId) && panels.length === 1
+      && (!metadata.panelHash || metadata.panelHash === fingerprintText(panels[0][0]))) return true;
     const messages = runtime.getChatMessages(
       `0-${Math.max(-1, messageId - 1)}`,
       { include_swipes: false },
@@ -173,7 +226,7 @@ export function registerRuinTimeKernel(
       const message = messages[index];
       if (message.is_hidden) continue;
       if (message.role !== 'user') continue;
-      return parseTextCommand(message.message)?.type === 'ruin.return';
+      return isWorkbenchReturnAuthorized(runtime, message, runId);
     }
     return false;
   };
@@ -202,13 +255,15 @@ export function registerRuinTimeKernel(
       const prior = getMessage(previous.message_id);
       changed = carryPlayerFloor(current, prior);
     } else if (message.role === 'assistant') {
+      if (frozenReturnFor(messageId) && !isRecord(current.stat_data)) return false;
       const previous = previousAssistant(messageId);
       const prior = previous ? getMessage(previous.message_id) : null;
       changed = normalizeRuinVariables(
         current,
         prior,
         message.message,
-        returnAuthorized(messageId),
+        !!frozenReturnFor(messageId) || returnAuthorized(messageId),
+        frozenReturnFor(messageId) ?? undefined,
       );
     }
     if (!changed) return true;
@@ -276,7 +331,8 @@ export function registerRuinTimeKernel(
       variables,
       previousVariables(runtime, bindings, messageId),
       text ?? '',
-      returnAuthorized(messageId),
+      !!frozenReturnFor(messageId) || returnAuthorized(messageId),
+      frozenReturnFor(messageId) ?? undefined,
     );
     scheduleNormalize(messageId);
   });
@@ -293,7 +349,8 @@ export function registerRuinTimeKernel(
         variables,
         previousVariables(runtime, bindings, messageId),
         message.message,
-        returnAuthorized(messageId),
+        !!frozenReturnFor(messageId) || returnAuthorized(messageId),
+        frozenReturnFor(messageId) ?? undefined,
       );
     }
     scheduleNormalize(messageId);
@@ -318,6 +375,59 @@ export function registerRuinTimeKernel(
   scheduleNormalize(runtime.getLastMessageId());
 
   return {
+    authorizeReturn,
+    async restoreAuthorizedReturn(pending) {
+      const context = captureContext();
+      const { request } = pending;
+      const messageId = request.trigger.returnAssistantMessageId;
+      const getMessage = bindings.getMessageVariables;
+      const replaceMessage = bindings.replaceMessageVariables;
+      const user = runtime.getChatMessages(request.trigger.userMessageId, { include_swipes: false })
+        .find(message => message.message_id === request.trigger.userMessageId);
+      if (!context || !getMessage || !replaceMessage || request.trigger.type !== 'button'
+        || request.runId !== pending.runId
+        || pending.namespace.characterKey !== runtime.getCurrentCharacterName()?.trim()
+        || pending.namespace.chatId !== runtime.getCurrentChatId()?.trim()
+        || !isLatestVisibleTurnPair(runtime, request.trigger.userMessageId, messageId)
+        || !user || !isWorkbenchReturnAuthorized(runtime, user, pending.runId)) return false;
+      if (!authorizeReturn(pending)) return false;
+      const message = runtime.getChatMessages(messageId, { include_swipes: false })
+        .find(item => item.message_id === messageId);
+      if (!message) return false;
+      const swipeId = runtime.getMessageSwipeId(messageId);
+      let original = getMessage(messageId);
+      // 渲染可能先于正常MVU写回；短暂等候真实容器，不用上一楼克隆覆盖其他更新。
+      for (let attempt = 0; !isRecord(original?.stat_data) && attempt < 30; attempt += 1) {
+        await new Promise<void>(resolve => setTimeout(resolve, 100));
+        const latest = runtime.getChatMessages(messageId, { include_swipes: false })
+          .find(item => item.message_id === messageId);
+        if (!isCurrent(context) || latest?.message !== message.message
+          || runtime.getMessageSwipeId(messageId) !== swipeId || !frozenReturnFor(messageId)) return false;
+        original = getMessage(messageId);
+      }
+      if (!isRecord(original?.stat_data)) return false;
+      const current = structuredClone(original);
+      const state = runtimeState(current);
+      if (state && ACTIVE_FLOWS.has(text(state.墟境流程状态))
+        && text(state.墟境轮次) && text(state.墟境轮次) !== pending.runId) return false;
+      const { reality, ruinEntry, ruinExit } = request.anchors;
+      if (![reality, ruinEntry, ruinExit].every(pair => text(pair.time) && text(pair.location))) return false;
+      restoreFrozenReturn(current, pending);
+      if (!isCurrent(context)) return false;
+      // 不在校验与调用写回之间 await，避免把原聊天数据写进新聊天同号楼。
+      await replaceMessage(messageId, current);
+      if (!isCurrent(context)) return false;
+      const latest = runtime.getChatMessages(messageId, { include_swipes: false })
+        .find(item => item.message_id === messageId);
+      if (latest?.message !== message.message
+        || runtime.getMessageSwipeId(messageId) !== swipeId
+        || !isLatestVisibleTurnPair(runtime, request.trigger.userMessageId, messageId)) return false;
+      const written = readRecord(getMessage(messageId)?.stat_data);
+      const writtenState = runtimeState({ stat_data: written });
+      return readRecord(written.世界).时间 === reality.time
+        && readRecord(written.世界).地点 === reality.location
+        && writtenState?.墟境流程状态 === 'idle' && writtenState.归档轮次 === pending.runId;
+    },
     onChatChanged() {
       if (!disposed) invalidateContext();
     },
@@ -335,6 +445,7 @@ export function normalizeRuinVariables(
   previousVariablesValue: Variables | null,
   assistantText: string,
   returnAuthorized = false,
+  frozenReturn?: FrozenReturn,
 ): boolean {
   const stat = ensureRecord(variables, 'stat_data');
   const root = ensureRecord(stat, '墟境系统');
@@ -344,6 +455,13 @@ export function normalizeRuinVariables(
   let changed = applyPatchOperations(stat, operations);
   const refreshedRoot = ensureRecord(stat, '墟境系统');
   const current = ensureRuntime(refreshedRoot);
+  // MVU先结束、渲染先结束、迟到回放均消费同一按钮事务；上一楼只作旧档兼容。
+  if (returnAuthorized && frozenReturn) {
+    if (ACTIVE_FLOWS.has(text(current.墟境流程状态))
+      && text(current.墟境轮次) && text(current.墟境轮次) !== frozenReturn.runId) return changed;
+    restoreFrozenReturn(variables, frozenReturn);
+    return true;
+  }
   const previousActive = previousState && isCompleteActive(previousState);
   const authorizedReturn = !!previousActive && returnAuthorized;
   if (previousActive && !authorizedReturn) {
@@ -413,6 +531,23 @@ export function normalizeRuinVariables(
   }
 
   return changed;
+}
+
+function restoreFrozenReturn(variables: Variables, pending: FrozenReturn): void {
+  const stat = ensureRecord(variables, 'stat_data');
+  const root = ensureRecord(stat, '墟境系统');
+  const state = ensureRuntime(root);
+  const world = ensureRecord(stat, '世界');
+  const { reality, ruinEntry, ruinExit } = pending.request.anchors;
+  world.时间 = reality.time;
+  world.地点 = reality.location;
+  Object.assign(state, {
+    归档轮次: pending.runId, 归档现实时间: reality.time, 归档现实地点: reality.location,
+    归档墟境进入时间: ruinEntry.time, 归档墟境进入地点: ruinEntry.location,
+    归档墟境离开时间: ruinExit.time, 归档墟境离开地点: ruinExit.location,
+  });
+  clearActiveRun(state);
+  syncSnapshot(root, state, false);
 }
 
 export function carryPlayerFloor(
@@ -539,8 +674,8 @@ function isCompleteActive(state: RuntimeState): boolean {
   return ACTIVE_FLOWS.has(text(state.墟境流程状态))
     && Number(state.墟境任务规则锁定) === 1
     && !!text(state.墟境轮次)
-    && !!text(state.本轮现实时间 ?? state.墟境进入前时间)
-    && !!text(state.本轮现实地点 ?? state.墟境进入前地点)
+    && !!(text(state.本轮现实时间) || text(state.墟境进入前时间))
+    && !!(text(state.本轮现实地点) || text(state.墟境进入前地点))
     && !!text(state.墟境当前时间)
     && !!text(state.墟境当前地点)
     && !!text(state.本轮墟境进入时间)

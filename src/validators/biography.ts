@@ -1224,14 +1224,8 @@ function describeBiographyPassageSchemaFailure(
     );
   }
 
-  for (const key of BIOGRAPHY_CONTRACT.passageElements) {
-    if (passage.elementChecklist[key] !== true) {
-      throw new BiographyValidationError(
-        `Passage element ${key} is not satisfied`,
-        'PASSAGE_ELEMENT_MISSING',
-      );
-    }
-  }
+  // 文学要素是诚实软自评，false不拒收或改写正文；字段类型仍由既有schema校验。
+  // 来源、事件归属、时间及正文完整性的确定性检查保持独立。
 
   for (const ref of passage.sourceRefs) {
     if (!expected.knownSources.has(ref)) {

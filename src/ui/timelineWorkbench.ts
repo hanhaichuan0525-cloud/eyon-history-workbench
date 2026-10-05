@@ -131,28 +131,6 @@ export function mountTimelineWorkbench(
     render();
   }
 
-  async function returnRuin(): Promise<void> {
-    if (!state.runtime || state.runtime.flowState === 'idle' || state.busy) return;
-    const current = operationIsCurrent();
-    reads.invalidate();
-    state.busy = true;
-    state.error = '';
-    render();
-    try {
-      await client.returnRuin();
-      if (!current()) return;
-      reads.invalidate();
-      state.status = '遣返指令已发送，伊雍正在冻结本轮历史锚点';
-    } catch (error) {
-      if (!current()) return;
-      state.error = error instanceof Error ? error.message : String(error);
-    } finally {
-      if (!current()) return;
-      state.busy = false;
-      render();
-    }
-  }
-
   async function retryButterfly(runId: string): Promise<void> {
     if (!runId || state.busy) return;
     const current = operationIsCurrent();
@@ -272,10 +250,7 @@ export function mountTimelineWorkbench(
               </div>
             </div>
             <div class="command-bar">
-              <button class="return-button" type="button" data-return
-                ${!active || state.busy ? 'disabled' : ''}>
-                ${state.busy ? '正在处理' : '遣返'}
-              </button>
+              <p>遣返请前往「墟境探索 → 蝴蝶效应」，确认本轮方案后点击「遣返现世」。</p>
             </div>
           </div>
         </section>
@@ -316,8 +291,6 @@ export function mountTimelineWorkbench(
   function bindEvents(): void {
     root.querySelector<HTMLButtonElement>('[data-refresh]')
       ?.addEventListener('click', () => void refresh());
-    root.querySelector<HTMLButtonElement>('[data-return]')
-      ?.addEventListener('click', () => void returnRuin());
     root.querySelectorAll<HTMLButtonElement>('[data-run-id]').forEach(button => {
       button.addEventListener('click', () => {
         state.selectedRunId = button.dataset.runId ?? '';

@@ -37,6 +37,9 @@ import { resolveCanon } from '../src/retrieval/canonResolver.ts';
 import { continuousStateAt } from '../src/retrieval/continuousState.ts';
 import { fingerprintText } from '../src/runtime/transactionIdentity.ts';
 import type { RuntimeChatMessage, TavernRuntime } from '../src/runtime/contracts.ts';
+import { DEFAULT_BUTTERFLY_REFERENCES } from '../src/core/creativeReferences.ts';
+import { isWorkbenchReturnAuthorized } from '../src/runtime/butterflyReturnAuthorization.ts';
+import { WorkbenchLifecycle } from '../src/runtime/workbenchLifecycle.ts';
 
 function rollbackGate<T>() {
   let resolve!: (value: T) => void;
@@ -44,7 +47,10 @@ function rollbackGate<T>() {
   return { promise, resolve };
 }
 
-function rollbackHarness() {
+function rollbackHarness(
+  requireReferences?: (sourceMessageId: number) => Promise<typeof DEFAULT_BUTTERFLY_REFERENCES>,
+  onReturnRendered?: (pending: PendingSettlement) => Promise<void>,
+) {
   const repository = new MemoryButterflyRepository();
   const messages: RuntimeChatMessage[] = [
     { message_id: 8, role: 'assistant', message: '契约成功，珊奈决定同行。' },
@@ -60,15 +66,18 @@ function rollbackHarness() {
     getChatMessages: range => typeof range === 'number'
       ? messages.filter(item => item.message_id === range)
       : messages.filter(item => item.message_id <= Number(range.split('-')[1])),
-    async setChatMessages() {}, async setExtensionPrompt() {},
+    async setChatMessages(updates) {
+      for (const update of updates) Object.assign(messages.find(item => item.message_id === update.message_id)!, update);
+    }, async setExtensionPrompt() {},
     async generate() { return ''; }, async generateRaw() { return ''; },
   };
   const assembler = {
-    async freeze(input: { userMessageId: number; requestId: string; rawCommand: string }) {
+    async currentRun() { return { runId }; },
+    async freeze(input: { userMessageId: number; requestId: string; rawCommand: string; triggerType: 'button' | 'text'; creativeReferences?: typeof DEFAULT_BUTTERFLY_REFERENCES }) {
       freezeCalls += 1;
-      return { request: { ...request(), runId, requestId: input.requestId,
-        trigger: { type: 'text', userMessageId: input.userMessageId, returnAssistantMessageId: 0, rawCommand: input.rawCommand } },
-      sourceHash: fingerprintText(JSON.stringify(messages)) };
+      return { request: { ...request(), ...(input.creativeReferences ? { creativeReferences: input.creativeReferences } : {}), runId, requestId: input.requestId,
+        trigger: { type: input.triggerType, userMessageId: input.userMessageId, returnAssistantMessageId: 0, rawCommand: input.rawCommand } },
+      sourceHash: fingerprintText(JSON.stringify({ messages, creativeReferences: input.creativeReferences })) };
     },
     attachReturnFloor(req: ButterflyRequest, id: number) {
       return { ...req, trigger: { ...req.trigger, returnAssistantMessageId: id } };
@@ -87,7 +96,7 @@ function rollbackHarness() {
   } as unknown as ButterflyWorkflow;
   const controller = new ButterflyController({ assembler, workflow, repository, runtime,
     createRequestId: () => `request-${freezeCalls + 1}`, roll: () => 68, now: () => 100,
-    hooks: { onStatus: status => { statuses.push(status); } },
+    hooks: { requireReferences, onReturnRendered, onStatus: status => { statuses.push(status); } },
     narrativeShell: { async arm() {}, async clear() {}, async clearActive() {}, async assertRenderedFloor() {} },
   });
   return { controller, repository, runtime, messages, assembler, workflow, statuses,
@@ -102,13 +111,197 @@ function rollbackRecord(pending: PendingSettlement): ButterflyRecord {
     status: 'validated', revision: 1, createdAt: 1, updatedAt: 1 };
 }
 
-test('遣返文本与按钮的收集失败均结束忙碌状态，不写半份 pending，原楼可重试', async () => {
-  for (const entry of ['text', 'button']) {
+test('新一轮只有按钮遣返，先确认偏好；正文即使确认也不收集或调用模型', async () => {
+    let allowed = false; let checks = 0;
+    const h = rollbackHarness(async () => { checks++; if (!allowed) throw new Error('请先确认本轮参考方案'); return { ...DEFAULT_BUTTERFLY_REFERENCES }; });
+    const prepare = () => h.controller.prepareBeforeUserTurn('遣返',9);
+    assert.equal(await h.controller.prepareText('遣返'), null);
+    assert.equal(checks, 0);
+    await assert.rejects(prepare(),/请先确认/u);
+    assert.deepEqual(h.calls(),{freezeCalls:0,prepareCalls:0});
+    assert.equal((await h.repository.listPending(namespace)).length,0);
+    allowed = true;
+    assert.equal(await h.controller.prepareText('遣返'), null);
+    const pending = await prepare();
+    assert.deepEqual(pending?.request.creativeReferences,DEFAULT_BUTTERFLY_REFERENCES);
+    assert.equal(checks,2);
+    allowed = false;
+    await assert.rejects(prepare(), /请先确认/u);
+    assert.equal(checks,3,'重新点击遣返必须核验当前方案确认');
+    assert.deepEqual(h.calls(),{freezeCalls:1,prepareCalls:1});
+    await h.controller.retry(pending.runId);
+    assert.equal(checks,3,'显式重试已冻结归档仍沿用冻结方案');
+});
+
+test('同楼重新确认不同方案后点击遣返，冻结与生成均采用新方案', async () => {
+  let refs = { ...DEFAULT_BUTTERFLY_REFERENCES };
+  const h = rollbackHarness(async () => refs);
+  const first = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  refs = { ...refs, domain: '风俗与日常', evolution: '意外转用', manifestation: '自然遇见' };
+  const second = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  assert.notEqual(first.request.requestId, second.request.requestId);
+  assert.deepEqual(second.request.creativeReferences, refs);
+  assert.notEqual(first.sourceHash, second.sourceHash);
+  assert.deepEqual(h.calls(), { freezeCalls: 2, prepareCalls: 2 });
+  const stored = await h.repository.getRecord(butterflyRecordKey(namespace, second.runId));
+  assert.deepEqual(stored?.request.creativeReferences, refs);
+});
+
+test('方案内容相同而属性排列不同，同楼准备仍复用完整冻结来源', async () => {
+  let refs = { ...DEFAULT_BUTTERFLY_REFERENCES };
+  const h = rollbackHarness(async () => refs);
+  const first = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  refs = Object.fromEntries(Object.entries(refs).reverse()) as typeof refs;
+  const second = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  assert.equal(first.request.requestId, second.request.requestId);
+  assert.equal(h.calls().freezeCalls, 1);
+});
+
+for (const fails of [false, true]) test(`返程时地交接${fails ? '失败保留可重试快照' : '先于归档且恢复丢失的同楼授权'}`, async () => {
+  const order: string[] = [];
+  let fail = fails;
+  const h = rollbackHarness(async () => ({ ...DEFAULT_BUTTERFLY_REFERENCES }), async pending => {
+    assert.equal(pending.request.trigger.returnAssistantMessageId, 10);
+    assert.equal(isWorkbenchReturnAuthorized(h.runtime, h.messages[1], pending.runId), true);
+    order.push('restore');
+    if (fail) throw new Error('现实锚点回读失败');
+  });
+  h.workflow.settle = async pending => { order.push('settle'); return rollbackRecord(pending); };
+  const pending = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  await h.controller.confirmPreparedUserFloor('遣返', 9);
+  h.messages[1].extra = {}; // 宿主重写玩家楼时丢失脚本元数据。
+  h.messages.push({ message_id: 10, role: 'assistant', message: '已经回到现世。' });
+  if (fails) {
+    await assert.rejects(h.controller.commitRendered(10), /现实锚点回读失败/u);
+    assert.deepEqual(order, ['restore']);
+    assert.match((await h.repository.getPending(pending.key))!.failure!.message, /现实锚点回读失败/u);
+    fail = false;
+    await h.controller.retry(pending.runId);
+    assert.deepEqual(order, ['restore', 'restore', 'settle']);
+  } else {
+    await h.controller.commitRendered(10);
+    assert.deepEqual(order, ['restore', 'settle']);
+  }
+});
+
+test('等待确认读取时停止任务可立即释放，迟到确认不冻结旧资料', { timeout:2000 }, async () => {
+  const gate=rollbackGate<typeof DEFAULT_BUTTERFLY_REFERENCES>();
+  const h=rollbackHarness(()=>gate.promise);
+  const pending=h.controller.prepareBeforeUserTurn('遣返',9);
+  const stopped=assert.rejects(pending,/cancelled/u);
+  await new Promise(resolve=>setImmediate(resolve));
+  h.controller.cancelPending(); await stopped;
+  gate.resolve({...DEFAULT_BUTTERFLY_REFERENCES});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(h.calls(),{freezeCalls:0,prepareCalls:0});
+});
+
+test('正文自然遣返意愿只保留探索与引导，即使已经确认也不发起结算', async () => {
+  let checks = 0;
+  const h = rollbackHarness(async () => { checks++; return { ...DEFAULT_BUTTERFLY_REFERENCES }; });
+  const guardCalls: string[] = [];
+  const lifecycle = new WorkbenchLifecycle({
+    runtime: h.runtime, butterfly: h.controller,
+    biography: { async prepareText() { return null; }, async commitRendered() { return null; }, async cancelPending() {} },
+    ruin: { async generateFromText() { return null; }, cancelPending() {} },
+    genealogy: { async generateFromText() { return null; }, cancelPending() {} },
+    ruinInputProvider: { async getInput() { throw new Error('不该请求墟境生成'); } },
+    genealogyInputProvider: { async getInput() { throw new Error('不该请求谱系生成'); } },
+    ruinTurnGuard: { async prepareOrdinaryTurn() { guardCalls.push('guide'); }, async clear() { guardCalls.push('clear'); } },
+  });
+  for (const text of ['好了，遣返吧，伊雍——', '抱着她回归现世。', '返回现世', '【伊雍遣返正文协作请求】遣返']) {
+    h.messages[1].message = text;
+    assert.equal(await lifecycle.onUserMessageSent(9), false);
+    assert.equal(await lifecycle.beforeGeneration('normal'), false);
+  }
+  assert.deepEqual(h.calls(), { freezeCalls: 0, prepareCalls: 0 });
+  assert.equal(checks, 0);
+  assert.deepEqual(guardCalls, ['guide', 'guide', 'guide', 'guide']);
+  assert.equal((await h.repository.listPending(namespace)).length, 0);
+});
+
+test('按钮授权只在准备成功后写入同楼元数据，重roll不再冻结也不降级为文本来源', async () => {
+  const h = rollbackHarness(async () => ({ ...DEFAULT_BUTTERFLY_REFERENCES }));
+  h.messages[1].data = { stat_data: { existing: '保留玩家楼变量' } };
+  const pending = await h.controller.prepareBeforeUserTurn('遣返',9);
+  assert.equal(isWorkbenchReturnAuthorized(h.runtime, h.messages[1], pending.runId), false);
+  await h.controller.confirmPreparedUserFloor('遣返',9);
+  assert.equal(isWorkbenchReturnAuthorized(h.runtime, h.messages[1], pending.runId), true);
+  assert.equal(h.messages[1].message, '遣返', '不改玩家正文');
+  assert.deepEqual(h.messages[1].data, { stat_data: { existing: '保留玩家楼变量' } }, '不重写玩家楼data/MVU');
+  const resumed = await h.controller.prepareText('遣返');
+  assert.equal(resumed?.request.trigger.type, 'button');
+  assert.equal(h.calls().freezeCalls, 1);
+  assert.equal(isWorkbenchReturnAuthorized(h.runtime, h.messages[1], 'other-run'), false);
+  h.runtime.getCurrentChatId = () => 'other-chat';
+  assert.equal(isWorkbenchReturnAuthorized(h.runtime, h.messages[1], pending.runId), false);
+  h.runtime.getCurrentChatId = () => namespace.chatId;
+  h.messages[0].message = '取消同行。';
+  assert.equal(isWorkbenchReturnAuthorized(h.runtime, h.messages[1], pending.runId), false);
+  assert.equal(await h.controller.prepareText('遣返'), null);
+});
+
+test('带行动草稿的按钮返程同文冻结并获得授权，正文能读取完整原话', async () => {
+  const h = rollbackHarness(async () => ({ ...DEFAULT_BUTTERFLY_REFERENCES }));
+  const text = '我抱着小花灵，决定带她回现世。\n\n遣返';
+  h.messages[1].message = text;
+  const pending = await h.controller.prepareBeforeUserTurn(text, 9);
+  assert.equal(pending.request.trigger.rawCommand, text.normalize('NFKC'));
+  await h.controller.confirmPreparedUserFloor(text, 9);
+  assert.equal(isWorkbenchReturnAuthorized(h.runtime, h.messages[1], pending.runId), true);
+  assert.equal(h.messages[1].message, text, '聊天原文保留全角标点；冻结元数据仍沿用既有NFKC匹配');
+  assert.ok(buildButterflyNarrativeInstruction(result(), pending.request).includes(text.normalize('NFKC')));
+});
+
+test('新的文本预发送入口拒绝，旧文本冻结不自动启动但仍能从工作台重新归档', async () => {
+  const h = rollbackHarness();
+  await assert.rejects(h.controller.prepareBeforeUserTurn('遣返',9,'text'), /工作台/u);
+  assert.deepEqual(h.calls(), { freezeCalls: 0, prepareCalls: 0 });
+  const pending = await h.controller.prepareBeforeUserTurn('遣返',9);
+  await h.repository.updatePending({ ...pending, request: { ...pending.request,
+    trigger: { ...pending.request.trigger, type: 'text' } } });
+  const record = (await h.repository.getRecord(butterflyRecordKey(namespace,pending.runId)))!;
+  await h.repository.updateRecord({ ...record, request: { ...record.request,
+    trigger: { ...record.request.trigger, type: 'text' } } });
+  assert.equal(await h.controller.prepareText('遣返'), null);
+  assert.ok(await h.controller.retry(pending.runId), '显式工作台旧冻结归档重试仍可用');
+});
+
+test('按钮准备期间前置行动被编辑，不给改变后的玩家楼签发返程授权', async () => {
+  const h = rollbackHarness();
+  const pending = await h.controller.prepareBeforeUserTurn('遣返',9);
+  h.messages[0].message = '我明确撤回了带她同行的决定。';
+  await assert.rejects(h.controller.confirmPreparedUserFloor('遣返',9), /行动来源已变化/u);
+  assert.equal(isWorkbenchReturnAuthorized(h.runtime,h.messages[1],pending.runId),false);
+});
+
+test('按钮授权确认读库期间取消，迟到的旧pending不得重新给玩家楼授权', async () => {
+  const h = rollbackHarness();
+  const pending = await h.controller.prepareBeforeUserTurn('遣返',9);
+  const reading = rollbackGate<PendingSettlement[]>();
+  h.repository.listPending = () => reading.promise;
+  const confirmation = h.controller.confirmPreparedUserFloor('遣返',9);
+  const cancelled = assert.rejects(confirmation, /取消|cancel|lifecycle/u);
+  h.controller.cancelPending();
+  reading.resolve([pending]);
+  await cancelled;
+  assert.equal(isWorkbenchReturnAuthorized(h.runtime,h.messages[1],pending.runId),false);
+});
+
+test('软参考范围可退让到真实结果，旧冻结请求仍保持原范围回显', () => {
+  const original=request(); const response=result();
+  original.dice.scope='个人';
+  original.creativeReferences={...DEFAULT_BUTTERFLY_REFERENCES,scope:'个人'};
+  assert.doesNotThrow(()=>parseAndValidateButterfly(JSON.stringify(response),original));
+  delete original.creativeReferences;
+  assert.throws(()=>parseAndValidateButterfly(JSON.stringify(response),original),/dice scope/u);
+});
+
+test('按钮收集失败结束忙碌状态，不写半份 pending，工作台可重试', async () => {
     const h = rollbackHarness();
     const freeze = h.assembler.freeze.bind(h.assembler);
     h.assembler.freeze = async () => { throw new Error('人物证据关联失败'); };
-    const prepare = () => entry === 'text' ? h.controller.prepareText('遣返')
-      : h.controller.prepareBeforeUserTurn('遣返', 9);
+    const prepare = () => h.controller.prepareBeforeUserTurn('遣返', 9);
     await assert.rejects(prepare(), /人物证据关联失败/u);
     assert.deepEqual(h.statuses, ['freezing_butterfly', 'butterfly_pending']);
     assert.equal((await h.repository.listPending(namespace)).length, 0);
@@ -116,7 +309,6 @@ test('遣返文本与按钮的收集失败均结束忙碌状态，不写半份 p
     h.assembler.freeze = freeze;
     assert.ok(await prepare());
     assert.equal(h.statuses.at(-1), 'butterfly_awaiting_narrative');
-  }
 });
 
 test('停止后的旧收集任务晚失败，不得覆盖新遣返任务状态', async () => {
@@ -124,25 +316,26 @@ test('停止后的旧收集任务晚失败，不得覆盖新遣返任务状态',
   const freeze = h.assembler.freeze.bind(h.assembler);
   let rejectOld!: (error: Error) => void;
   h.assembler.freeze = () => new Promise((_resolve, reject) => { rejectOld = reject; });
-  const old = h.controller.prepareText('遣返');
+  const old = h.controller.prepareBeforeUserTurn('遣返',9);
   const cancelled = assert.rejects(old, /cancelled/u);
   await new Promise(resolve => setImmediate(resolve));
   h.controller.cancelPending(); await cancelled;
   h.assembler.freeze = freeze;
-  assert.ok(await h.controller.prepareText('遣返'));
+  assert.ok(await h.controller.prepareBeforeUserTurn('遣返',9));
   rejectOld(new Error('旧收集晚失败'));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.statuses.at(-1), 'butterfly_awaiting_narrative');
   assert.ok(!h.statuses.includes('butterfly_pending'));
 });
 
-test('同楼重roll复用，前置行动改变才重新冻结；准备完成不再显示仍在判断', async () => {
+test('按钮同楼重roll复用，前置行动改变只允许再点按钮冻结', async () => {
   const h = rollbackHarness();
-  const original = await h.controller.prepareText('遣返');
+  const original = await h.controller.prepareBeforeUserTurn('遣返',9);
   await h.controller.prepareText('遣返');
   assert.equal(h.calls().freezeCalls, 1);
   h.messages[0].message = '取消之前的同行决定，珊奈留在历史中。';
-  const changed = await h.controller.prepareText('遣返');
+  assert.equal(await h.controller.prepareText('遣返'), null);
+  const changed = await h.controller.prepareBeforeUserTurn('遣返',9);
   assert.equal(h.calls().freezeCalls, 2);
   assert.notEqual(changed?.sourceHash, original?.sourceHash);
   assert.equal(h.statuses.at(-1), 'butterfly_awaiting_narrative');
@@ -150,18 +343,19 @@ test('同楼重roll复用，前置行动改变才重新冻结；准备完成不�
 
 test('相同遣返文字在新楼新墟境不复用旧轮pending', async () => {
   const h = rollbackHarness();
-  await h.controller.prepareText('遣返');
+  await h.controller.prepareBeforeUserTurn('遣返',9);
   h.setRun('run-new');
   h.messages.push({ message_id: 50, role: 'assistant', message: '进入节点：另一段历史。' },
     { message_id: 51, role: 'user', message: '遣返' });
-  const fresh = await h.controller.prepareText('遣返');
+  assert.equal(await h.controller.prepareText('遣返'), null);
+  const fresh = await h.controller.prepareBeforeUserTurn('遣返',51);
   assert.equal(fresh?.runId, 'run-new'); assert.equal(fresh?.request.trigger.userMessageId, 51);
   assert.equal(h.calls().freezeCalls, 2);
   assert.equal(await h.repository.getPending(pendingSettlementKey(namespace, 'run-1')), null);
 });
 
 test('旧提交忽略取消时可同楼重试，旧finally不删除新提交锁', { timeout: 2000 }, async () => {
-  const h = rollbackHarness(); await h.controller.prepareText('遣返');
+  const h = rollbackHarness(); await h.controller.prepareBeforeUserTurn('遣返',9);
   h.messages.push({ message_id: 10, role: 'assistant', message: '遣返回来。' });
   const old = rollbackGate<ButterflyRecord>(); const fresh = rollbackGate<ButterflyRecord>();
   let calls = 0;
@@ -184,7 +378,7 @@ test('旧提交忽略取消时可同楼重试，旧finally不删除新提交锁'
 });
 
 test('回滚撤销受影响pending与预生成结果，不删除已归档历史或更早准备', async () => {
-  const h = rollbackHarness(); const pending = await h.controller.prepareText('遣返'); assert.ok(pending);
+  const h = rollbackHarness(); const pending = await h.controller.prepareBeforeUserTurn('遣返',9); assert.ok(pending);
   const earlier = { ...pending, key: pendingSettlementKey(namespace, 'earlier'), runId: 'earlier',
     request: { ...pending.request, trigger: { ...pending.request.trigger, userMessageId: 2 } } };
   await h.repository.savePending(earlier);
@@ -199,7 +393,7 @@ test('回滚撤销受影响pending与预生成结果，不删除已归档历史�
 });
 
 test('回滚清理捕获旧聊天，不因期间换聊天删除新聊天pending', async () => {
-  const h = rollbackHarness(); const old = await h.controller.prepareText('遣返'); assert.ok(old);
+  const h = rollbackHarness(); const old = await h.controller.prepareBeforeUserTurn('遣返',9); assert.ok(old);
   const nextNamespace = { ...namespace, chatId: 'next-chat' };
   const next = { ...old, namespace: nextNamespace, key: pendingSettlementKey(nextNamespace, old.runId),
     request: { ...old.request, chatId: nextNamespace.chatId } };
@@ -210,8 +404,66 @@ test('回滚清理捕获旧聊天，不因期间换聊天删除新聊天pending'
   assert.ok(await h.repository.getPending(next.key));
 });
 
+test('真实工作流：遣返AI删楼重roll复用全文并重绑Canon，删玩家楼再按钮才生成新蝴蝶', async () => {
+  const h = rollbackHarness(); const canon = new MemoryCanonRepository();
+  let generationCalls = 0;
+  h.runtime.getMessageSwipeId = id => h.messages.find(message => message.message_id === id)?.swipe_id ?? 0;
+  const host = { async getNamespace() { return namespace; }, async assertButterflyTarget() {},
+    async appendButterflyPanel(id: number, requestId: string, panel: string) {
+      const message = h.messages.find(message => message.message_id === id)!;
+      message.message = message.message.replace(/<butterfly_panel>[\s\S]*?<\/butterfly_panel>/gu, '').trim() + '\n' + panel;
+      message.extra = { eyonButterflyRequest: { requestId, swipeId: h.runtime.getMessageSwipeId(id), panelHash: fingerprintText(panel) } };
+    }, async getButterflyFreezeSnapshot() { throw new Error('unused'); },
+    async getRuinRuntimeSnapshot() { throw new Error('unused'); },
+    async getLatestUserText() { return '遣返'; }, async replaceAssistantSlot() {},
+  } satisfies ButterflyHostAdapter;
+  const workflow = new ButterflyWorkflow({ repository: h.repository, canonRepository: canon, host,
+    generator: { async generate(_task, prompt) {
+      generationCalls++;
+      const input = JSON.parse(prompt.match(/<EYON_BUTTERFLY_REQUEST_JSON>\s*([\s\S]*?)\s*<\/EYON_BUTTERFLY_REQUEST_JSON>/u)![1]);
+      return JSON.stringify({ ...result(), requestId: input.requestId, runId: input.runId });
+    } }, now: () => 200,
+    rules: { sharedContext: '', retrievalContract: '', validationContract: '', generationContract: '' },
+  });
+  h.workflow.prepare = workflow.prepare.bind(workflow); h.workflow.settle = workflow.settle.bind(workflow);
+  const original = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  await h.controller.confirmPreparedUserFloor('遣返', 9);
+  h.messages.push({ message_id: 10, role: 'assistant', message: '第一次返程正文', swipe_id: 0 });
+  const first = await h.controller.commitRendered(10);
+  assert.equal(first?.status, 'committed'); assert.equal(generationCalls, 1);
+  const originalText = first!.result.effect.historicalEvolution;
+  // 模拟真实删AI楼事件：Canon先回滚、对账、撤销pending；玩家遣返楼仍健在。
+  h.messages.pop(); h.controller.cancelPending();
+  await canon.rollbackByMessageId(namespace, 10, 201);
+  await syncButterflyCanonStatuses({ repository: h.repository, namespace, branch: await canon.getBranch(namespace), now: 201 });
+  await h.controller.onMessageDeleted(10);
+  const replay = await h.controller.prepareText('遣返');
+  assert.equal(replay?.request.requestId, original.request.requestId);
+  assert.equal(generationCalls, 1); assert.equal(h.calls().freezeCalls, 1);
+  h.messages.push({ message_id: 10, role: 'assistant', message: '重roll返程正文', swipe_id: 1 });
+  const rebound = await h.controller.commitRendered(10);
+  assert.equal(rebound?.result.effect.historicalEvolution, originalText);
+  assert.equal(rebound?.canonStatus, 'active'); assert.equal(generationCalls, 1);
+  assert.equal((await canon.getBranch(namespace)).revisions.filter(revision => revision.status === 'active').length, 1);
+  const head = (await canon.getBranch(namespace)).headRevision;
+  await h.controller.prepareText('遣返'); await h.controller.commitRendered(10);
+  assert.equal((await canon.getBranch(namespace)).headRevision, head, '同楼重复渲染不重复入账');
+  assert.equal(h.messages.at(-1)!.message.match(/<butterfly_panel>/gu)?.length, 1);
+  // 删除玩家楼及后文后，手工重建同号同文也不能复活旧事务。
+  h.messages.splice(1); h.controller.cancelPending();
+  await canon.rollbackByMessageId(namespace, 10, 202);
+  await syncButterflyCanonStatuses({ repository: h.repository, namespace, branch: await canon.getBranch(namespace), now: 202 });
+  await h.controller.onMessageDeleted(9);
+  h.messages.push({ message_id: 9, role: 'user', message: '遣返' });
+  assert.equal(await h.controller.prepareText('遣返'), null);
+  h.messages.pop();
+  const fresh = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  assert.notEqual(fresh.request.requestId, original.request.requestId);
+  assert.equal(generationCalls, 2); assert.equal(h.calls().freezeCalls, 2);
+});
+
 test('相同runId但来源已变化的预生成结果重建，orphaned仍不自动改写', async () => {
-  const h = rollbackHarness(); const pending = await h.controller.prepareText('遣返'); assert.ok(pending);
+  const h = rollbackHarness(); const pending = await h.controller.prepareBeforeUserTurn('遣返',9); assert.ok(pending);
   let generated = 0;
   const workflow = new ButterflyWorkflow({ repository: h.repository, now: () => 10,
     generator: { async generate() { generated += 1; return JSON.stringify(result()); } },
@@ -239,7 +491,8 @@ test('契约事实与玩家最后决定同时进入后台和正文，不新增�
   for (const prompt of [buildButterflyApiPrompt({ request: req, rules }), buildButterflyNarrativeInstruction(result(), req)]) {
     for (const source of req.playerInterventions) assert.ok(prompt.includes(source.content));
     assert.match(prompt, /契约失败\/FP不足/u); assert.match(prompt, /只签约但没有带回决定/u);
-    assert.match(prompt, /最后有效决定/u); assert.match(prompt, /骰点规模只限制间接余波/u);
+    assert.match(prompt, /最后有效决定/u); assert.match(prompt, /控制台偏好只提供间接余波的创作参考/u);
+    assert.doesNotMatch(prompt, /骰点规模只限制间接余波/u);
   }
   assert.equal(buildButterflyApiPrompt({ request: req, rules }).match(/<EYON_BUTTERFLY_REQUEST_JSON>/gu)?.length, 1);
 });
@@ -279,7 +532,7 @@ test('长楼末尾与旧窗口契约确认完整保留，玩家行动不被AI楼
   assert.ok(frozen.request.playerInterventions.some(source => source.sourceId === 'chat:15'), '本轮普通旧楼也是行动事实，不得靠窗口丢弃');
   assert.equal(frozen.request.sourceIndex.filter(source => source.sourceId.startsWith('chat:')).length, 68);
   const shell = new TavernButterflyNarrativeShell(h.runtime);
-  await shell.arm({ ...((await h.controller.prepareText(h.messages.at(-1)!.message))!), request: frozen.request }, result());
+  await shell.arm({ ...((await h.controller.prepareBeforeUserTurn(h.messages.at(-1)!.message,9))!), request: frozen.request }, result());
   assert.ok(prompts.at(-1)?.includes(confirmation));
   assert.ok(prompts.at(-1)?.includes('我决定将珊奈带到现实。'));
 });
@@ -337,7 +590,7 @@ function request(): ButterflyRequest {
     chatId: namespace.chatId,
     runId: 'run-1',
     trigger: {
-      type: 'text',
+      type: 'button',
       userMessageId: 9,
       returnAssistantMessageId: 10,
       rawCommand: '遣返',
@@ -417,6 +670,50 @@ function result(): ButterflyResult {
   };
 }
 
+test('历史赎出索引与归返提示保留同一个人的连续性，不生成旧成年副本', async () => {
+  const h = linkingSettleHarness({
+    carriers: [{ carrier: '幽谷居民', time: '神明纪元1年', change: '记下二叶离去' },
+      { carrier: '档案馆', time: '复兴纪元488年', change: '保存离去记录' }],
+    directEffects: [{ subject: '二叶', time: '神明纪元1年1月1日09:05', stateHint: '历史赎出',
+      change: '半岁的二叶已通过成功契约离开历史，随玩家抵达现世。',
+      continuousState: { dimension: 'location', value: '现世', start: '复兴纪元488年' } }],
+    linkingIndex: [{ entityId: 'entity:two-leaf', names: ['二叶'] }],
+  });
+  h.pending.request.anchors.ruinEntry = { time: '神明纪元1年1月1日09:00', location: '幽谷溪畔' };
+  h.pending.request.anchors.ruinExit = { time: '神明纪元1年1月1日09:05', location: '幽谷溪畔' };
+  const saved = await h.workflow.settle(h.pending);
+  const branch = await h.canon.getBranch(namespace);
+  const fact = branch.deltas[0]!.operations.find(op => op.current.subjectEntityId === 'entity:two-leaf')!.current;
+  assert.equal(fact.predicate, 'historical_redemption');
+  assert.equal(fact.continuousState, undefined);
+  assert.equal(branch.deltas[0]!.operations.find(op => op.current === fact)!.factKey,
+    'entity:two-leaf|historical_redemption|world');
+  assert.equal(fact.temporalScope, h.pending.request.anchors.ruinExit.time);
+  assert.match(fact.statement, /现世抵达：复兴纪元488年/u);
+  for (const prompt of [buildButterflyNarrativeInstruction(saved.result, h.pending.request),
+    buildButterflyApiPrompt({ request: h.pending.request,
+      rules: { sharedContext: '', retrievalContract: '', validationContract: '', generationContract: '' } })]) {
+    assert.match(prompt, /不是复制品/u);
+    assert.match(prompt, /成年/u);
+    assert.match(prompt, /赎出前/u);
+    assert.match(prompt, /不等于死亡/u);
+  }
+});
+
+test('取消赎出、仅签约、复制品带回不建立原本人历史抽离状态，缺索引仍可结算', async () => {
+  for (const stateHint of ['历史赎出失败', '取消历史赎出', '仅签约', '复制品带回', '']) {
+    const h = linkingSettleHarness({
+      carriers: [{ carrier: '旧堡', time: '复兴纪元184年', change: '保留旧档案' },
+        { carrier: '档案馆', time: '复兴纪元488年', change: '保存档案' }],
+      directEffects: stateHint ? [{ subject: '二叶', time: '', stateHint, change: stateHint }] : [],
+      linkingIndex: [{ entityId: 'entity:two-leaf', names: ['二叶'] }],
+    });
+    assert.equal((await h.workflow.settle(h.pending)).status, 'committed');
+    const branch = await h.canon.getBranch(namespace);
+    assert.ok(branch.deltas[0]!.operations.every(op => op.current.predicate !== 'historical_redemption'));
+  }
+});
+
 test('蝴蝶效应提示词包含只读证据与完整因果计划且仍使用单一请求', () => {
   const prompt = buildButterflyApiPrompt({
     request: request(),
@@ -431,17 +728,20 @@ test('蝴蝶效应提示词包含只读证据与完整因果计划且仍使用�
   assert.match(prompt, /<BUTTERFLY_CAUSAL_PLAN>/u);
   assert.match(prompt, /<BUTTERFLY_HISTORICAL_EVOLUTION_STYLE>/u);
   assert.match(prompt, /历史演变是本结果的主体/u);
-  assert.match(prompt, /目标 320-520 个中文字符/u);
-  assert.match(prompt, /只限定\*\*结果落地时的规模\*\*/u);
-  assert.match(prompt, /结果规模为一座城市/u);
-  assert.match(prompt, /越不成比例越有趣/u);
-  assert.match(prompt, /必须写出一次\*\*误读\*\*/u);
+  assert.match(prompt, /建议 450-900 个中文字符/u);
+  assert.match(prompt, /仅用于兼容回显/u);
+  assert.doesNotMatch(prompt, /被永久改写|只限定\*\*结果落地时的规模\*\*/u);
+  assert.match(prompt, /不是越不成比例越好/u);
+  assert.match(prompt, /误读可有可无/u);
   assert.match(prompt, /代价不是硬性要求/u);
   assert.match(prompt, /继续调查、利用、保护、交易、对抗或误解/u);
   assert.match(prompt, /不得写成范围说明、得失清单、游戏结算报告或固定模板/u);
-  assert.match(prompt, /祈雨/u);
-  assert.match(prompt, /【失败｜不要这样写】/u);
-  assert.match(prompt, /结果为何停在本次规模|结果为何落在本次规模/u);
+  assert.match(prompt, /两到三条不同的可能路径/u);
+  assert.match(prompt, /人生的志愿与际遇、感情与后代、技术与创造/u);
+  assert.match(prompt, /信仰与竞争、生态与迁徙、游戏与习俗/u);
+  assert.doesNotMatch(prompt, /【人生接力】|【用途转生】|【共同生活】/u);
+  assert.doesNotMatch(prompt, /【失败｜不要这样写】/u);
+  assert.match(prompt, /结果为何自然长成此种深度与范围/u);
   assert.match(prompt, /directEffects 作为脚本内部索引卡/u);
   assert.match(prompt, /具名物品，也必须单列一项/u);
   assert.match(prompt, /物品状态（原件损毁\/遗失\/修复\/替换）/u);
@@ -449,7 +749,7 @@ test('蝴蝶效应提示词包含只读证据与完整因果计划且仍使用�
   assert.equal(prompt.match(/<EYON_BUTTERFLY_REQUEST_JSON>/gu)?.length, 1);
 });
 
-test('蝴蝶历史演变长度随骰点范围使用同一尺度合同', () => {
+test('蝴蝶历史演变保留完整性下限，范围不再形成超长拒收', () => {
   const compact = result();
   compact.effect.historicalEvolution = '甲'.repeat(180);
   const personalRequest = request();
@@ -468,8 +768,30 @@ test('蝴蝶历史演变长度随骰点范围使用同一尺度合同', () => {
   tooShortForNation.effect.scope = '国家';
   assert.throws(
     () => parseAndValidateButterfly(JSON.stringify(tooShortForNation), nationRequest),
-    /accepted 220-780 range/u,
+    /below the accepted minimum 220.*国家/u,
   );
+});
+
+test('787字和更长的蝴蝶原文均完整接收，新参考与旧冻结请求都不裁剪', () => {
+  for (const references of [undefined, { ...DEFAULT_BUTTERFLY_REFERENCES }]) {
+    const req = request(); req.dice = { roll: 1, scope: '个人' };
+    if (references) req.creativeReferences = references;
+    for (const length of [787, 1200, 2400]) {
+      const value = result(); value.effect.roll = 1;
+      value.effect.scope = references ? '跨国' : '个人';
+      value.effect.historicalEvolution = '甲'.repeat(length - 4) + '\n\n末尾原文';
+      const parsed = parseAndValidateButterfly(JSON.stringify(value), req);
+      assert.equal(parsed.effect.historicalEvolution, value.effect.historicalEvolution);
+    }
+  }
+});
+
+test('新参考的最低完整性报错注明实际范围，不把跨国误标成个人', () => {
+  const req = request(); req.creativeReferences = { ...DEFAULT_BUTTERFLY_REFERENCES };
+  req.dice = { roll: 1, scope: '个人' };
+  const value = result(); value.effect.roll = 1; value.effect.scope = '跨国';
+  value.effect.historicalEvolution = '甲'.repeat(180);
+  assert.throws(() => parseAndValidateButterfly(JSON.stringify(value), req), /minimum 220 for 跨国/u);
 });
 
 test('蝴蝶效应严格锁定请求、轮次、骰点、来源与因果链', () => {
@@ -862,6 +1184,7 @@ test('蝴蝶效应生成失败时保留冻结快照且不触碰正文或世界�
 
 test('遣返楼重掷优先复用同一玩家楼记录，不在 idle 后重新读取活动变量', async () => {
   const repository = new MemoryButterflyRepository();
+  const replayUser: RuntimeChatMessage = { message_id: 9, role: 'user', message: '遣返' };
   const frozen = request();
   await repository.saveRecord({
     key: butterflyRecordKey(namespace, frozen.runId),
@@ -896,12 +1219,8 @@ test('遣返楼重掷优先复用同一玩家楼记录，不在 idle 后重新�
       getCurrentChatId: () => namespace.chatId,
       getLastMessageId: () => 9,
       getMessageSwipeId: () => null,
-      getChatMessages: () => [{
-        message_id: 9,
-        role: 'user',
-        message: '遣返',
-      }],
-      setChatMessages: async () => undefined,
+      getChatMessages: () => [replayUser],
+      setChatMessages: async updates => { Object.assign(replayUser, updates[0]); },
       setExtensionPrompt: async () => undefined,
       generate: async () => '',
       generateRaw: async () => '',
@@ -983,7 +1302,7 @@ test('遣返预发送先完成后台预结算，再建立可恢复玩家楼', as
     },
   });
 
-  const pending = await controller.prepareBeforeUserTurn('遣返', 9, 'text');
+  const pending = await controller.prepareBeforeUserTurn('遣返', 9);
   assert.equal(pending.request.trigger.userMessageId, 9);
   assert.equal(prepareCalls, 1);
   assert.equal(armCalls, 1);
@@ -996,6 +1315,7 @@ test('遣返预发送先完成后台预结算，再建立可恢复玩家楼', as
 
 test('停止后同一遣返楼可立即重试，旧任务收尾不会删除新任务', async () => {
   const repository = new MemoryButterflyRepository();
+  const replayUser: RuntimeChatMessage = { message_id: 9, role: 'user', message: '遣返' };
   const pending: PendingSettlement = {
     key: pendingSettlementKey(namespace, 'run-cancel-reroll'),
     namespace,
@@ -1004,7 +1324,7 @@ test('停止后同一遣返楼可立即重试，旧任务收尾不会删除新�
       ...request(),
       runId: 'run-cancel-reroll',
       trigger: {
-        type: 'text',
+        type: 'button',
         userMessageId: 9,
         returnAssistantMessageId: 0,
         rawCommand: '遣返',
@@ -1041,12 +1361,8 @@ test('停止后同一遣返楼可立即重试，旧任务收尾不会删除新�
       getCurrentChatId: () => namespace.chatId,
       getLastMessageId: () => 9,
       getMessageSwipeId: () => 0,
-      getChatMessages: () => [{
-        message_id: 9,
-        role: 'user',
-        message: '遣返',
-      }],
-      setChatMessages: async () => undefined,
+      getChatMessages: () => [replayUser],
+      setChatMessages: async updates => { Object.assign(replayUser, updates[0]); },
       setExtensionPrompt: async () => undefined,
       generate: async () => '',
       generateRaw: async () => '',
@@ -1090,7 +1406,7 @@ test('进入新墟境会隔离晚返回的旧蝴蝶任务，不重新武装旧�
       ...request(),
       runId: 'run-entry-isolation',
       trigger: {
-        type: 'text',
+        type: 'button',
         userMessageId: 9,
         returnAssistantMessageId: 0,
         rawCommand: '遣返',
@@ -1154,16 +1470,36 @@ test('遣返正文协作提示只约束本楼叙事且不要求模型生成蝴�
   assert.match(instruction, /完成遣返叙事/u);
   assert.match(instruction, /不要生成、猜测或复写 <butterfly_panel>/u);
   assert.match(instruction, /不要延迟遣返/u);
+  assert.match(instruction, /工作台.*按钮签发.*有效的工作台遣返授权/u);
+  assert.match(instruction, /不再重复要求玩家打开工作台/u);
   assert.doesNotMatch(instruction, /presentLanding|historicalEvolution/u);
 });
 
-test('有预结算结果时正文从现世证据开场而不复述历史账本', () => {
+test('预结算正文先恢复现实锚点，感知窗口不是玩家传送目的地', () => {
   const instruction = buildButterflyNarrativeInstruction(result());
   assert.match(instruction, /不要按年代复述/u);
-  assert.match(instruction, /从「现世落点」已经发生的具体场景开始/u);
-  assert.match(instruction, /至少一项「现世可感知证据」/u);
+  assert.match(instruction, /先恢复冻结的现实锚点/u);
+  assert.match(instruction, /不是传送目的地/u);
+  assert.match(instruction, /否则保留可信的后续见闻或调查线索/u);
   assert.match(instruction, /角色只能知道其身份与经历有理由知道的碎片/u);
   assert.match(instruction, /不能让所有人突然全知/u);
+});
+
+test('遣返正文获得精确冻结时地，创作偏好进入同一次生成且篇幅只作参考', () => {
+  const req = { ...request(), creativeReferences: { ...DEFAULT_BUTTERFLY_REFERENCES,
+    scope: '大陆' as const, domain: '风俗与日常' as const, evolution: '意外转用' as const } };
+  const instruction = buildButterflyNarrativeInstruction(result(), req);
+  assert.ok(instruction.includes(`本轮冻结现实时间：${req.anchors.reality.time}`));
+  assert.ok(instruction.includes(`本轮冻结现实地点：${req.anchors.reality.location}`));
+  assert.match(instruction, /墟境经过的时间不加到现实时间上/u);
+  const prompt = buildButterflyApiPrompt({ request: req,
+    rules: { sharedContext: '', retrievalContract: '', validationContract: '', generationContract: '' } });
+  assert.match(prompt, /波及范围「大陆」.*大陆不同地域与社会/u);
+  assert.match(prompt, /影响领域「风俗与日常」/u);
+  assert.match(prompt, /演化方式「意外转用」/u);
+  assert.match(prompt, /通常400至700字.*不因超长拒收或裁剪全文/u);
+  assert.match(prompt, /两到三条不同的可能路径/u);
+  assert.doesNotMatch(prompt, /【失败｜|一封信件 -> 一次判例/u);
 });
 
 test('预结算结果会进入同一遣返正文提示，但面板仍由提交阶段追加', async () => {
@@ -1661,8 +1997,9 @@ test('旧内容上限冻结快照在复用前被体检丢弃并重新冻结（in
     },
   });
 
-  const pending = await controller.prepareText('遣返');
-  assert.ok(pending, 'prepareText 应返回新冻结的待结算快照');
+  assert.equal(await controller.prepareText('遣返'), null, '损坏冻结不再由正文重建');
+  const pending = await controller.prepareBeforeUserTurn('遣返',9);
+  assert.ok(pending, '工作台按钮应返回新冻结的待结算快照');
   assert.equal(freezeCalls, 1, '旧上限快照应被体检丢弃，走一次全新冻结');
   assert.equal(
     await repository.getPending(pendingSettlementKey(namespace, legacyRunId)),
@@ -1753,7 +2090,8 @@ test('已消费 Canon 却缺失绑定视图的 pending 会重新冻结，不再�
     },
   });
 
-  const pending = await controller.prepareText('遣返');
+  assert.equal(await controller.prepareText('遣返'), null);
+  const pending = await controller.prepareBeforeUserTurn('遣返',9);
   assert.ok(pending);
   assert.equal(freezeCalls, 1);
   assert.equal(await repository.getPending(brokenPending.key), null);
@@ -1921,7 +2259,8 @@ test('真正开始新冻结时会清掉同聊天的其他轮次残留 pending（
     },
   });
 
-  const pending = await controller.prepareText('好了，伊雍，遣返吧');
+  assert.equal(await controller.prepareText('好了，伊雍，遣返吧'), null);
+  const pending = await controller.prepareBeforeUserTurn('好了，伊雍，遣返吧',9);
   assert.ok(pending, '新冻结应成功');
   const freshKey = pendingSettlementKey(namespace, 'run-fresh');
   assert.ok(await repository.getPending(freshKey), '新轮 pending 应已保存');
@@ -2279,8 +2618,9 @@ test('已归档且被回滚（reverted）的记录在重发遣返时走全新冻
     },
   });
 
-  const pending = await controller.prepareText('遣返');
-  assert.ok(pending, '重发应产生新的待结算');
+  assert.equal(await controller.prepareText('遣返'), null);
+  const pending = await controller.prepareBeforeUserTurn('遣返',9);
+  assert.ok(pending, '工作台重新发起应产生新的待结算');
   assert.equal(freezeCalls, 1, 'reverted 记录不得重建复用，应走全新冻结');
   assert.equal(workflowPrepareCalls, 1, '应重新走生成准备而不是复用旧文本');
   assert.equal(pending!.request.requestId, 'request-fresh');
@@ -2293,6 +2633,7 @@ function linkingSettleHarness(overrides: {
   linkingIndex?: PendingSettlement['linkingIndex'];
   activeEvidence?: PendingSettlement['activeEvidence'];
   canon?: MemoryCanonRepository;
+  historicalEvolution?: string;
 }) {
   const repository = new MemoryButterflyRepository();
   const canon = overrides.canon ?? new MemoryCanonRepository();
@@ -2318,6 +2659,7 @@ function linkingSettleHarness(overrides: {
     async generate() {
       return JSON.stringify({
         ...result(),
+        ...(overrides.historicalEvolution ? { effect: { ...result().effect, historicalEvolution: overrides.historicalEvolution } } : {}),
         ...(overrides.directEffects ? { directEffects: overrides.directEffects } : {}),
         causalStages: overrides.carriers.map((stage, index) => ({
           order: index + 1,
@@ -2359,6 +2701,20 @@ function linkingSettleHarness(overrides: {
   };
   return { repository, canon, workflow, pending };
 }
+
+test('超旧上限的历史演变能完成真实工作流归档，面板与存储保留全文末尾', async () => {
+  const prose = result().effect.historicalEvolution.repeat(4) + '\n\n这就是完整史稿的最后一句。';
+  const h = linkingSettleHarness({ historicalEvolution: prose, carriers: [
+    { carrier: '旧堡', time: '复兴纪元184年', change: '保存名册' },
+    { carrier: '档案馆', time: '复兴纪元488年', change: '开放借阅' },
+  ] });
+  const committed = await h.workflow.settle(h.pending);
+  assert.equal(committed.status, 'committed');
+  assert.equal(committed.result.effect.historicalEvolution, prose);
+  assert.ok(committed.archiveEntry.includes(prose));
+  assert.ok(committed.panel.includes(prose.replace(/玩家/gu, '<user>')), '面板只沿用既有称谓替换，不截正文');
+  assert.equal((await h.repository.getRecord(committed.key))?.result.effect.historicalEvolution, prose);
+});
 
 test('G-01B：同一结算的三次状态转变分开提交，后续状态留有因果支持', async () => {
   const harness = linkingSettleHarness({

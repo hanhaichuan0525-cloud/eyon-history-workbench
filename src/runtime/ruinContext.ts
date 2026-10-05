@@ -220,7 +220,8 @@ export class TavernRuinContextAssembler implements RuinContextAssembler {
       // （与全世界书/正文同池同门，sourceType/句柄/分组不变；时间资格门仍生效）。
       forcedSourceLogicalIds: [
         ...[...allowedBiographyIds].map(key => `biography:${key}`),
-        ...exactEraSources.map(source => source.worldbook.logicalId),
+        // 普通纪元名不是“强制参考全体当代条目”的按钮，否则挤掉真正相关的人物。
+        ...(input.customEra ? exactEraSources.map(source => source.worldbook.logicalId) : []),
       ],
       canonBranch,
     });

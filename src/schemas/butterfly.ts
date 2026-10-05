@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ContinuousStateSchema } from '../retrieval/continuousState.ts';
+import { ButterflyReferencesSchema } from '../core/creativeReferences.ts';
 
 z.config({ jitless: true });
 
@@ -12,6 +13,7 @@ export const ButterflyScopeSchema = z.enum([
   '省份级地区',
   '国家',
   '跨国',
+  '大陆',
 ]);
 
 export const ButterflyAnchorSchema = z.strictObject({
@@ -26,6 +28,7 @@ export const ButterflySourceSchema = z.strictObject({
 });
 
 export const ButterflyRequestSchema = z.strictObject({
+  creativeReferences: ButterflyReferencesSchema.optional(),
   schema: z.literal('eyon.butterfly.request.v1'),
   requestId: z.string().min(1),
   characterKey: z.string().min(1),

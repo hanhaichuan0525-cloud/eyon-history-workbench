@@ -30,6 +30,7 @@ import {
 import { currentBranchActiveStateFacts } from '../runtime/butterflyContext.ts';
 import { previousContinuousState, projectContinuousStates } from '../retrieval/continuousState.ts';
 import { reconcileCanonIntervention } from './canonReconcile.ts';
+import { HISTORICAL_REDEMPTION_PREDICATE, isHistoricalRedemptionHint } from '../core/historicalRedemption.ts';
 
 type CanonStateEvidence = Pick<
   ActiveEvidenceView,
@@ -60,9 +61,9 @@ export class ButterflyWorkflow {
     this.now = dependencies.now;
   }
 
-  async settle(pending: PendingSettlement, assertActive: () => void = () => {}): Promise<ButterflyRecord> {
+  async settle(pending: PendingSettlement, assertActive: () => void = () => {}, reusePrepared = false): Promise<ButterflyRecord> {
     assertActive();
-    let existing = await this.prepare(pending, assertActive);
+    let existing = await this.prepare(pending, assertActive, reusePrepared);
     assertActive();
     const currentAssistantId = pending.request.trigger.returnAssistantMessageId;
     const needsRebind = (
@@ -71,6 +72,7 @@ export class ButterflyWorkflow {
         !== pending.request.trigger.userMessageId
       || existing.request.trigger.rawCommand
         !== pending.request.trigger.rawCommand
+      || existing.canonStatus === 'reverted'
     );
     if (needsRebind) {
       if (this.canon && existing.canonRevision !== undefined) {
@@ -126,15 +128,18 @@ export class ButterflyWorkflow {
    * 此阶段只保存已校验结果，不依赖尚未存在的遣返 AI 楼；
    * 楼层绑定、面板追加、世界书镜像与 Canon 提交仍在 settle 中完成。
    */
-  async prepare(pending: PendingSettlement, assertActive: () => void = () => {}): Promise<ButterflyRecord> {
+  async prepare(pending: PendingSettlement, assertActive: () => void = () => {}, reusePrepared = false): Promise<ButterflyRecord> {
     const existing = await this.repository.getRecord(
       butterflyRecordKey(pending.namespace, pending.runId),
     );
     assertActive();
-    // internal.81 v21：删楼回滚会把这轮记录标记为 canonStatus='reverted'。
-    // 此时不得复用旧文本（否则档案永远指向已被回滚的 Canon，形成「待人工判断」
-    // 死结）——放行重新生成，用新版覆盖同 key 记录。仅 reverted 自动；
-    // orphaned（上游连带失效）保持人工判断，不擅自改写。
+    // 同玩家楼重roll只重写正文：controller已核验同楼授权和行动来源。
+    // 文本保持不变；若Canon曾回滚，settle重绑定并重新提交，不重复生成蝴蝶。
+    if (reusePrepared && existing && existing.requestId === pending.request.requestId
+      && existing.sourceHash === pending.sourceHash
+      && existing.request.trigger.userMessageId === pending.request.trigger.userMessageId
+      && existing.request.trigger.rawCommand === pending.request.trigger.rawCommand) return existing;
+    // 删玩家楼后的新按钮事务仍重新生成。orphaned保持人工判断。
     if (existing && (existing.canonStatus === 'orphaned'
       || (existing.canonStatus !== 'reverted' && existing.sourceHash === pending.sourceHash))) return existing;
 
@@ -159,11 +164,13 @@ export class ButterflyWorkflow {
     const existingRecords = await this.repository.list(pending.namespace);
     assertActive();
     const title = `《蝴蝶效应锚定日志${existingRecords.length + 1}》`;
-    const panel = serializeButterflyPanel(result.effect);
+    const creativeReferences = Boolean(pending.request.creativeReferences);
+    const panel = serializeButterflyPanel(result.effect, { creativeReferences });
     const archiveEntry = serializeButterflyArchive({
       title,
       anchors: pending.request.anchors,
       effect: result.effect,
+      creativeReferences,
     });
     const now = this.now();
     let record: ButterflyRecord = {
@@ -353,15 +360,20 @@ async function commitButterflyCanon(
     const originalFactIds = !effect.continuousState && replaceableDirectPredicates.has(predicate)
       ? matchingCanonFactIds(stateEvidence, subjectEntityId, predicate)
       : [];
-    const time = effect.time || record.request.anchors.ruinExit.time;
+    const redemption = predicate === HISTORICAL_REDEMPTION_PREDICATE;
+    const time = redemption ? record.request.anchors.ruinExit.time
+      : effect.time || record.request.anchors.ruinExit.time;
+    const statement = redemption
+      ? `${effect.subject}：${effect.change}\n原历史离去：${time}，${record.request.anchors.ruinExit.location}。\n现世抵达：${record.request.anchors.reality.time}，${record.request.anchors.reality.location}。这是同一个本人，旧后续人生不再沿原历史延续，不等于死亡。`
+      : effect.change;
     const fact: CanonFact = {
       factId: `fact:intervention:${encodeURIComponent(record.runId)}:direct:${index + 1}`,
       subjectEntityId,
       predicate,
       object: ['birth_time', 'death_time', 'established_time', 'created_time'].includes(predicate)
         ? time
-        : effect.change,
-      statement: effect.change,
+        : statement,
+      statement,
       temporalScope: time,
       spatialScope: record.request.anchors.ruinExit.location,
       epistemicStatus: 'generated',
@@ -371,14 +383,14 @@ async function commitButterflyCanon(
       sourceSpans: [],
       revisionIntroduced: 0,
       revisionRetired: null,
-      ...(effect.continuousState ? { continuousState: effect.continuousState } : {}),
+      ...(!redemption && effect.continuousState ? { continuousState: effect.continuousState } : {}),
     };
     return {
       op: originalFactIds.length > 0 ? 'replace' : 'assert',
       factKey: [
         subjectEntityId,
         predicate,
-        effect.continuousState ? `${normalizeStable(effect.continuousState.start)}:${index}`
+        fact.continuousState ? `${normalizeStable(fact.continuousState.start)}:${index}`
           : predicate === 'historical_change' ? normalizeStable(time) : 'world',
       ].join('|'),
       originalFactIds,
@@ -609,7 +621,7 @@ function directEffectRecord(
   linkingIndex: readonly EntityLinkCandidate[],
   activeEvidence?: CanonStateEvidence,
 ) {
-  const predicate = effect.continuousState
+  const predicate = isHistoricalRedemptionHint(effect.stateHint) ? HISTORICAL_REDEMPTION_PREDICATE : effect.continuousState
     ? `continuous:${effect.continuousState.dimension}` : directEffectPredicate(effect.stateHint);
   const catalogEntityId = linkCarrier(effect.subject, linkingIndex);
   // catalog 未命中时，只在当前 active Canon 的同一状态维度里寻找唯一 generated
@@ -621,6 +633,7 @@ function directEffectRecord(
   const linkedEntityId = catalogEntityId ?? activeGeneratedEntityId;
   return {
     ...effect,
+    ...(predicate === HISTORICAL_REDEMPTION_PREDICATE ? { continuousState: undefined } : {}),
     subjectEntityId: linkedEntityId
       ?? `entity:generated:${encodeURIComponent(normalizeStable(effect.subject))}`,
     predicate,

@@ -21,6 +21,8 @@ import {
   projectCanonCausalRebase,
 } from '../core/causalRebase.ts';
 import { projectContinuousStates } from './continuousState.ts';
+import { compareRedemptionTimes, isHistoricalRedemption, redemptionAppliesAt,
+  redemptionDisplacesFact } from '../core/historicalRedemption.ts';
 import {
   assessPersonTimeline,
   describePersonLifespanWindow,
@@ -88,11 +90,16 @@ export function resolveCanon(
     // and expose only dated state operations outside that occurrence window.
     const stateOnly = scopeMatch !== 'inside' && delta.operations.some(op => !!op.current.continuousState)
       && deltaMatchesQuery({ ...delta.cascadeScope, time: undefined }, queryScope) === 'inside';
-    if (scopeMatch === 'outside' && !stateOnly) {
+    // 本人已离开原时间轨：离去状态不限于原墟境的发生窗口或地点。
+    // 只桥接查询中精确命中的本人，不放宽同 delta 的其他传播事实。
+    const redemptionOnly = scopeMatch !== 'inside' && delta.operations.some(op =>
+      isHistoricalRedemption(op.current) && queryScope.subjectEntityIds.includes(op.current.subjectEntityId)
+      && redemptionAppliesAt(op.current, queryScope.temporalScopes));
+    if (scopeMatch === 'outside' && !stateOnly && !redemptionOnly) {
       skippedDeltaIds.push(delta.deltaId);
       continue;
     }
-    if (scopeMatch === 'unknown' && !stateOnly) {
+    if (scopeMatch === 'unknown' && !stateOnly && !redemptionOnly) {
       skippedDeltaIds.push(delta.deltaId);
       uncertainItems.push(`${delta.deltaId}: undecidable-query-scope`);
       continue;
@@ -101,7 +108,11 @@ export function resolveCanon(
     const action = branch.actions.find(item => item.actionId === delta.actionRef);
     let appliedOperations = 0;
     for (const [operationIndex, operation] of delta.operations.entries()) {
-      if (stateOnly && !operation.current.continuousState) continue;
+      if (scopeMatch !== 'inside' && !(stateOnly && operation.current.continuousState)
+        && !(redemptionOnly && isHistoricalRedemption(operation.current)
+          && queryScope.subjectEntityIds.includes(operation.current.subjectEntityId))) continue;
+      if (isHistoricalRedemption(operation.current)
+        && !redemptionAppliesAt(operation.current, queryScope.temporalScopes)) continue;
       const label = `${delta.deltaId}/operation-${operationIndex + 1}`;
       const rebaseState = causalRebase.status === 'bounded-overflow'
         ? legacyOperationState(delta.status)
@@ -177,6 +188,19 @@ export function resolveCanon(
     supersededDeltaIds.push(...delta.supersedesDeltaIds);
   }
 
+  const worldbookRefs = new Set(branch.baseCanon.sourceSnapshots
+    .filter(snapshot => snapshot.sourceType === 'worldbook')
+    .flatMap(snapshot => [snapshot.logicalId, snapshot.snapshotId]));
+  for (const redemption of [...activeFacts.values()].filter(isHistoricalRedemption)) {
+    const delta = branch.deltas.find(item => item.revision === redemption.revisionIntroduced);
+    if (!delta) continue;
+    for (const fact of [...activeFacts.values()]) {
+      if (!redemptionDisplacesFact(redemption, fact, worldbookRefs)) continue;
+      activeFacts.delete(fact.factId);
+      inactiveFacts.push({ fact: { ...fact, revisionRetired: redemption.revisionIntroduced },
+        retiredByDeltaId: delta.deltaId, reason: 'historical-redemption:old-future' });
+    }
+  }
   const sortedActiveFacts = sortFacts([...activeFacts.values()]);
   const activeFactIds = new Set(sortedActiveFacts.map(fact => fact.factId));
   const eventRelations = uniqueRelations(branch.baseCanon.eventRelations)
@@ -364,7 +388,12 @@ function projectPersonTimeline(
   const targetYear = yearMatch ? Number(yearMatch[1]) : null;
   return timeline.map(item => {
     const resolved = byName.get(normalizeName(item.name));
-    if (!resolved?.lifespan) return structuredClone(item);
+    if (!resolved) return structuredClone(item);
+    const redemption = resolved.facts.find(isHistoricalRedemption);
+    if (redemption) return { ...structuredClone(item), state: 'unknown' as const,
+      narrative: `${resolved.canonicalName}：${redemption.statement} 赎出前仍可在场，离去之后的原历史不得沿用其旧人生；现世年龄与新生活另按证据判断。`,
+      lifespan: structuredClone(resolved.lifespan ?? {}) };
+    if (!resolved.lifespan) return structuredClone(item);
     if (requestedEra) {
       const assessment = assessPersonTimeline(personEntity(resolved), requestedEra, targetYear);
       return {
@@ -543,6 +572,15 @@ function projectLifespan(
   const special = base?.originKind && base.originKind !== 'birth';
   const birth = latestFact(facts, special ? `${base.originKind}_time` : 'birth_time');
   const death = latestFact(facts, special ? 'identity_end_time' : 'death_time');
+  const redemption = facts.find(isHistoricalRedemption);
+  if (redemption) {
+    delete result.ageAtRecord; delete result.basedOnEra; delete result.basedOnYear; delete result.ageBased;
+    for (const key of ['born', 'died'] as const) {
+      const point = result[key];
+      const order = point && compareRedemptionTimes(`${point.era}${point.year}年`, redemption.temporalScope);
+      if (order != null && order >= 0) delete result[key];
+    }
+  }
   if (birth) {
     result.born = timePointFromFact(birth);
     // 新 revision 的明确出生原点已经取代旧的“基准年龄反推”；保留旧 ageBased

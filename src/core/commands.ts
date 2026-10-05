@@ -64,8 +64,8 @@ export function parseTextCommand(input: string): WorkbenchCommand | null {
     return null;
   }
 
-  // 遣返既允许独立指令，也允许出现在玩家叙事的最后一个行动分句中。
-  // 只识别“现在要做”的动作；转述、否定、假设和将来讨论均不授权状态切换。
+  // 保留自然遣返意愿识别，供伊雍引导与旧楼事务匹配使用。
+  // 识别结果不是授权：新遣返只可由蝴蝶工作台按钮发起。
   if (isExplicitReturnIntent(raw)) {
     return {
       type: 'ruin.return',

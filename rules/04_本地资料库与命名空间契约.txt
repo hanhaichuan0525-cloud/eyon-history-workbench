@@ -1,6 +1,6 @@
 ---
 id: eyon.storage.namespace
-version: 2
+version: 3
 consumer: script
 mode: persistence_contract
 ---
@@ -9,7 +9,7 @@ mode: persistence_contract
 
 本契约规定伊雍历史系统的设置、传记、族谱、墟境候选、蝴蝶效应、草稿和运行中请求如何保存与隔离。
 
-本地资料库不替代聊天正文、MVU或世界书核心设定。只有蝴蝶效应模块例外：已校验并成功提交的当前聊天结构化锚定记录以本地资料库为权威原稿，专用全局归档世界书保存其可注入镜像。镜像写入不得修改其他世界书条目。
+本地资料库不替代聊天正文、MVU或世界书核心设定。只有蝴蝶效应模块例外：已校验并成功提交的当前聊天结构化锚定记录以本地资料库为权威原稿，现行事实通过 Canon 提交、正文协作及关键词原文召回通道提供。专用世界书镜像写入已退役，不修改其他世界书条目。
 
 # 二、三层存储
 
@@ -156,7 +156,7 @@ mode: persistence_contract
 - 必填地点。
 - `selectedCharacters`。
 - `supplementaryDirection`。
-- 最近一次骰表结果。
+- 已确认时期与文风参考（旧素材壳保留兼容）。
 - 最近一次生成请求ID。
 - 当前选中的候选与节点ID。
 
@@ -172,7 +172,7 @@ mode: persistence_contract
 
 - 已校验候选JSON。
 - 本次表单快照。
-- 骰表命中结果。
+- 时期与文风参考及兼容输入。
 - `sourceHash`。
 - 创建时间。
 - 当前是否仍可进入。
@@ -211,18 +211,18 @@ mode: persistence_contract
 
 - 已校验的 `eyon.butterfly.v1` 结构化JSON。
 - 冻结的现实锚点、墟境进入锚点和墟境离开锚点。
-- 本轮玩家行动摘要与骰点命中结果。
+- 本轮完整行动与已确认九项参考，旧编号保留兼容。
 - 对应AI遣返楼消息ID。
-- 专用世界书镜像的条目标识。
+- 本地原文、Canon关联与提交回执；旧镜像字段只作历史兼容。
 - `sourceHash`、`ruleBundleVersion`、`schemaVersion`。
 - 创建、更新时间与提交状态。
 
 状态规则:
 
 - 校验通过但尚未写入正文时为 `validated`。
-- 已写入正确AI遣返楼、但世界书镜像尚未完成时为 `message_committed`。
-- 正文、本地记录与世界书镜像全部完成时为 `committed`。
-- 镜像失败时为 `mirror_pending`，只允许重试镜像写入，不得重新生成内容。
+- 已写入正确AI遣返楼、但Canon/本地归档尚未完成时为 `message_committed`。
+- 正文、本地记录与Canon提交完成时为 `committed`。
+- Canon/归档收尾失败沿用兼容值 `mirror_pending`；只补未完成提交，不重新生成，也不写世界书镜像。
 
 同一 `characterKey + chatId + runId` 只能存在一条已提交锚定记录。重试必须更新原记录，禁止新增第二条。
 
@@ -236,8 +236,8 @@ mode: persistence_contract
 
 - 三套成对锚点。
 - `runId`。
-- 玩家行动摘要及其来源楼层ID。
-- 骰点与命中结果。
+- 玩家完整行动原文及其来源楼层ID。
+- 已确认参考方案与兼容编号。
 - 目标遣返请求ID。
 - 创建时间和来源哈希。
 
@@ -256,12 +256,12 @@ mode: persistence_contract
 - 记忆插件内容。
 - 聊天正文全文。
 
-本地记录只保存必要来源ID、哈希和短摘要。
+普通检索缓存按用途保存来源与哈希；返程冻结快照及蝴蝶原稿必须保留完整必要原文，不按字符切成摘要。
 
 例外:
 
 - 已提交的蝴蝶效应结构化记录保存于 `butterflyRecords`。
-- 专用全局归档世界书只保存由该记录渲染出的当前聊天镜像，不作为反向重建锚点的来源。
+- 本地原稿通过当前聊天受控注入提供完整文本，不从旧世界书日志反向重建锚点。
 - `pendingSettlements` 只保存尚未完成的同轮冻结结算快照，不属于墟境运行状态。
 
 # 六、API设置与密钥
@@ -298,9 +298,9 @@ RootTrace替换成功与传记入库必须使用同一完成标记。若消息�
 1. 遣返前同步写入 `pendingSettlements`。
 2. API结果通过校验后写入或更新 `butterflyRecords: validated`。
 3. 固定面板成功写入目标AI楼后更新为 `message_committed`。
-4. 专用世界书镜像成功后更新为 `committed`，再删除同轮待结算快照。
+4. Canon提交/本地归档成功后更新为 `committed`，再删除同轮待结算快照。
 
-任一步失败都从上一个已提交阶段继续，不得重新取锚点、重新掷骰或重新生成另一份内容。
+任一步失败都从上一个已提交阶段继续，不得重新取锚点、重新抽方案或重新生成另一份内容。
 
 # 八、并发与版本
 
@@ -389,7 +389,7 @@ RootTrace替换成功与传记入库必须使用同一完成标记。若消息�
 5. 检查未完成的一般请求并统一标记为 `interrupted`。
 6. 从MVU重新读取真实墟境状态。
 7. 读取当前聊天的 `pendingSettlements` 与 `butterflyRecords`。
-8. 对 `message_committed` 或 `mirror_pending` 记录，仅检查并补写专用世界书镜像。
-9. 从专用世界书读取当前聊天镜像，用于显示镜像状态和发现缺失；不得反向覆盖本地结构化原稿。
+8. 对 `message_committed` 或 `mirror_pending` 记录，核验有效绑定并幂等补完Canon/归档，不重生成。
+9. 从本地记录/Canon读取档案与提交状态；关键词召回仅在当前聊天作用域提供有效原文。
 
 禁止从本地草稿恢复 `exploring`、`returning`或世界时间地点。

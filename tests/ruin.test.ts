@@ -222,7 +222,7 @@ test('掷骰基调与候选材料不进入史料检索，但仍保留玩家事�
   assert.doesNotMatch(query, /月桂源生匣|物品\/史诗|骰材背景/u);
 });
 
-test('玩家输入被固定为任务主轴，骰材只能在其后提供创作支持', () => {
+test('玩家输入固定为任务主轴，时期/文风不替换主体，已知人物按生命阶段入史', () => {
   const input = makeInput();
   input.era = '英雄纪元';
   input.location = '奥古斯提姆帝国';
@@ -246,12 +246,13 @@ test('玩家输入被固定为任务主轴，骰材只能在其后提供创作�
   assert.match(prompt, /taskInterpretation is a written-out reasoning scaffold/u);
   assert.match(prompt, /taskFit is a soft self-record/u);
   assert.match(prompt, /does NOT grade your wording/u);
-  // 当代人物防错位引导（internal.76 覆盖包）：MVU/关系列表的当代人不得以本名进入历史候选。
-  assert.match(prompt, /contemporary person under their real name/u);
-  // 原创人物与造名规范（76 二轮覆盖）：不得为当代人制造历史前身；新人须有独立记忆点名字。
-  assert.match(prompt, /Do not arrange a historical predecessor/u);
+  // 当前MVU人物可以有明确过去；不再以“当代人”标签一刀切抹去其真实历史。
+  assert.match(prompt, /source-backed past/u);
+  assert.match(prompt, /requested date, lifespan, life stage, identity/u);
+  assert.match(prompt, /not an invented substitute/u);
+  assert.match(prompt, /do not automatically invent ancestors/u);
   assert.match(prompt, /original, memorable name/u);
-  assert.match(prompt, /History is history, the present is the present/u);
+  assert.doesNotMatch(prompt, /must never adopt a contemporary person/u);
 });
 
 test('墟境与传记共享对象边界：当前具名地点只证明现状，集合与行业原话保持完整', () => {
@@ -1313,7 +1314,7 @@ test('墟境节点的常见布尔表达会归一化且缺失 inference 保守标
   assert.equal(parsed.qualityChecks.timelineConsistent, true);
 });
 
-test('略微超长的墟境史稿会在本地收束，不会废弃候选并重新请求', () => {
+test('超出写作目标的完整墟境史稿原样保留，不裁字或重新请求', () => {
   const input = makeInput();
   const result = makeCandidates();
   const candidate = structuredClone(result.candidates[0]);
@@ -1332,7 +1333,7 @@ test('略微超长的墟境史稿会在本地收束，不会废弃候选并重�
     context: makeContext(),
   });
 
-  assert.ok((parsed.historyProse.match(/\p{Script=Han}/gu)?.length ?? 0) <= 650);
+  assert.equal(parsed.historyProse, candidate.historyProse);
   assert.match(parsed.historyProse, /。$/u);
 });
 
@@ -1735,11 +1736,11 @@ test('模型把 label 写成标题时被丢弃,由脚本确定性渲染为时间
   }
 });
 
-test('大纲 shift from==to 报 SHIFT_SAME_PERIOD；任一端点可等于主导时期', () => {
+test('大纲允许同一时期持续，不为了转向字段人为制造灾难', () => {
   const input = makeInput();
   const context = makeContext();
 
-  // 两端同值必须重写真实转向；不能靠篡改骰定主导时期过检。
+  // 同期持续合法，原主导时期保持不变。
   const same = makeCandidates();
   same.candidates.forEach(candidate => {
     (candidate as { shift?: unknown }).shift = {
@@ -1748,15 +1749,15 @@ test('大纲 shift from==to 报 SHIFT_SAME_PERIOD；任一端点可等于主导�
       explanation: '解释',
     };
   });
-  assert.throws(
-    () => parseAndNormalizeRuinOutlines(JSON.stringify(same), {
+  const sustained = parseAndNormalizeRuinOutlines(JSON.stringify(same), {
       requestId,
       directive: '墟境探索',
       input,
       context,
-    }),
-    /SHIFT_SAME_PERIOD|shift is degenerate/u,
-  );
+    });
+  assert.deepEqual(sustained.candidates.map(candidate => candidate.shift.from), ['stable', 'stable', 'stable']);
+  assert.deepEqual(sustained.candidates.map(candidate => candidate.shift.to), ['stable', 'stable', 'stable']);
+  assert.equal(sustained.candidates[0].periodType, input.materials[0].periodType);
 
   // 模型写不同值:通过
   const distinct = makeCandidates();
@@ -1786,7 +1787,7 @@ test('缺失转向不能被主导时期默默填成两端同值，提示词不�
     (error: unknown) => error instanceof RuinValidationError && error.code === 'SHIFT_INVALID');
   const prompt = buildRuinOutlineBatchApiPrompt({ requestId, directive: '墟境探索', generationInput: input, context, rules: { generationContract: '' } });
   assert.doesNotMatch(prompt, /Never make from equal to to or equal to periodType/u);
-  assert.match(prompt, /Either endpoint may equal/u);
+  assert.match(prompt, /They may be equal and may equal periodType/u);
 });
 
 test('新出场边界在提纲和扩写两端阻止未指定谱系人物偷渡进演员表', () => {
@@ -2601,7 +2602,7 @@ test('候选提纲建立后先扩写全部史稿，再交给玩家比较选择',
     expanded.result.candidates.map(item => ruinCandidateState(expanded, item.id).status),
     ['ready', 'ready', 'ready'],
   );
-  assert.ok((candidate.historyProse.match(/\p{Script=Han}/gu)?.length ?? 0) <= 650);
+  assert.equal(candidate.historyProse, `${'史'.repeat(705)}。`);
   assert.match(candidate.historyProse, /。$/u);
 });
 
@@ -2877,6 +2878,37 @@ test('墟境人物年龄软复核失败时保留已校验史稿，不截断整�
   } finally {
     console.warn = originalWarn;
   }
+});
+
+test('大纲和逐份状态在落库后通知UI，并附带当前档案键', async () => {
+  const repository = new MemoryRuinCandidateRepository();
+  const notifications: string[] = [];
+  const persistedChecks: Promise<void>[] = [];
+  const workflow = new RuinWorkflow({
+    contextAssembler: { async assemble() { return makeContext(); } },
+    generator: { async generate(_taskType, prompt) {
+      return JSON.stringify(prompt.includes('<RUIN_OUTLINE_BATCH_TASK>') ? makeOutlineResponse() : makeCandidateResponse(prompt));
+    } }, repository, rules: { generationContract: '生成契约' }, createRequestId: () => requestId,
+    now: () => 1000, async assertCurrent() {},
+    onOutlineReady(key) {
+      notifications.push('outline');
+      assert.equal(key, ruinCandidateRecordKey(namespace, requestId));
+      persistedChecks.push(repository.get(key).then(record => assert.equal(record?.result.candidates.length, 3)));
+    },
+    onCandidateProgress(event) {
+      notifications.push(`${event.stage}:${event.candidateIndex}`);
+      assert.equal(event.recordKey, ruinCandidateRecordKey(namespace, requestId));
+      persistedChecks.push(repository.get(event.recordKey!).then(record => {
+        assert.ok(record);
+        const candidate = record.result.candidates[event.candidateIndex - 1];
+        assert.equal(ruinCandidateState(record, candidate.id).status, event.stage === 'running' ? 'generating' : event.stage === 'success' ? 'ready' : 'failed');
+      }));
+    },
+  });
+  const command = createButtonCommand('ruin.generate', '墟境探索')!;
+  await workflow.generate(command, makeInput(), { namespace, triggerMessageId: 8, triggerTextHash: 'hash', triggerSwipeId: 0, lifecycleEpoch: 0 });
+  await Promise.all(persistedChecks);
+  assert.deepEqual(notifications, ['outline', 'running:1', 'success:1', 'running:2', 'success:2', 'running:3', 'success:3']);
 });
 
 test('候选首次格式偏差在槽位内部纠正，不触发整批重试', async () => {
@@ -5892,9 +5924,9 @@ test('当代参考标注：mvu passage 渲染边界标签，已选人物仅为�
     context,
     rules: { generationContract: 'generation contract' },
   });
-  assert.match(prompt, /当代参考·仅供关系\/现状\/命名惯例·不得采用为历史演员或舞台/u);
+  assert.match(prompt, /当前人物参考·现状不证明过去在场·历史参与须核对年代、生命阶段与到场渠道/u);
   assert.match(prompt, /已选重点参考·提高检索注意力·不保证出场/u);
-  assert.match(prompt, /DLC character cards/u);
+  assert.match(prompt, /source-backed past/u);
   assert.match(prompt, /Source and worldbook titles are script labels/u);
   // 既定事件关键地点名一致性软引导（internal.77 四轮覆盖，泣空遗迹病历后）。
   assert.match(prompt, /Stable landmarks and key destinations of established events/u);

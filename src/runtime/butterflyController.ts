@@ -24,8 +24,12 @@ import {
 import { isLatestVisibleTurnPair } from './visibleTurns.ts';
 import { fingerprintText } from './transactionIdentity.ts';
 import { canonicalTaskSourceId } from '../retrieval/citations.ts';
+import type { ButterflyReferences } from '../core/creativeReferences.ts';
+import {
+  BUTTERFLY_SOURCE_IDENTITY_VERSION, butterflyTriggerEvidenceHash, markWorkbenchReturn, isWorkbenchReturnAuthorized,
+} from './butterflyReturnAuthorization.ts';
 
-export const BUTTERFLY_SOURCE_IDENTITY_VERSION = 3;
+export { BUTTERFLY_SOURCE_IDENTITY_VERSION, butterflyTriggerEvidenceHash } from './butterflyReturnAuthorization.ts';
 
 export type ButterflyControllerStatus =
   | 'freezing_butterfly'
@@ -37,6 +41,9 @@ export type ButterflyControllerStatus =
 
 export interface ButterflyControllerHooks {
   onStatus?(status: ButterflyControllerStatus, detail?: string): void;
+  requireReferences?(sourceMessageId: number): Promise<ButterflyReferences>;
+  onReturnPrepared?(pending: PendingSettlement): void;
+  onReturnRendered?(pending: PendingSettlement): Promise<void>;
 }
 
 export class ButterflyController {
@@ -51,6 +58,7 @@ export class ButterflyController {
   private readonly now: () => number;
   private readonly preparations = new Map<string, Promise<ButterflyRecord>>();
   private readonly renderedCommits = new Map<number, symbol>();
+  private readonly replayingRequests = new Set<string>();
   private cancellation = new AbortController();
   private epoch = 0;
 
@@ -106,26 +114,28 @@ export class ButterflyController {
       && record.request.trigger.userMessageId === user.message_id
       && (!record.triggerEvidenceHash || record.triggerEvidenceHash === triggerEvidenceHash)
     );
-    const triggerPending = namespacePending.find(samePendingTrigger);
+    // 正文只承接已由工作台按钮准备的同楼事务，不能发起新的遣返。
+    const triggerPending = namespacePending.find(record => record.request.trigger.type === 'button' && samePendingTrigger(record));
     if (triggerPending) {
       if (this.isLegacyFrozenPending(triggerPending)) {
-        // internal.81 v16：体检发现旧内容上限（6000 字/条）时代的冻结快照——
-        // 直接复用会让 v15 瘦身永不生效（每次重试仍以 72K 级 prompt 慢生成）。
-        // 删除旧 pending 后继续走全新冻结，用新上限重建同轮快照。
-        await this.repository.deletePending(triggerPending.key);
+        // 不从正文自动重建损坏旧冻结；保留记录供工作台显式重试/重新收集。
+        return null; // 旧损坏冻结资料只由工作台按钮重新收集，不能由正文自动重建。
       } else {
         const rebound = rebindPendingTrigger(
           triggerPending,
           user.message_id,
           this.runtime.getMessageSwipeId(user.message_id),
-          command.source,
+          'button',
           command.raw,
           this.now(),
         );
         if (rebound !== triggerPending) {
           await this.repository.updatePending(rebound);
         }
-        return this.armPendingGuarded(rebound, undefined, startedEpoch);
+        this.replayingRequests.add(rebound.request.requestId);
+        const armed = await this.armPendingGuarded(rebound, undefined, startedEpoch);
+        this.assertActive(startedEpoch);
+        return this.authorizePreparedReturn(armed, startedEpoch);
       }
     }
     const triggerRecord = namespaceRecords.find(record =>
@@ -133,9 +143,11 @@ export class ButterflyController {
       && record.request.trigger.rawCommand.trim() === command.raw
       && (!record.triggerEvidenceHash || record.triggerEvidenceHash === triggerEvidenceHash)
     );
-    // internal.81 v21：已归档记录若带 reverted（该轮 Canon 已被删楼回滚），
-    // 不再重建复用旧文本——fallthrough 走全新冻结与重新结算，让新版覆盖旧版。
-    if (triggerRecord && triggerRecord.canonStatus !== 'reverted'
+    // AI楼重roll可能回滚Canon；玩家原楼和授权仍在时只复用文本，稍后重新绑定Canon。
+    // 玩家楼被删/重新手工建楼不能凭楼号与文字复活旧事务。
+    if (triggerRecord && (triggerRecord.request.trigger.type === 'button' || triggerRecord.status === 'committed')
+      && (triggerRecord.canonStatus !== 'reverted'
+        || (!!triggerRecord.triggerEvidenceHash && isWorkbenchReturnAuthorized(this.runtime, user, triggerRecord.runId)))
       && (triggerRecord.triggerEvidenceHash || triggerRecord.status === 'committed')) {
       const now = this.now();
       const pending: PendingSettlement = {
@@ -148,7 +160,8 @@ export class ButterflyController {
           trigger: {
             userMessageId: user.message_id,
             returnAssistantMessageId: 0,
-            type: command.source,
+            // 旧已成功返程的同楼恢复仍可承接；绝不凭新文本发起冻结。
+            type: 'button',
             rawCommand: command.raw,
           },
         },
@@ -171,70 +184,12 @@ export class ButterflyController {
       await this.pruneStalePending(namespace, pending.key, startedEpoch);
       this.assertActive(startedEpoch);
       await this.repository.savePending(pending);
-      return this.armPendingGuarded(pending, triggerRecord, startedEpoch);
+      this.replayingRequests.add(pending.request.requestId);
+      const armed = await this.armPendingGuarded(pending, triggerRecord, startedEpoch);
+      this.assertActive(startedEpoch);
+      return this.authorizePreparedReturn(armed, startedEpoch);
     }
-    this.assertActive(startedEpoch);
-    this.hooks.onStatus?.('freezing_butterfly', '正在收集这轮穿越留下的介入、见证与归返锚点');
-    const frozen = await this.freezeGuarded({
-      requestId: this.createRequestId(),
-      namespace,
-      userMessageId: user.message_id,
-      rawCommand: command.raw,
-      triggerType: command.source,
-      roll: this.roll(),
-      sourceMessageId: this.previousVisibleAssistant(user.message_id).message_id,
-    }, startedEpoch);
-    const key = pendingSettlementKey(namespace, frozen.request.runId);
-    const existingPending = await this.repository.getPending(key);
-    this.assertActive(startedEpoch);
-    if (existingPending) {
-      if (this.isLegacyFrozenPending(existingPending)) {
-        // internal.81 v16：与 triggerPending 同因——旧上限快照直接丢弃，
-        // 用刚完成的完整来源冻结覆盖重建。
-        await this.repository.deletePending(key);
-      } else if (
-        existingPending.request.trigger.userMessageId === user.message_id
-        && (!existingPending.triggerEvidenceHash || existingPending.triggerEvidenceHash === triggerEvidenceHash)
-      ) {
-        const rebound = rebindPendingTrigger(
-          existingPending,
-          user.message_id,
-          this.runtime.getMessageSwipeId(user.message_id),
-          command.source,
-          command.raw,
-          this.now(),
-        );
-        if (rebound !== existingPending) {
-          await this.repository.updatePending(rebound);
-        }
-        return this.armPendingGuarded(rebound, undefined, startedEpoch);
-      }
-      await this.repository.deletePending(key);
-    }
-    const now = this.now();
-    const pending: PendingSettlement = {
-      key,
-      namespace,
-      runId: frozen.request.runId,
-      request: frozen.request,
-      activeEvidence: frozen.activeEvidence,
-      canonBindingView: frozen.canonBindingView,
-      canonBindingAppliedDeltaIds: frozen.canonBindingAppliedDeltaIds,
-      linkingIndex: frozen.linkingIndex,
-      triggerSwipeId: this.runtime.getMessageSwipeId(user.message_id),
-      assistantSwipeId: null,
-      sourceHash: frozen.sourceHash,
-      triggerEvidenceHash,
-      sourceIdentityVersion: BUTTERFLY_SOURCE_IDENTITY_VERSION,
-      citationSourceSetHash: butterflyCitationSourceSetHash(frozen.request),
-      revision: 1,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await this.pruneStalePending(namespace, key, startedEpoch);
-    this.assertActive(startedEpoch);
-    await this.repository.savePending(pending);
-    return this.armPendingGuarded(pending, undefined, startedEpoch);
+    return null;
   }
 
   async prepareBeforeUserTurn(
@@ -252,6 +207,7 @@ export class ButterflyController {
   ): Promise<PendingSettlement> {
     // 隔离快照同样在请求起点取值（internal.81 v14 竞态修复）。
     const startedEpoch = this.epoch;
+    if (triggerType !== 'button') throw new Error('请在墟境探索 → 蝴蝶效应工作台中确认方案并点击「遣返现世」');
     const command = parseTextCommand(text);
     if (!command || command.type !== 'ruin.return') {
       throw new Error('只能为明确的遣返命令预冻结历史锚点');
@@ -259,6 +215,22 @@ export class ButterflyController {
     const namespace = currentNamespace(this.runtime);
     const triggerEvidenceHash = butterflyTriggerEvidenceHash(this.runtime, expectedUserMessageId, command.raw);
     const source = this.latestVisibleAssistant();
+    // 点击遣返是一次新的方案确认；只有显式「重试已冻结归档」才绕过此门。
+    const creativeReferences = await this.hooks.requireReferences?.(source.message_id);
+    this.assertActive(startedEpoch);
+    const reusable = this.hooks.requireReferences
+      ? await this.repository.getPending(pendingSettlementKey(namespace, await this.runtimeRunId(source.message_id)))
+      : null;
+    this.assertActive(startedEpoch);
+    if (reusable && !this.isLegacyFrozenPending(reusable)
+      && sameCreativeReferences(reusable.request.creativeReferences, creativeReferences)
+      && reusable.request.trigger.userMessageId === expectedUserMessageId
+      && reusable.request.trigger.rawCommand.trim() === command.raw
+      && (!reusable.triggerEvidenceHash || reusable.triggerEvidenceHash === triggerEvidenceHash)) {
+      const rebound = rebindPendingTrigger(reusable, expectedUserMessageId, null, triggerType, command.raw, this.now());
+      if (rebound !== reusable) await this.repository.updatePending(rebound);
+      return this.armPendingGuarded(rebound, undefined, startedEpoch);
+    }
     this.hooks.onStatus?.('freezing_butterfly', '正在收集这轮穿越留下的介入、见证与归返锚点');
     const frozen = await this.freezeGuarded({
       requestId: this.createRequestId(),
@@ -266,7 +238,8 @@ export class ButterflyController {
       userMessageId: expectedUserMessageId,
       rawCommand: command.raw,
       triggerType,
-      roll: this.roll(),
+      roll: creativeReferences ? 1 : this.roll(),
+      creativeReferences,
       sourceMessageId: source.message_id,
     }, startedEpoch);
     const key = pendingSettlementKey(namespace, frozen.request.runId);
@@ -279,6 +252,7 @@ export class ButterflyController {
         await this.repository.deletePending(key);
       } else if (
         existing.request.trigger.userMessageId === expectedUserMessageId
+        && sameCreativeReferences(existing.request.creativeReferences, creativeReferences)
         && (!existing.triggerEvidenceHash || existing.triggerEvidenceHash === triggerEvidenceHash)
       ) {
         const rebound = rebindPendingTrigger(
@@ -326,10 +300,15 @@ export class ButterflyController {
     return pending;
   }
 
+  private async runtimeRunId(sourceMessageId: number): Promise<string> {
+    return (await this.assembler.currentRun(sourceMessageId)).runId;
+  }
+
   async confirmPreparedUserFloor(
     text: string,
     messageId: number,
   ): Promise<void> {
+    const startedEpoch = this.epoch;
     const command = parseTextCommand(text);
     if (!command || command.type !== 'ruin.return') {
       throw new Error('只能确认明确的遣返命令');
@@ -348,6 +327,7 @@ export class ButterflyController {
     }
     const namespace = currentNamespace(this.runtime);
     const candidates = await this.repository.listPending(namespace);
+    this.assertActive(startedEpoch);
     const pending = candidates.find(record =>
       record.request.trigger.userMessageId === messageId
       && normalizeCommandInput(record.request.trigger.rawCommand) === command.raw
@@ -363,6 +343,21 @@ export class ButterflyController {
       updatedAt: this.now(),
     };
     await this.repository.updatePending(confirmed);
+    await this.authorizePreparedReturn(confirmed, startedEpoch);
+  }
+
+  private async authorizePreparedReturn(pending: PendingSettlement, epoch = this.epoch): Promise<PendingSettlement> {
+    this.assertActive(epoch);
+    try {
+      await markWorkbenchReturn(this.runtime, pending);
+      this.assertActive(epoch);
+      this.hooks.onReturnPrepared?.(pending);
+    } catch (error) {
+      await this.narrativeShell.clear(pending.request.requestId);
+      throw error;
+    }
+    this.assertActive(epoch);
+    return pending;
   }
 
   async commitRendered(messageId: number): Promise<ButterflyRecord | null> {
@@ -432,8 +427,10 @@ export class ButterflyController {
       };
       await this.repository.updatePending(updated);
       this.assertActive(epoch);
+      await this.restoreRenderedReturn(updated, epoch);
       this.hooks.onStatus?.('committing_butterfly', '正在把通过校验的变化写回现世与 Canon');
-      const record = await this.workflow.settle(updated, () => this.assertActive(epoch));
+      const record = await this.workflow.settle(updated, () => this.assertActive(epoch),
+        this.replayingRequests.has(updated.request.requestId));
       this.assertActive(epoch);
       this.hooks.onStatus?.('butterfly_ready', '本轮历史余波已归档，现世记忆已更新');
       return record;
@@ -481,7 +478,9 @@ export class ButterflyController {
     // 任务通知，失败原因写回快照；此前重试是无声的（UI 既无成功也无失败提示）。
     try {
       this.hooks.onStatus?.('generating_butterfly', '正在重新核验冻结锚点与历史余波');
-      const record = await this.workflow.settle(pending, () => this.assertActive(epoch));
+      await this.restoreRenderedReturn(pending, epoch);
+      const record = await this.workflow.settle(pending, () => this.assertActive(epoch),
+        this.replayingRequests.has(pending.request.requestId));
       this.assertActive(epoch);
       this.hooks.onStatus?.('butterfly_ready', '本轮历史余波已归档，现世记忆已更新');
       return record;
@@ -520,6 +519,7 @@ export class ButterflyController {
     // 核对方式收尾，不能误删随后建立的新任务。
     this.preparations.clear();
     this.renderedCommits.clear();
+    this.replayingRequests.clear();
     // 取消可能发生在“结果已准备、玩家楼尚未创建”的窄窗口；
     // 该窗口没有 commitRendered 可以负责清理注入，因此这里主动收尾。
     void this.narrativeShell.clearActive().catch(error => {
@@ -537,8 +537,9 @@ export class ButterflyController {
       ...pending.filter(item => item.request.trigger.userMessageId + 1 >= messageId
         || item.request.trigger.returnAssistantMessageId >= messageId)
         .map(item => this.repository.deletePending(item.key)),
-      ...records.filter(item => item.status !== 'committed'
-        && (item.request.trigger.userMessageId + 1 >= messageId || item.assistantMessageId >= messageId))
+      ...records.filter(item => item.request.trigger.userMessageId >= messageId
+        || (item.status !== 'committed'
+          && (item.request.trigger.userMessageId + 1 >= messageId || item.assistantMessageId >= messageId)))
         .map(item => this.repository.updateRecord({ ...item, canonStatus: 'reverted',
           revision: item.revision + 1, updatedAt: this.now() })),
     ]);
@@ -606,13 +607,24 @@ export class ButterflyController {
     return armed;
   }
 
+  private async restoreRenderedReturn(pending: PendingSettlement, epoch: number): Promise<void> {
+    if (!this.hooks.onReturnRendered || pending.request.trigger.type !== 'button') return;
+    await this.narrativeShell.assertRenderedFloor(pending, pending.request.trigger.returnAssistantMessageId);
+    this.assertActive(epoch);
+    // 宿主复制/解析玩家楼时可能重建 extra；来源仍一致时重新核验并签发同一授权。
+    await this.authorizePreparedReturn(pending, epoch);
+    await this.hooks.onReturnRendered(pending);
+    this.assertActive(epoch);
+  }
+
   private prepareRecord(pending: PendingSettlement, epoch: number): Promise<ButterflyRecord> {
     this.assertActive(epoch);
     const existing = this.preparations.get(pending.key);
     if (existing) return existing;
     if (this.preparations.size) throw new Error('蝴蝶效应正在准备，请等待或停止当前任务');
     this.hooks.onStatus?.('generating_butterfly', '正在判断余波会落向谁、由谁承担代价');
-    const task = this.workflow.prepare(pending, () => this.assertActive(epoch))
+    const task = this.workflow.prepare(pending, () => this.assertActive(epoch),
+      this.replayingRequests.has(pending.request.requestId))
       .finally(() => {
         if (this.preparations.get(pending.key) === task) {
           this.preparations.delete(pending.key);
@@ -820,29 +832,12 @@ export class ButterflyController {
   }
 }
 
-/** 只比较本轮已可见的事实，不含本次遣返 AI 楼，故正文重 roll 不改变身份。 */
-export function butterflyTriggerEvidenceHash(runtime: TavernRuntime, userMessageId: number, rawCommand: string): string {
-  const messages = runtime.getChatMessages(`0-${userMessageId}`, { include_swipes: false })
-    .filter(message => message.message_id < userMessageId && !message.is_hidden);
-  let start = -1;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (/\[RuinTrace\]|^(?:请)?进入节点/u.test(message.message)
-      || !!message.extra?.eyonHistoryRuinEntryRequest
-      || !!(message.data?.extra as Record<string, unknown> | undefined)?.eyonHistoryRuinEntryRequest) {
-      start = index; break;
-    }
-  }
-  if (start < 0) start = 0;
-  return fingerprintText(JSON.stringify({
-    sourceIdentityVersion: BUTTERFLY_SOURCE_IDENTITY_VERSION,
-    userMessageId, rawCommand: normalizeCommandInput(rawCommand),
-    floors: messages.slice(start).map(message => [message.message_id, message.role,
-      runtime.getMessageSwipeId(message.message_id), message.message, message.extra?.eyonHistoryRuinEntryRequest]),
-  }));
-}
-
 const BUTTERFLY_PANEL_RE = /<butterfly_panel>[\s\S]*?<\/butterfly_panel>/gu;
+
+function sameCreativeReferences(left?: ButterflyReferences, right?: ButterflyReferences): boolean {
+  return left === right || !!left && !!right
+    && (Object.keys(right) as Array<keyof ButterflyReferences>).every(key => left[key] === right[key]);
+}
 
 function butterflyPanelMetadata(
   extra: Record<string, unknown> | undefined,

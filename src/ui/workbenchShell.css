@@ -303,6 +303,19 @@ button:focus-visible {
   gap: 28px;
 }
 .module-copy { min-width: 0; }
+.module-intro[data-intro-view="ruin"] { margin-bottom: 16px; }
+.module-intro[data-intro-view="ruin"] .module-copy { display: flex; align-items: center; gap: 24px; }
+.module-intro[data-intro-view="ruin"] .module-copy > span,
+.module-intro[data-intro-view="ruin"] .module-copy > p { display: none; }
+.module-intro[data-intro-view="ruin"] h1 { margin: 0; font-size: 26px; white-space: nowrap; }
+.module-intro[data-intro-view="ruin"] .module-ledger { flex: 1; margin: 0; }
+@media(max-width:700px) {
+  .module-intro[data-intro-view="ruin"] h1 { display: none; }
+  .module-intro[data-intro-view="ruin"] .module-copy { display: block; }
+  .module-intro[data-intro-view="ruin"] .module-ledger { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .module-intro[data-intro-view="ruin"] .ledger-cell { display: block; padding: 8px 6px; }
+  .module-intro[data-intro-view="ruin"] .ledger-cell dd { margin-top: 5px; text-align: left; font-size: 12px; }
+}
 .module-intro > span {
   display: flex;
   align-items: center;
@@ -465,3 +478,13 @@ button:focus-visible {
   .ledger-cell, .ledger-cell + .ledger-cell { padding: 9px 0; }
   .ledger-cell + .ledger-cell::before { inset: 0 0 auto; width: auto; height: 1px; }
 }
+.ruin-nav-children{display:grid;gap:4px;margin:0 0 8px 26px;padding-left:14px;border-left:1px solid var(--line)}
+.ruin-nav-children[hidden]{display:none}
+.nav-disclosure{float:right;margin-left:6px;font-size:12px;color:var(--muted);transform:rotate(-90deg)}
+.nav-button[aria-expanded="true"] .nav-disclosure{transform:none}
+.ruin-nav-children button{border:0;background:transparent;color:var(--muted);text-align:left;padding:9px 10px;border-radius:var(--radius-control,9px);font:inherit;font-size:13px;cursor:pointer}
+.ruin-nav-children button[aria-current="page"]{color:var(--teal,var(--gold));background:color-mix(in srgb,var(--teal,var(--gold)) 12%,transparent)}
+.ruin-nav-children button:disabled{opacity:.45;cursor:default}
+.ruin-nav-children button:focus-visible{outline:2px solid var(--teal,var(--gold));outline-offset:2px}
+.nav{min-height:0;overflow-y:auto;flex-shrink:1}
+@media(max-width:1000px){.ruin-nav-children,.nav-disclosure{display:none}}

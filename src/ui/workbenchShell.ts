@@ -1,6 +1,7 @@
 import { mountBiographyWorkbench, type BiographyWorkbenchHandle } from './biographyWorkbench.ts';
 import { mountGenealogyWorkbench, type GenealogyWorkbenchHandle } from './genealogyWorkbench.ts';
-import { mountRuinWorkbench, type RuinWorkbenchHandle } from './ruinWorkbench.ts';
+import { mountRuinWorkbench, RUIN_PANELS, type RuinPanelId, type RuinWorkbenchHandle } from './ruinWorkbench.ts';
+import { canOpenRuinPanel } from '../core/ruinPanelAccess.ts';
 import { mountSettingsWorkbench, type SettingsWorkbenchHandle } from './settingsWorkbench.ts';
 import { mountTimelineWorkbench, type TimelineWorkbenchHandle } from './timelineWorkbench.ts';
 import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
@@ -50,6 +51,8 @@ export function mountWorkbenchShell(
     text: 'neutral',
   };
   let snapshot: WorkbenchUiSnapshot | null = null;
+  let ruinPanel: RuinPanelId = 'generation';
+  let ruinMenuExpanded = false;
   let disposed = false;
   const reads = new ViewRefreshGuard(() => client.contextRevision());
   let statusText = '等待工作台脚本';
@@ -75,9 +78,11 @@ export function mountWorkbenchShell(
   });
   const offReady = client.onReady(() => void refreshAll());
   const offContext = client.onContextChanged(() => {
-    reads.invalidate(); snapshot = null; statusText = '正在切换聊天资料'; updateChrome();
+    reads.invalidate(); snapshot = null; ruinMenuExpanded = false; statusText = '正在切换聊天资料'; updateChrome();
   });
   const offDataChanged = client.onDataChanged(detail => {
+    // 偏好更新不改变候选/归档计数；控制台自行读取，勿重挂整个子页。
+    if (detail.reason === 'butterfly-references') return;
     void refreshChangedViews(detail.views);
   });
   void refreshAll();
@@ -105,11 +110,11 @@ export function mountWorkbenchShell(
           <span class="rail-label">见证档案院</span>
           <nav class="nav" aria-label="工作台模块">
             ${WORKBENCH_VIEWS.map(view => `
-              <button class="nav-button" type="button" data-view="${view.id}" aria-current="${view.id === active ? 'page' : 'false'}" title="${view.label}">
+              <button class="nav-button" type="button" data-view="${view.id}" aria-current="${view.id === active ? 'page' : 'false'}" ${view.id === 'ruin' ? 'aria-expanded="false" aria-controls="ruin-nav-children"' : ''} title="${view.label}">
                 <span class="nav-icon" aria-hidden="true">${view.icon}</span>
-                <span class="nav-label">${view.label}</span>
+                <span class="nav-label">${view.label}${view.id === 'ruin' ? '<span class="nav-disclosure" aria-hidden="true">⌄</span>' : ''}</span>
                 <span class="nav-count" data-count="${view.id}"></span>
-              </button>`).join('')}
+              </button>${view.id === 'ruin' ? `<div class="ruin-nav-children" id="ruin-nav-children" data-ruin-children hidden>${RUIN_PANELS.map(panel => `<button type="button" data-ruin-child="${panel}" aria-current="${ruinPanel === panel ? 'page' : 'false'}" disabled>${{ generation: '墟境生成', tasks: '墟境任务', butterfly: '蝴蝶效应' }[panel]}</button>`).join('')}</div>` : ''}`).join('')}
           </nav>
           <div class="rail-ornament" aria-hidden="true">
             <svg viewBox="0 0 72 122" fill="none">
@@ -167,8 +172,16 @@ export function mountWorkbenchShell(
         </aside>
       </div>`;
     root.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button => {
-      button.addEventListener('click', () => navigate(normalizeWorkbenchView(button.dataset.view ?? '')));
+      button.addEventListener('click', () => {
+        const view = normalizeWorkbenchView(button.dataset.view ?? '');
+        if (view === 'ruin') ruinMenuExpanded = active !== 'ruin' || !ruinMenuExpanded;
+        navigate(view);
+      });
     });
+    root.querySelectorAll<HTMLButtonElement>('[data-ruin-child]').forEach(button => button.addEventListener('click', () => {
+      navigate('ruin');
+      (handles.get('ruin') as RuinWorkbenchHandle | undefined)?.selectPanel(button.dataset.ruinChild as RuinPanelId);
+    }));
     root.querySelector<HTMLButtonElement>('[data-action="refresh"]')?.addEventListener('click', () => void refresh());
     root.querySelector<HTMLButtonElement>('[data-action="close"]')?.addEventListener('click', close);
     updateChrome();
@@ -191,6 +204,7 @@ export function mountWorkbenchShell(
         handle = mountRuinWorkbench(target, client, {
           theme: appearance.mode,
           embedded: true,
+          onPanelChange: panel => { ruinPanel = panel; updateChrome(); resetWorkspaceScroll(); },
         });
       } else if (view.id === 'biography') {
         handle = mountBiographyWorkbench(target, client, { theme: appearance.mode, embedded: true });
@@ -207,6 +221,7 @@ export function mountWorkbenchShell(
 
   function navigate(view: WorkbenchViewId): void {
     active = normalizeWorkbenchView(view);
+    if (active !== 'ruin') ruinMenuExpanded = false;
     for (const button of Array.from(root.querySelectorAll<HTMLButtonElement>('[data-view]'))) {
       button.setAttribute('aria-current', button.dataset.view === active ? 'page' : 'false');
     }
@@ -247,7 +262,16 @@ export function mountWorkbenchShell(
   }
 
   function updateChrome(): void {
+    const ruinChildren = root.querySelector<HTMLElement>('[data-ruin-children]');
+    if (ruinChildren) ruinChildren.hidden = active !== 'ruin' || !ruinMenuExpanded;
+    root.querySelector('[data-view="ruin"]')?.setAttribute('aria-expanded', String(active === 'ruin' && ruinMenuExpanded));
+    root.querySelectorAll<HTMLButtonElement>('[data-ruin-child]').forEach(button => {
+      button.setAttribute('aria-current', button.dataset.ruinChild === ruinPanel ? 'page' : 'false');
+      button.disabled = !snapshot || !canOpenRuinPanel(snapshot.runtime, button.dataset.ruinChild as RuinPanelId);
+      button.title = button.disabled ? button.dataset.ruinChild === 'generation' ? '遣返现世后解锁' : '进入墟境后解锁' : '';
+    });
     const definition = WORKBENCH_VIEWS.find(view => view.id === active) ?? WORKBENCH_VIEWS[0];
+    root.querySelector<HTMLElement>('.module-intro')?.setAttribute('data-intro-view', active);
     const title = root.querySelector<HTMLElement>('[data-title]');
     const subtitle = root.querySelector<HTMLElement>('[data-subtitle]');
     const route = root.querySelector<HTMLElement>('[data-route]');

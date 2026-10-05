@@ -1,6 +1,6 @@
 ---
 id: eyon.roottrace.handoff
-version: 3
+version: 4
 consumer: script
 mode: assembly_contract
 output: assistant_message
@@ -44,7 +44,8 @@ output: assistant_message
 
 脚本使用正常 `generate()`，保留当前角色卡、世界书、酒馆预设、聊天历史和记忆插件。
 
-只通过本次请求的 `injects` 注入以下简短控制信息:
+通过脚本自有、绑定本次requestId的原生 `setExtensionPrompt` 通道临时注入以下简短控制信息。
+不依赖请求级injects或injectPrompts({once:true})覆盖宿主界面发起的正文生成；其他插件注入不动。
 
 【伊雍寻根溯源协作请求】
 玩家已经要求对“{{biography.target.name}}”进行寻根溯源。
@@ -65,7 +66,7 @@ output: assistant_message
 - `position: "in_chat"`
 - `depth: 0`
 - `should_scan: false`
-- 仅对本次请求有效。
+- 原生通道不会自行一次性消失；脚本在完成、取消/失败或会话失效时清除自己的注入键，重roll重新绑定同一有效作品，不能泄漏到其他聊天。
 
 # 五、流式输出
 
@@ -84,7 +85,7 @@ output: assistant_message
 4. 不对 `rootTrace` 进行Markdown转义、格式化、清洗、压缩或重排。
 5. 更新同一个AI消息。
 6. 触发该消息重新渲染，使现有传记美化生效。
-7. 从更新后的最终消息中解析 `[RootTrace]...[/RootTrace]` 并写入传记书库。
+7. 将已有校验记录标为committed并绑定该AI消息；权威数据来自已校验JSON及确定性rootTrace，不重新把正文模型的文本当事实源。
 
 最终AI楼层结构:
 
@@ -129,8 +130,8 @@ output: assistant_message
 
 # 九、会话与重试隔离
 
-- 待处理传记以 `chatId + userMessageId + requestId` 为唯一键。
-- 重roll生成新 `requestId`，旧请求不得替换新消息。
+- 待处理传记绑定角色卡/聊天、触发楼、原文哈希、swipe与requestId，不能跨会话复用。
+- 同一有效玩家触发楼的正文重roll/swipe复用已准备或已提交的传记及原requestId，只重新生成伊雍正文开场，不重复规划整篇传记。旧异步回调仍不得替换不匹配的新楼。
 - 切换聊天后，未完成请求暂停，不得写入新聊天。
 - 删除触发楼层后，对应待处理请求失效。
 - 消息替换完成后立即清除临时占位状态，但保留传记书库记录。

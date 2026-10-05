@@ -122,7 +122,8 @@ export function applyRuinActorPolicy(manifest: CastManifest | undefined, policy:
     if (!entry.identity.kinds.includes('person')) return entry;
     const person = { name: entry.identity.canonicalName, aliases: entry.identity.aliases };
     const use = ruinNameUse(direction, person);
-    const requested = policy.requestedSubjects.some(name => key(name) === key(person.name)) || use === 'subject';
+    const requested = policy.requestedSubjects.some(name => key(name) === key(person.name)) || use === 'subject'
+      || entry.reasons.includes('role-grounded-subject');
     const blocked = policy.blockedGenealogy.some(item => key(item.name) === key(person.name)
       || item.aliases.some(alias => key(alias) === key(person.name))
       || person.aliases.some(alias => key(alias) === key(item.name)));

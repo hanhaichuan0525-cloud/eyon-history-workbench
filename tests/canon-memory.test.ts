@@ -272,6 +272,39 @@ function branch(deltas: InterventionDelta[], headRevision = deltas.length): Cano
   } as unknown as CanonBranch;
 }
 
+test('赎出本人状态不随旧档案未命中或整条数量预算退场；失效与跨聊天不投递', () => {
+  const deltas = Array.from({ length: 8 }, (_, i) => delta({ deltaId: `d${i + 1}`, revision: i + 1,
+    entityIds: [`entity:person-${i + 1}`], subjectNames: [`人物${i + 1}`] }));
+  const fact = deltas[0]!.operations[0]!.current;
+  fact.predicate = 'historical_redemption'; fact.temporalScope = '神明纪元1年';
+  fact.statement = '二叶保持半岁形态离开原历史并抵达现世。';
+  const records = deltas.map(d => record({ runId: d.deltaId, deltaRef: d.deltaId, revision: d.revision,
+    title: d.deltaId, evolution: '完全无关的普通历史原文', keywords: ['旁人'] }));
+  const input = { records, branch: branch(deltas), matchText: '现在看窗外', trigger: 'before-generation', now: 100 };
+  const snapshot = buildCanonMemorySnapshot(input);
+  assert.equal(snapshot.entries.find(entry => entry.runId === 'd1')!.status, 'unmatched');
+  assert.match(snapshot.injectedText, /二叶保持半岁/u);
+  assert.match(snapshot.injectedText, /旧成年版本/u);
+  assert.match(snapshot.injectedText, /赎出前/u);
+  assert.match(snapshot.injectedText, /不在场/u);
+  const deletedArchive = buildCanonMemorySnapshot({ ...input, records: [] });
+  assert.match(deletedArchive.injectedText, /二叶保持半岁/u, '仅删除展示档案不撤销有效Canon');
+  for (const invalidate of [
+    (b: CanonBranch) => { b.deltas[0]!.status = 'reverted'; },
+    (b: CanonBranch) => { b.deltas[0]!.status = 'orphaned'; },
+    (b: CanonBranch) => { b.deltas[0]!.verified = false; },
+    (b: CanonBranch) => { b.revisions[0]!.status = 'reverted'; },
+    (b: CanonBranch) => { b.headRevision = 0; },
+    (b: CanonBranch) => { b.branchId = 'another-branch'; },
+  ]) {
+    const b = structuredClone(input.branch); invalidate(b);
+    assert.doesNotMatch(buildCanonMemorySnapshot({ ...input, branch: b }).injectedText, /<HISTORICAL_REDEMPTION_CURRENT>/u);
+  }
+  const anotherChat = branch([]);
+  anotherChat.chatId = 'other-chat';
+  assert.equal(buildCanonMemorySnapshot({ ...input, branch: anotherChat }).injectedText, '');
+});
+
 test('硬关键词：取 cascadeScope 专名与载体名，泛词与身份 id 前缀被剔除', () => {
   const hard = extractHardKeywords(
     delta({
@@ -476,7 +509,7 @@ test('无命中且无有效记录时注入为空（清除语义，幂等）', ()
   assert.match(unmatched.injectedText, /<CANON_MEMORY/u);
 });
 
-test('已选 Canon 记忆按 revision 降序完整注入，不再裁掉长演变或整条事实', () => {
+test('Canon 按整条记录数量限制，所选原文不截字，其他归档仍可再次召回', () => {
   const longEvolution = '尤娜'.repeat(200);
   const deltas = Array.from({ length: 12 }, (_, index) =>
     delta({ deltaId: `d${index + 1}`, revision: index + 1, subjectNames: ['尤娜'] }));
@@ -494,8 +527,11 @@ test('已选 Canon 记忆按 revision 降序完整注入，不再裁掉长演变
   });
   const injectedLines = snapshot.injectedText.split('\n').filter(line => line.startsWith('[R'));
   assert.ok(injectedLines.length >= 2);
-  assert.equal(injectedLines.length, 12);
-  assert.ok(injectedLines.every(line => line.includes(longEvolution)));
+  assert.equal(injectedLines.length, 6);
+  assert.equal(snapshot.counts.total, 12);
+  assert.ok(snapshot.entries.filter(entry => entry.status === 'resident' || entry.status === 'triggered')
+    .every(entry => entry.digest.includes(longEvolution)));
+  assert.ok(snapshot.injectedText.includes('本轮数量预算未投递'));
 });
 
 test('G-09 可见档案删除后仍以紧凑残片解释 active Canon；回滚后自动退出', () => {

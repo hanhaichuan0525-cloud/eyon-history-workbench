@@ -33,6 +33,7 @@ import {
   attachClaimPassages,
 } from './passages.ts';
 import { stableSha256 } from './sourceSnapshot.ts';
+import { resolveRoleReferences } from './roleReferences.ts';
 import { buildTaskPersonArtifacts } from './characterFacts.ts';
 import { buildQualifiedEvidenceView } from './qualification.ts';
 import {
@@ -127,6 +128,14 @@ export class UnifiedShadowRetrievalEngine {
     const castRequirementFrame = input.castRequirementQuery === undefined
       ? eventFrame
       : buildEventFrame(input.castRequirementQuery, this.index.catalog);
+    const roleReferences = resolveRoleReferences(input.castRequirementQuery ?? input.query,
+      this.index.catalog, this.index.sources.map(source => source.snapshot));
+    for (const id of roleReferences.required) {
+      if (!castRequirementFrame.directEntityIds.includes(id)) castRequirementFrame.directEntityIds.push(id);
+    }
+    for (const id of roleReferences.recommended) {
+      if (!eventFrame.directEntityIds.includes(id)) eventFrame.directEntityIds.push(id);
+    }
     for (const id of castRequirementFrame.directEntityIds) {
       if (!eventFrame.directEntityIds.includes(id)) eventFrame.directEntityIds.push(id);
     }
@@ -135,6 +144,9 @@ export class UnifiedShadowRetrievalEngine {
       requiredDirectEntityIds: castRequirementFrame.directEntityIds,
       actionQuery: input.castRequirementQuery,
     });
+    for (const entry of initialCastManifest.entries) {
+      if (roleReferences.required.includes(entry.entityId)) entry.reasons.push('role-grounded-subject');
+    }
     const requestedEras = [...new Set(eventFrame.temporalTerms.flatMap(extractEraNames))];
     const territorialNames = new Set(
       (input.territorialReferences ?? []).map(normalizeRetrievalText),
@@ -399,6 +411,7 @@ export class UnifiedShadowRetrievalEngine {
         })),
         rejectedPassages: passageAssembly.rejected,
         warnings: [
+          ...roleReferences.warnings,
           ...territorialWarnings,
           ...(passageAssembly.omittedAnchors.length > 0
             ? [`passage budget omitted desired anchors: ${passageAssembly.omittedAnchors.join(',')}`]
@@ -672,10 +685,11 @@ function queryFragments(value: string): string[] {
   const stripped = value.normalize('NFKC').toLocaleLowerCase('zh-CN')
     .replace(/(?:寻根溯源|溯源|进行|请|帮我|检索|查询|生成|寻找|历史资料|相关资料|当前世界)/gu, ' ');
   const coarse = stripped
-    .split(/[\s，,。；;：:、!?！？|/]+/u)
+    .split(/[\s，,。；;：:、!?！？|/→>—-]+/u)
     .map(term => term.trim())
     .filter(Boolean);
   const fragments = new Set<string>();
+  for (const match of stripped.matchAll(/[《「『“]([^》」』”]+)[》」』”]/gu)) addQueryFragment(fragments, match[1]);
   for (const segment of coarse) {
     addQueryFragment(fragments, segment);
     for (const part of segment.split(
@@ -713,6 +727,7 @@ const QUERY_FRAGMENT_STOPWORDS = new Set([
   '群像',
   '英雄群像',
   '有趣',
+  '趣闻',
   'by',
   'the',
   'exp',

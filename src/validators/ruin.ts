@@ -7,7 +7,6 @@ import {
   normalizeMvuLocation,
 } from '../core/ruinLocation.ts';
 import {
-  RUIN_PROSE_ACCEPTED_MAX,
   RUIN_PROSE_ACCEPTED_MIN,
   ruinProseExpansionGuidance,
 } from '../core/ruinProseContract.ts';
@@ -1162,7 +1161,7 @@ function localSelectedCharacterUsage(
 
 /**
  * 大纲候选的 shift 归一化：缺失或无效不再伪造为主导时期，
- * from === to 视为退化(起点终点同时期无转变可言),抛错走大纲 repair。
+ * 同时期可以持续；不为了字段差异制造额外灾难或转向。
  */
 function normalizeCandidateShift(
   value: unknown,
@@ -1175,7 +1174,7 @@ function normalizeCandidateShift(
   if (!from || !to) {
     throw new RuinValidationError(
       `Ruin candidate shift is missing or invalid: from=${JSON.stringify(source.from)}, to=${JSON.stringify(source.to)}. `
-      + `请填写 stable/transition/turbulent；主导时期 ${periodType} 可作为任一端点，但两个端点必须不同。`,
+      + `请填写 stable/transition/turbulent；主导时期 ${periodType} 可作为任一端点，起止状态允许相同。`,
       'SHIFT_INVALID',
     );
   }
@@ -1184,14 +1183,6 @@ function normalizeCandidateShift(
     to,
     explanation: textValue(source.explanation) || fallbackExplanation,
   };
-  if (shift.from === shift.to) {
-    throw new RuinValidationError(
-      `Ruin candidate shift is degenerate: from and to are both ${shift.from}. `
-      + 'shift.from 必须是该候选起点时期的稳定期/过渡期/动荡期，shift.to 是终点时期的时期状态，'
-      + '二者必须不同（如 稳定期→动荡期、过渡期→稳定期）；任一端点可以与主导时期 periodType 同值，不得为了过校验虚构转向。',
-      'SHIFT_SAME_PERIOD',
-    );
-  }
   return shift;
 }
 
@@ -1905,14 +1896,10 @@ function validateRuinCandidate(
   validateMaterialLabelsAreHidden(candidate, expected.material);
 
   const proseLength = chineseCharacterCount(candidate.historyProse);
-  // Keep a tolerant envelope around the 500-character target. Structural
-  // completeness matters more than retrying over a small length difference.
-  if (proseLength < RUIN_PROSE_ACCEPTED_MIN || proseLength > RUIN_PROSE_ACCEPTED_MAX) {
+  // 不截断完整史稿，也不因超出写作目标重新请求。明显短缺仍保留原完整性检查。
+  if (proseLength < RUIN_PROSE_ACCEPTED_MIN) {
     throw new RuinValidationError(
-      proseLength < RUIN_PROSE_ACCEPTED_MIN
-        ? ruinProseExpansionGuidance(proseLength)
-        : `Ruin history prose is too long: ${proseLength} chars, max ${RUIN_PROSE_ACCEPTED_MAX}. `
-          + '压缩重复描写与次要细节，保留因果主线与在场人物动作。',
+      ruinProseExpansionGuidance(proseLength),
       'PROSE_LENGTH_INVALID',
     );
   }

@@ -42,12 +42,12 @@ export const WORKBENCH_VIEWS: WorkbenchViewDefinition[] = [
   },
   {
     id: 'ruin',
-    label: '墟境探查',
-    shortLabel: '探查',
+    label: '墟境探索',
+    shortLabel: '探索',
     icon: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 19h14M7 19V9l5-4 5 4v10M9.5 19v-6h5v6M4 9h16"/></svg>',
     kicker: 'RUIN EXPEDITION',
     context: '历史候选与四阶段入口',
-    title: '墟境探查',
+    title: '墟境探索',
     subtitle: '从史料、人物与地点中推演可进入的历史现场，并沿缘起、经过、高潮与结果选择落点。',
   },
   {

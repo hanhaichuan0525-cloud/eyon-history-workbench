@@ -47,6 +47,8 @@ const FIELD_NAMES = new Set([
   '身份', '职务', '别名', '又称', '旧称', '背景', '简介', '能力', '关系',
   '时间', '内容', '备注', '活动地点', '活跃于', '地点', '位置', '所在地',
   '所属', '所属组织', '所属势力', '归属', '家族', '神系',
+  '趣闻', '主要城市', '概览', '概述', '核心策略', '核心业务与特色', '对外关系',
+  '文化细节', '基本资讯', '标识', '定位', '宗旨', '统治者', '行事风格', '主要威胁', '文化符号',
 ]);
 
 const GENERIC_TITLES = new Set([
@@ -337,7 +339,7 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
       relations.push({ subject: titleName, predicate: 'belongs_to', object: value, status: 'explicit', snapshotId: snapshot.snapshotId });
     }
     if (/^(?:地点|位置|所在地|活动地点|活跃于)$/u.test(label) && titleName && value) {
-      const places = value.split(/\s*(?:—|->|>|\/|\\)\s*/u).map(item => item.trim()).filter(Boolean);
+      const places = value.split(/\s*(?:—|->|>|\/|\\|-)\s*/u).map(item => item.trim()).filter(Boolean);
       for (const place of places) entities.push(entitySeed(snapshot, place, 'place', true));
       if (places.length) relations.push({ subject: titleName, predicate: 'active_in', object: places.at(-1)!, status: 'explicit', snapshotId: snapshot.snapshotId });
       for (let index = 1; index < places.length; index += 1) {

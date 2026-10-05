@@ -3,7 +3,6 @@ import { isTaskBusy } from '../runtime/taskStatus.ts';
 import { preserveDomState, ViewRefreshGuard } from './viewRefresh.ts';
 import type { RuinRuntimeSnapshot, RuinTaskSnapshot } from '../adapters/host.ts';
 import {
-  createRuinMaterials,
   waveForCandidateCount,
 } from '../runtime/ruinDice.ts';
 import type {
@@ -26,6 +25,11 @@ import { selectAddedRuinReferences } from './ruinReferenceSelection.ts';
 import type { RuinTaskReviewSnapshot } from '../workflows/ruinTask.ts';
 import type { RuinTaskInterpretation, RuinTaskScale } from '../schemas/ruinTask.ts';
 import ruinCss from './ruinWorkbench.css?raw';
+import creativeCss from './creativeWorkbench.css?raw';
+import { mountButterflyWorkbench } from './butterflyWorkbench.ts';
+import { createReferencedRuinMaterials, defaultRuinReferences, randomRuinReferences, RUIN_STYLE_OPTIONS, ruinStyleMeaning, type RuinCreativeReferences } from '../core/creativeReferences.ts';
+import type { RuinPlace } from '../core/ruinGeography.ts';
+import { availableRuinPanel, canOpenRuinPanel } from '../core/ruinPanelAccess.ts';
 import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
 import { installScrollPan } from './scrollPan.ts';
 import {
@@ -33,7 +37,10 @@ import {
   fullRuinStageIntroduction,
 } from './ruinPresentation.ts';
 
+export const RUIN_PANELS = ['generation', 'tasks', 'butterfly'] as const;
+export type RuinPanelId = typeof RUIN_PANELS[number];
 export interface RuinWorkbenchHandle {
+  selectPanel(panel: RuinPanelId): void;
   refresh(): Promise<void>;
   setTheme(theme: 'dark' | 'light'): void;
   setAppearance(appearance: WorkbenchAppearance): void;
@@ -43,9 +50,15 @@ export interface RuinWorkbenchHandle {
 export interface RuinWorkbenchOptions {
   theme?: 'dark' | 'light';
   embedded?: boolean;
+  onPanelChange?: (panel: RuinPanelId) => void;
 }
 
 interface RuinState {
+  panel: RuinPanelId;
+  generationView: 'compose' | 'read';
+  geography: RuinPlace[];
+  geoMode: 'select' | 'search' | 'custom';
+  geoSearch: string;
   records: RuinCandidateRecord[];
   characters: RuinSelectedCharacter[];
   biographies: RuinBiographyReference[];
@@ -75,6 +88,7 @@ interface RuinDraft {
   supplementaryDirection: string;
   autoGenealogy: boolean;
   candidateCount: 3 | 4 | 5;
+  creativeReferences: RuinCreativeReferences;
 }
 
 interface DateDraft {
@@ -100,17 +114,34 @@ export function mountRuinWorkbench(
     event.stopPropagation();
   });
   container.replaceChildren(host);
+  const butterflyContainer = document.createElement('div');
+  const butterfly = mountButterflyWorkbench(butterflyContainer, client);
   let theme = options.theme ?? 'light';
   const reads = new ViewRefreshGuard(() => client.contextRevision());
   const mutations = new ViewRefreshGuard(() => client.contextRevision());
   const runtimeReads = new ViewRefreshGuard(() => client.contextRevision());
   let configuredLoaded = client.isReady();
   let draftEdited = false;
+  let composing = false, deferredRender = false, awaitingNewRecord = false;
+  const generationScrollPositions = new Map<RuinState['generationView'], number>();
+  const recordReads = new ViewRefreshGuard(() => client.contextRevision());
+  const ownsComposition = (event: Event) => {
+    const source = event.composedPath()[0];
+    return source instanceof Element && source.getRootNode() === root;
+  };
+  root.addEventListener('compositionstart', event => { if (ownsComposition(event)) composing = true; });
+  root.addEventListener('compositionend', event => {
+    if (!ownsComposition(event)) return;
+    composing = false;
+    // 最终 input 事件先写入草稿；后台刷新不能拆下正在组字的输入框。
+    setTimeout(() => { if (deferredRender) { deferredRender = false; render(); } }, 0);
+  });
 
   const configured = client.isReady()
     ? client.facade().getSettings().ruinDraft
     : null;
   const state: RuinState = {
+    panel: 'generation', generationView: 'compose', geography: [], geoMode: 'select', geoSearch: '',
     records: [],
     characters: [],
     biographies: [],
@@ -129,6 +160,7 @@ export function mountRuinWorkbench(
       supplementaryDirection: '',
       autoGenealogy: false,
       candidateCount: 3,
+      creativeReferences: defaultRuinReferences(),
     },
     busy: false,
     entering: false,
@@ -145,14 +177,16 @@ export function mountRuinWorkbench(
   const offStatus = client.onStatus(detail => {
     if (detail.taskType && detail.taskType !== 'ruin') return;
     if (detail.phase === 'cancelled') {
-      mutations.invalidate(); reads.invalidate(); runtimeReads.invalidate();
+      mutations.invalidate(); reads.invalidate(); recordReads.invalidate(); runtimeReads.invalidate();
       state.entering = false; state.taskCreating = false;
     }
+    const changed = JSON.stringify([state.status?.status, state.status?.detail, state.status?.progress, state.busy])
+      !== JSON.stringify([detail.status, detail.detail, detail.progress, isTaskBusy(detail)]);
     state.status = detail;
     state.busy = isTaskBusy(detail);
     if (detail.phase === 'error') state.error = detail.detail;
-    if (!detail.request) render();
-    if (detail.status === 'candidate_ready' || detail.status === 'candidate_failed') void syncRecords();
+    if (changed) render();
+    if (['ruin_outlines_ready', 'generating_candidate', 'candidate_ready', 'candidate_failed'].includes(detail.status)) void syncRecords(detail.recordKey);
     if (detail.status === 'ready' || detail.status === 'ruin_task_draft_restored') {
       void refresh();
     }
@@ -160,13 +194,18 @@ export function mountRuinWorkbench(
   const offReady = client.onReady(() => void refresh());
   const offContext = client.onContextChanged(() => {
     mutations.invalidate();
-    reads.invalidate(); runtimeReads.invalidate();
+    reads.invalidate(); recordReads.invalidate(); runtimeReads.invalidate();
+    awaitingNewRecord = false; composing = false; deferredRender = false;
     state.records = []; state.characters = []; state.biographies = [];
     state.runtime = emptyRuinRuntime(); state.taskReview = null;
     state.activeRecordKey = ''; state.activeCandidateId = ''; state.selectedNodeId = '';
     state.selectedCharacterIds.clear(); state.busy = false; state.entering = false; state.taskCreating = false;
-    state.status = null; state.error = ''; configuredLoaded = true; draftEdited = false;
-    state.draft = { era: '复兴纪元', start: { ...EMPTY_DATE }, end: { ...EMPTY_DATE }, location: '', supplementaryDirection: '', autoGenealogy: false, candidateCount: 3 };
+    state.status = null; state.error = ''; configuredLoaded = false; draftEdited = false;
+    composing = false; deferredRender = false;
+    generationScrollPositions.clear();
+    state.panel = 'generation'; state.generationView = 'compose'; state.geography = []; state.geoSearch = ''; state.geoMode = 'select';
+    options.onPanelChange?.('generation');
+    state.draft = { era: '复兴纪元', start: { ...EMPTY_DATE }, end: { ...EMPTY_DATE }, location: '', supplementaryDirection: '', autoGenealogy: false, candidateCount: 3, creativeReferences: defaultRuinReferences() };
     state.taskDirection = '';
     render();
   });
@@ -178,13 +217,55 @@ export function mountRuinWorkbench(
   });
 
   function persistCharacterSelection(): void {
-    if (!client.isReady()) return;
-    const draft = client.facade().getSettings().ruinDraft;
-    if (draft) client.facade().setRuinDraft({
-      ...draft,
-      selectedCharacters: state.characters.filter(character =>
-        state.selectedCharacterIds.has(ruinCharacterReferenceIdentity(character))),
-    });
+    persistDraft();
+  }
+  function persistDraft(): void {
+    if (!client.isReady() || !state.draft.location.trim()) return;
+    const previousError = state.error;
+    const input = buildInput(state);
+    state.error = previousError;
+    if (input) client.facade().setRuinDraft(input);
+  }
+  function selectPanel(panel: RuinPanelId): void {
+    if (!canOpenRuinPanel(state.runtime, panel)) return;
+    state.panel = panel;
+    render(); options.onPanelChange?.(panel);
+    if (panel === 'butterfly') void butterfly.refresh();
+  }
+  function generationScroller(): HTMLElement | null {
+    let current: Node | null = host;
+    while (current) {
+      if (current instanceof HTMLElement && /auto|scroll/u.test(getComputedStyle(current).overflowY)
+        && current.scrollHeight > current.clientHeight) return current;
+      current = current.parentNode ?? (current instanceof ShadowRoot ? current.host : null);
+    }
+    return null;
+  }
+  function selectGenerationView(view: RuinState['generationView']): void {
+    const tabs = root.querySelector<HTMLElement>('.generation-view-tabs');
+    const scroller = tabs && getComputedStyle(tabs).display !== 'none' ? generationScroller() : null;
+    if (scroller) generationScrollPositions.set(state.generationView, scroller.scrollTop);
+    state.generationView = view;
+    // 两张卡片留在原位，切页不重建输入框、不丢阅览位置。
+    root.querySelector('[data-generation-workspace]')?.setAttribute('data-view', view);
+    root.querySelectorAll<HTMLButtonElement>('[data-generation-view]').forEach(tab =>
+      tab.setAttribute('aria-pressed', String(tab.dataset.generationView === view)));
+    if (scroller) scroller.scrollTop = generationScrollPositions.get(view) ?? 0;
+  }
+  function selectPlace(id: string): void {
+    const place = state.geography.find(item => item.id === id);
+    if (id && !place) return;
+    draftEdited = true; state.draft.location = place?.path ?? ''; state.geoSearch = '';
+    persistDraft(); render();
+  }
+  function updateGeoResults(): void {
+    const results = root.querySelector<HTMLElement>('[data-geo-results]');
+    if (!results || composing) return;
+    results.innerHTML = renderGeoResults(state);
+    bindGeoResults();
+  }
+  function bindGeoResults(): void {
+    root.querySelectorAll<HTMLButtonElement>('[data-geo-result]').forEach(button => button.addEventListener('click', () => selectPlace(button.dataset.geoResult ?? '')));
   }
   function operationIsCurrent(): () => boolean {
     const current = mutations.begin();
@@ -217,6 +298,7 @@ export function mountRuinWorkbench(
       return;
     }
     const current = reads.begin();
+    const recordsCurrent = recordReads.begin();
     runtimeReads.invalidate();
     if (!configuredLoaded) {
       const draft = client.facade().getSettings().ruinDraft;
@@ -229,20 +311,22 @@ export function mountRuinWorkbench(
     state.error = '';
     render();
     try {
-      const [records, references, biographies, runtime, taskReview] = await Promise.all([
+      const [records, references, biographies, runtime, taskReview, geography] = await Promise.all([
         client.facade().listRuins(),
         client.listRuinCharacterReferences(),
         client.listRuinBiographyReferences(),
         client.getRuinRuntimeSnapshot(),
         client.getRuinTaskReview(),
+        client.facade().getRuinGeography(),
       ]);
       if (!current()) return;
       runtimeReads.invalidate();
-      state.records = [...records].sort((left, right) =>
-        right.createdAt - left.createdAt);
+      if (recordsCurrent()) state.records = [...records].sort((left, right) => right.createdAt - left.createdAt);
       state.characters = references;
       state.biographies = biographies;
       state.runtime = runtime;
+      state.geography = geography;
+      reconcilePanelAccess();
       if (!(state.taskReview?.phase === 'review' && taskReview?.phase === 'review' && state.taskReview.runId === taskReview.runId)) state.taskReview = taskReview;
       // 普通刷新只读取候选池，不能把玩家关闭的旧引用再次勾回。
       if (!state.records.some(item => item.key === state.activeRecordKey)) {
@@ -272,15 +356,16 @@ export function mountRuinWorkbench(
       ]);
       if (!current()) return;
       state.runtime = runtime; state.taskReview = review;
+      reconcilePanelAccess();
       render();
     } catch {
       // 完整刷新会报告持久错误；状态事件后的轻量刷新保持安静。
     }
   }
 
-  async function syncRecords(): Promise<void> {
+  async function syncRecords(preferredRecordKey?: string): Promise<void> {
     if (state.disposed || !client.isReady()) return;
-    const current = reads.begin();
+    const current = recordReads.begin();
     try {
       const records = await client.facade().listRuins();
       if (!current()) return;
@@ -288,6 +373,11 @@ export function mountRuinWorkbench(
         right.createdAt - left.createdAt);
       // 增量同步只更新资料，不夺走用户当前正在阅读的旧记录。
       // 新任务完成后 generate() 会显式切到新记录；生成途中浏览选择始终归 UI 所有。
+      // 玩家点击新生成后，大纲落库立即切入一次；其后增量同步不抢走手动浏览选择。
+      if (awaitingNewRecord && preferredRecordKey && state.records.some(item => item.key === preferredRecordKey)) {
+        state.activeRecordKey = preferredRecordKey; state.activeCandidateId = ''; state.selectedNodeId = '';
+        awaitingNewRecord = false;
+      }
       if (!state.records.some(item => item.key === state.activeRecordKey)) {
         state.activeRecordKey = state.records[0]?.key ?? '';
       }
@@ -308,6 +398,7 @@ export function mountRuinWorkbench(
    * 引用人物候选池（state.characters）保留——它们只是候选，不自动勾选。
    */
   function resetTask(): void {
+    if (!canOpenRuinPanel(state.runtime, 'generation')) return;
     draftEdited = true;
     state.draft = {
       era: '复兴纪元',
@@ -317,8 +408,11 @@ export function mountRuinWorkbench(
       supplementaryDirection: '',
       autoGenealogy: false,
       candidateCount: 3,
+      creativeReferences: defaultRuinReferences(),
     };
     state.selectedCharacterIds.clear();
+    state.geoSearch = ''; state.geoMode = 'select';
+    state.generationView = 'compose';
     state.error = '';
     state.status = null;
     if (client.isReady()) {
@@ -328,6 +422,7 @@ export function mountRuinWorkbench(
   }
 
   async function generate(): Promise<void> {
+    if (!canOpenRuinPanel(state.runtime, 'generation')) return;
     if (state.busy || state.entering) return;
     state.error = '';
     const input = buildInput(state);
@@ -336,6 +431,8 @@ export function mountRuinWorkbench(
       return;
     }
     state.busy = true;
+    selectGenerationView('read');
+    awaitingNewRecord = true;
     reads.invalidate();
     const current = operationIsCurrent();
     state.status = {
@@ -348,13 +445,16 @@ export function mountRuinWorkbench(
       const record = await client.facade().generateRuin(input);
       if (!current()) return;
       reads.invalidate();
+      recordReads.invalidate();
       state.records = [
         record,
         ...state.records.filter(item => item.key !== record.key),
       ];
-      state.activeRecordKey = record.key;
-      state.activeCandidateId = record.result.candidates[0]?.id ?? '';
-      state.selectedNodeId = '';
+      if (awaitingNewRecord) {
+        state.activeRecordKey = record.key;
+        state.activeCandidateId = record.result.candidates[0]?.id ?? '';
+        state.selectedNodeId = '';
+      }
       const ready = record.result.candidates.filter(candidate => ruinCandidateState(record, candidate.id).status === 'ready').length;
       state.status = { status: 'ready', detail: `候选史稿已完成 ${ready}/${record.result.candidates.length}${ready < record.result.candidates.length ? '，其余可单独重试' : '，可以比较后选择'}` };
     } catch (error) {
@@ -362,11 +462,12 @@ export function mountRuinWorkbench(
       state.error = '墟境生成未完成，技术详情已保存到设置中的错误日志。';
       state.status = { status: 'failed', detail: state.error };
     } finally {
-      if (current()) { state.busy = false; render(); }
+      if (current()) { state.busy = false; awaitingNewRecord = false; render(); }
     }
   }
 
   async function enter(): Promise<void> {
+    if (!canOpenRuinPanel(state.runtime, 'generation')) return;
     let record = activeRecord();
     let candidate = activeCandidate(record);
     let node = selectedNode(candidate);
@@ -439,6 +540,7 @@ export function mountRuinWorkbench(
   }
 
   async function createRuinTaskDraft(): Promise<void> {
+    if (!canOpenRuinPanel(state.runtime, 'tasks')) return;
     if (state.taskCreating || state.busy || state.entering) return;
     const current = operationIsCurrent();
     const direction = state.taskDirection.trim();
@@ -467,6 +569,7 @@ export function mountRuinWorkbench(
   }
 
   async function confirmRuinTaskDraft(): Promise<void> {
+    if (!canOpenRuinPanel(state.runtime, 'tasks')) return;
     if (state.taskCreating || !state.taskReview || state.taskReview.phase !== 'review') return;
     const current = operationIsCurrent();
     reads.invalidate(); runtimeReads.invalidate();
@@ -490,6 +593,7 @@ export function mountRuinWorkbench(
   }
 
   async function retryCandidate(): Promise<void> {
+    if (!canOpenRuinPanel(state.runtime, 'generation')) return;
     const record = activeRecord();
     const candidate = activeCandidate(record);
     if (!record || !candidate || state.busy || state.entering) return;
@@ -518,8 +622,19 @@ export function mountRuinWorkbench(
     }
   }
 
+  function reconcilePanelAccess(): void {
+    const next = availableRuinPanel(state.runtime, state.panel);
+    if (next === state.panel) return;
+    state.panel = next;
+    options.onPanelChange?.(next);
+  }
+
   function render(): void {
     if (state.disposed) return;
+    if (composing) { deferredRender = true; return; }
+    reconcilePanelAccess();
+    // 控制台自管其状态。后台刷新不能拆下同一个控制台节点，打断正在输入或拖动的手势。
+    if (state.panel === 'butterfly' && root.querySelector<HTMLElement>('[data-butterfly-panel]')?.hidden === false) return;
     const restore = preserveDomState(root);
     const record = activeRecord();
     const candidate = activeCandidate(record);
@@ -528,56 +643,56 @@ export function mountRuinWorkbench(
     const scrollLeft = previousTimeline?.scrollLeft ?? 0;
 
     root.innerHTML = `
-      <style>${ruinCss}</style>
-      <main class="ruin-app" data-theme="${theme}">
-        ${options.embedded ? '' : renderWorkingState(state)}
-        <header class="ruin-page-head">
-          <div class="ruin-page-copy">
-            <p class="ruin-eyebrow">RUIN CARTOGRAPHY · 07</p>
-            <h1>墟境候选与四阶段入口</h1>
-            <p>先定史料边界，再审阅候选因果。界面只保留一个主任务：选择值得进入的历史节点。</p>
-          </div>
-          <div class="ruin-stepper" aria-label="墟境生成流程">
-            ${renderRuinSteps(record, node)}
-          </div>
-        </header>
-        <div class="generator-layout">
-          ${renderForm(state)}
-          <section class="timeline-panel">
-            <div class="history-canvas-tools">
-              ${renderRecordSelector(state.records, state.activeRecordKey)}
-              <button type="button" class="icon-button" data-refresh title="重新读取当前资料">↻</button>
-            </div>
-            ${record && candidate
-              ? renderCandidates(record, candidate, node, state)
-              : renderEmptyState(state.busy)}
-          </section>
-        </div>
-        ${renderRuinTaskModule(state)}
+      <style>${ruinCss}\n${creativeCss}</style>
+      <main class="ruin-app ${options.embedded ? 'ruin-embedded' : ''}" data-theme="${theme}">
+        <nav class="ruin-subtabs ${options.embedded ? 'embedded-subtabs' : ''}" aria-label="墟境探索子模块">
+          ${RUIN_PANELS.map(panel => `<button type="button" data-ruin-panel="${panel}" aria-current="${state.panel === panel ? 'page' : 'false'}" ${!canOpenRuinPanel(state.runtime, panel) ? `disabled title="${panel === 'generation' ? '遣返现世后解锁' : '进入墟境后解锁'}"` : ''}>${{ generation: '墟境生成', tasks: '墟境任务', butterfly: '蝴蝶效应' }[panel]}</button>`).join('')}
+        </nav>
+        <section class="ruin-subpanel" ${state.panel !== 'generation' ? 'hidden' : ''}>
+        ${canOpenRuinPanel(state.runtime, 'generation')
+          ? renderGenerationWorkspace(state, record, candidate, node)
+          : `<div class="ruin-panel-lock" role="status"><strong>墟境生成已锁定</strong><p>当前仍在墟境内。请在蝴蝶效应工作台遣返现世，再开启新的历史。</p></div>`}
+        </section>
+        <section class="ruin-subpanel" ${state.panel !== 'tasks' ? 'hidden' : ''}>${renderRuinTaskModule(state)}</section>
+        <section class="ruin-subpanel" data-butterfly-panel ${state.panel !== 'butterfly' ? 'hidden' : ''}></section>
       </main>`;
+    root.querySelector('[data-butterfly-panel]')?.append(butterflyContainer);
     bind();
     restore();
     const timeline = root.querySelector<HTMLElement>('[data-timeline]');
     if (timeline) timeline.scrollLeft = scrollLeft;
   }
 
-  function renderRuinSteps(record: RuinCandidateRecord | null, node: RuinNode | null): string {
-    const steps = [
-      ['01', '范围设定', '纪元、地点与跨度', Boolean(state.draft.location.trim())],
-      ['02', '史料锚点', '人物与传记参照', state.characters.length > 0 || state.biographies.length > 0],
-      ['03', '候选审阅', '因果与正文核验', Boolean(record)],
-      ['04', '节点进入', '选择具体时刻', Boolean(node)],
-    ] as const;
-    const activeIndex = node ? 3 : record ? 2 : state.draft.location.trim() ? 1 : 0;
-    return steps.map(([number, title, detail, completed], index) => `
-      <div class="ruin-step ${index === activeIndex ? 'is-active' : ''} ${completed ? 'is-complete' : ''}">
-        <span class="ruin-step-number">${number}</span>
-        <strong>${title}</strong>
-        <span>${detail}</span>
-      </div>`).join('');
-  }
-
   function bind(): void {
+    root.querySelectorAll<HTMLButtonElement>('[data-generation-view]').forEach(button => button.addEventListener('click', () => {
+      selectGenerationView(button.dataset.generationView as RuinState['generationView']);
+    }));
+    root.querySelectorAll<HTMLButtonElement>('[data-ruin-panel]').forEach(button => button.addEventListener('click', () => selectPanel(button.dataset.ruinPanel as RuinPanelId)));
+    root.querySelectorAll<HTMLSelectElement>('[data-ruin-style]').forEach(select => select.addEventListener('change', () => {
+      const key = select.dataset.ruinStyle as 'telling' | 'pace' | 'mood';
+      Object.assign(state.draft.creativeReferences, { [key]: select.value });
+      const help = root.querySelector<HTMLElement>(`[data-style-help="${key}"]`);
+      if (help) help.textContent = ruinStyleMeaning(key, select.value);
+      persistDraft();
+    }));
+    root.querySelectorAll<HTMLSelectElement>('[data-period-index]').forEach(select => select.addEventListener('change', () => {
+      state.draft.creativeReferences.periods[Number(select.dataset.periodIndex)] = select.value as RuinCandidate['periodType'];
+      persistDraft();
+    }));
+    root.querySelector('[data-random-style]')?.addEventListener('click', () => {
+      draftEdited = true; state.draft.creativeReferences = randomRuinReferences(state.draft.candidateCount); persistDraft(); render();
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-geo-mode]').forEach(button => button.addEventListener('click', () => {
+      state.geoMode = button.dataset.geoMode as RuinState['geoMode']; render();
+    }));
+    const search = root.querySelector<HTMLInputElement>('[data-geo-search]');
+    search?.addEventListener('input', () => { state.geoSearch = search.value; updateGeoResults(); });
+    search?.addEventListener('compositionend', () => { state.geoSearch = search.value; setTimeout(updateGeoResults, 0); });
+    root.querySelectorAll<HTMLSelectElement>('[data-geo-level]').forEach(select => select.addEventListener('change', () => selectPlace(select.value)));
+    root.querySelectorAll<HTMLButtonElement>('[data-geo-ancestor]').forEach(button => button.addEventListener('click', () => selectPlace(button.dataset.geoAncestor ?? '')));
+    bindGeoResults();
+    root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('[data-direction], [data-location], [data-date], [data-era], [data-custom-era], [data-auto-genealogy]')
+      .forEach(input => input.addEventListener('change', () => persistDraft()));
     root.querySelectorAll('input, textarea, select').forEach(input => input.addEventListener('input', () => { draftEdited = true; }));
     root.querySelector<HTMLInputElement>('[data-auto-genealogy]')
       ?.addEventListener('change', event => {
@@ -620,6 +735,8 @@ export function mountRuinWorkbench(
     root.querySelectorAll<HTMLButtonElement>('[data-count]').forEach(button => {
       button.addEventListener('click', () => {
         state.draft.candidateCount = Number(button.dataset.count) as 3 | 4 | 5;
+        while (state.draft.creativeReferences.periods.length < state.draft.candidateCount) state.draft.creativeReferences.periods.push('stable');
+        persistDraft();
         render();
       });
     });
@@ -763,26 +880,30 @@ export function mountRuinWorkbench(
   void refresh();
 
   return {
+    selectPanel,
     refresh,
     setTheme(nextTheme) {
       theme = nextTheme;
       root.querySelector<HTMLElement>('.ruin-app')
         ?.setAttribute('data-theme', nextTheme);
+      butterfly.setAppearance({ mode: nextTheme, accent: 'jade', text: 'neutral' });
     },
     setAppearance(appearance) {
       theme = appearance.mode;
       applyAppearance(host, appearance);
-      root.querySelector<HTMLElement>('.workbench')
+      root.querySelector<HTMLElement>('.ruin-app')
         ?.setAttribute('data-theme', appearance.mode);
+      butterfly.setAppearance(appearance);
     },
     dispose() {
       mutations.dispose();
       state.disposed = true;
-      reads.dispose(); runtimeReads.dispose(); offContext();
+      reads.dispose(); recordReads.dispose(); runtimeReads.dispose(); offContext();
       stopScrollPan();
       offStatus();
       offReady();
       offReferences();
+      butterfly.dispose();
       container.replaceChildren();
     },
   };
@@ -966,11 +1087,40 @@ function recordLabel(record: RuinCandidateRecord): string {
   return `${generating ? '生成中 · ' : ''}${created} · ${compact}`;
 }
 
+function renderGenerationWorkspace(
+  state: RuinState,
+  record: RuinCandidateRecord | null,
+  candidate: RuinCandidate | null,
+  node: RuinNode | null,
+): string {
+  return `<div class="generation-workspace" data-generation-workspace data-view="${state.generationView}">
+    <nav class="generation-view-tabs" aria-label="编排与阅览">
+      <button type="button" data-generation-view="compose" aria-pressed="${state.generationView === 'compose'}" aria-controls="ruin-compose-card">编排历史</button>
+      <button type="button" data-generation-view="read" aria-pressed="${state.generationView === 'read'}" aria-controls="ruin-read-card">阅览史稿</button>
+    </nav>
+    <div class="generator-layout">
+      ${renderForm(state)}
+      <section class="timeline-panel generation-reader" id="ruin-read-card" aria-label="阅览史稿">
+        <header class="generation-card-heading"><span>READ</span><h2>阅览史稿</h2><small>${record ? `${record.result.candidates.filter(item => ruinCandidateState(record, item.id).status === 'ready').length}/${record.result.candidates.length} 篇就绪` : '等待编织'}</small></header>
+        <div data-generation-status aria-live="polite">${renderWorkingState(state)}</div>
+        <div class="history-canvas-tools">
+          ${renderRecordSelector(state.records, state.activeRecordKey)}
+          <button type="button" class="icon-button" data-refresh title="重新读取当前资料" aria-label="刷新史稿">↻</button>
+        </div>
+        ${record && candidate ? renderCandidates(record, candidate, node, state) : renderEmptyState(state.busy)}
+      </section>
+    </div>
+  </div>`;
+}
+
 function renderForm(state: RuinState): string {
   return `
-    <section class="section form-section">
-      <header class="parameter-heading"><span>勘录条件</span></header>
-      <div class="section-body form-stack">
+    <section class="section form-section ruin-composer" id="ruin-compose-card" aria-label="编排一段历史">
+      <header class="generation-card-heading"><span>COMPOSE</span><h2>编排历史</h2></header>
+      <div class="section-body composer-grid">
+        <section class="composer-card scope-card">
+        <header class="composer-heading"><span>01</span><h3>历史舞台</h3></header>
+        <div class="scope-fields">
         <label class="field">
           <strong>所属纪元</strong>
           <select data-era ${state.busy ? 'disabled' : ''}>
@@ -986,21 +1136,34 @@ function renderForm(state: RuinState): string {
               <input data-custom-era value="${escapeAttribute(state.draft.era)}"
                 placeholder="例如：星辉历"
                 ${state.busy ? 'disabled' : ''}>
-              <span class="field-note">必须与当前角色卡世界书中的纪年名称完全一致；系统会精确检索并锁定对应条目。</span>
+              <span class="field-note">使用世界书中的纪年名称。</span>
             </label>`
           : ''}
-        <div class="date-range-grid">
-          ${renderDateGroup('start', '起始时间（均可选）', state.draft.start, state.busy)}
-          ${renderDateGroup('end', '结束时间（均可选）', state.draft.end, state.busy)}
-        </div>
-        <label class="field ${state.error === '必须填写地点，才能生成墟境' ? 'invalid' : ''}">
+        <div class="field geography-field ${state.error === '必须填写地点，才能生成墟境' ? 'invalid' : ''}">
           <strong>地点范围（必填）</strong>
-          <input data-location value="${escapeAttribute(state.draft.location)}"
+          ${renderGeographyPicker(state)}
+          ${state.geoMode === 'custom' || !state.geography.length ? `<input data-location value="${escapeAttribute(state.draft.location)}"
+            aria-label="地点范围，可自由修改"
             placeholder="输入区域、城市、建筑或前文出现的小地点"
-            ${state.busy ? 'disabled' : ''}>
-          <span class="field-note">优先检索世界书；未收录时读取可见正文中的地点资料，也允许手动补充。</span>
+            ${state.busy ? 'disabled' : ''}>` : state.geoMode === 'select' && state.draft.location ? '' : `<p class="geo-current-path">${state.draft.location ? escapeHtml(state.draft.location.split('-').join(' › ')) : '尚未选择地点'}</p>`}
+          <span class="field-note">可停在任意地点层级。</span>
           <span class="field-error">必须填写地点，才能检索并生成墟境。</span>
-        </label>
+        </div>
+        <div class="composer-dates">
+          <div class="date-range-heading"><strong>时间范围（可选）</strong><span>留空由史料确定</span></div>
+          <div class="date-range-grid">
+            ${renderDateGroup('start', '起始', state.draft.start, state.busy)}
+            ${renderDateGroup('end', '结束', state.draft.end, state.busy)}
+          </div>
+        </div>
+        </div></section>
+        <section class="composer-card direction-card">
+          <header class="composer-heading"><span>02</span><h3>探索对象</h3></header>
+          <label class="field"><strong>参考方向（可选）</strong>
+            <textarea data-direction ${state.busy ? 'disabled' : ''}
+              placeholder="例如：女皇在卧室阅读《勇者丝特拉》时的趣闻">${escapeHtml(state.draft.supplementaryDirection)}</textarea>
+          </label>
+          <div class="reference-columns">
         <div class="field">
           <div class="reference-field-heading">
             <strong>重点参考人物（可选）</strong>
@@ -1028,9 +1191,8 @@ function renderForm(state: RuinState): string {
                       ${state.busy ? 'disabled' : ''}>×</button>
                   </span>`;
               }).join('')
-              : '<span class="field-note">尚未加入重点参考人物；此项可以留空。</span>'}
+              : '<span class="field-note">未添加人物</span>'}
           </div>
-          <span class="field-note">关联宗族默认关闭，仅关联有本地活动依据的人物。手动加入的人物默认启用，可点击取消；方向指定不受影响。</span>
         </div>
         <div class="field">
           <strong>重点参考传记（可选）</strong>
@@ -1046,16 +1208,17 @@ function renderForm(state: RuinState): string {
                       aria-label="移除 ${escapeAttribute(biography.title)}" title="从本次墟境参考中移除"
                       ${state.busy ? 'disabled' : ''}>×</button>
                   </span>`).join('')
-              : '<span class="field-note">可在传记书库中右键选择“加入墟境参考”。</span>'}
+              : '<span class="field-note">在传记书库中右键加入</span>'}
           </div>
         </div>
-        <label class="field">
-          <strong>补充方向</strong>
-          <textarea data-direction ${state.busy ? 'disabled' : ''}
-            placeholder="填写真正关心的人物、矛盾、地点细节或探索方向">${escapeHtml(state.draft.supplementaryDirection)}</textarea>
-          <span class="field-note">历史题材由伊雍骰表分配；这里用于约束本次创作的重点与自由度。</span>
-        </label>
-        <div class="field">
+          </div>
+        </section>
+        <section class="composer-card style-card">
+          <header class="composer-heading"><span>03</span><h3>讲述气质</h3><button type="button" class="quiet-button" data-random-style ${state.busy ? 'disabled' : ''} aria-label="随机替换时期与文风">⚄ 换一组</button></header>
+          ${renderCreativeForm(state)}
+        </section>
+        <div class="composer-actions">
+        <div class="field count-field">
           <strong>候选数量</strong>
           <div class="candidate-count" role="group" aria-label="候选数量">
             ${([3, 4, 5] as const).map(count => `
@@ -1067,15 +1230,54 @@ function renderForm(state: RuinState): string {
         <button type="button" class="primary-button generate-button" data-generate
           ${state.busy || state.entering ? 'disabled' : ''}>
           <span aria-hidden="true">✦</span>
-          ${state.busy ? '正在生成候选' : '按历史波动生成候选'}
+          ${state.busy ? '正在生成候选' : '编织候选史稿'}
         </button>
         <button type="button" class="quiet-button new-task-button" data-new-task
           ${state.busy || state.entering ? 'disabled' : ''} title="清空上次任务的输入草稿与重点参考人物勾选，干净开始新任务">
-          <span aria-hidden="true">＋</span>新建任务（清空输入）
+          <span aria-hidden="true">＋</span>重置设定
         </button>
-        ${state.error ? `<p class="error-message">${escapeHtml(state.error)}</p>` : ''}
+        </div>
+        ${state.error ? `<p class="error-message" role="alert">${escapeHtml(state.error)}</p>` : ''}
       </div>
     </section>`;
+}
+
+export function ruinPanelsUnlocked(runtime: RuinRuntimeSnapshot): boolean {
+  return canOpenRuinPanel(runtime, 'tasks');
+}
+
+function renderCreativeForm(state: RuinState): string {
+  const refs = state.draft.creativeReferences;
+  return `<div class="field creative-form">
+    <div class="period-choice">${Array.from({ length: state.draft.candidateCount }, (_, index) => `<label>候选 ${index + 1}<select data-period-index="${index}" ${state.busy ? 'disabled' : ''}>${(['stable', 'transition', 'turbulent'] as const).map(period => `<option value="${period}" ${refs.periods[index] === period ? 'selected' : ''}>${periodLabel(period)}</option>`).join('')}</select></label>`).join('')}</div>
+    <div class="style-selects">${(['telling', 'pace', 'mood'] as const).map(key => `<label class="creative-field"><span>${{ telling: '讲述方式', pace: '叙事节奏', mood: '情绪色彩' }[key]}</span><select data-ruin-style="${key}" ${state.busy ? 'disabled' : ''}>${RUIN_STYLE_OPTIONS[key].map(value => `<option ${refs[key] === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>`).join('')}</div>
+    <details class="style-guide" data-style-guide><summary>当前文风说明</summary>${(['telling', 'pace', 'mood'] as const).map(key => `<p><strong>${{ telling: '讲述方式', pace: '叙事节奏', mood: '情绪色彩' }[key]}</strong><span data-style-help="${key}">${escapeHtml(ruinStyleMeaning(key, refs[key]))}</span></p>`).join('')}</details>
+  </div>`;
+}
+
+function renderGeographyPicker(state: RuinState): string {
+  const places = state.geography;
+  const selected = places.find(place => place.path === state.draft.location);
+  const chain: RuinPlace[] = [];
+  let cursor = selected;
+  while (cursor && chain.length < places.length) {
+    chain.unshift(cursor); cursor = places.find(place => place.id === cursor?.parent);
+  }
+  const children = places.filter(place => place.parent === selected?.id);
+  const disabled = state.busy ? 'disabled' : '';
+  return `<div class="geo-modes" role="group" aria-label="地点输入方式">${(['select', 'search', 'custom'] as const).map(mode => `<button type="button" data-geo-mode="${mode}" aria-pressed="${state.geoMode === mode}" ${disabled}>${{ select: '逐级选择', search: '搜索地名', custom: '自定义' }[mode]}</button>`).join('')}</div>
+    ${state.geoMode === 'select' ? places.length ? `<nav class="geo-breadcrumbs" aria-label="已选地点层级"><button type="button" data-geo-ancestor="" ${disabled}>全部地点</button>${chain.map(place => `<span aria-hidden="true">›</span><button type="button" data-geo-ancestor="${escapeAttribute(place.id)}" ${disabled}>${escapeHtml(place.name)}</button>`).join('')}</nav>
+      ${children.length ? `<select data-geo-level="${chain.length}" aria-label="${selected ? '选择下一级地点' : '选择起始地区'}" ${disabled}><option value="">${selected ? `继续选择${escapeHtml(selected.name)}下的地点…` : '选择起始地区…'}</option>${children.map(place => `<option value="${escapeAttribute(place.id)}">${escapeHtml(place.name)}</option>`).join('')}</select>` : '<small class="field-note">已到当前最细层级，也可自定义更具体的地点。</small>'}` : '<small class="field-note">未加载地点索引，请使用自定义。</small>' : ''}
+    ${state.geoMode === 'search' ? `<input data-geo-search type="search" autocomplete="off" aria-label="搜索地点" placeholder="输入中文地名，支持空格组合" value="${escapeAttribute(state.geoSearch)}" ${disabled}><div data-geo-results class="geo-search-results" aria-live="polite">${renderGeoResults(state)}</div>` : ''}`;
+}
+
+function renderGeoResults(state: RuinState): string {
+  const query = state.geoSearch.trim().toLocaleLowerCase();
+  if (!query) return '<small class="field-note">搜索城市、地区或地标，也可组合上级地区缩小范围。</small>';
+  const terms = query.split(/\s+/u);
+  const matches = state.geography.filter(place => terms.every(term => place.path.toLocaleLowerCase().includes(term)))
+    .sort((a, b) => Number(b.name.toLocaleLowerCase() === query) - Number(a.name.toLocaleLowerCase() === query) || a.path.length - b.path.length).slice(0, 20);
+  return matches.map(place => `<button type="button" data-geo-result="${escapeAttribute(place.id)}" ${state.busy ? 'disabled' : ''}><strong>${escapeHtml(place.name)}</strong><small>${escapeHtml(place.path.split('-').join(' › '))}</small></button>`).join('') || '<small class="field-note">没有匹配地点，可切换“自定义”。</small>';
 }
 
 function renderDateGroup(
@@ -1275,6 +1477,7 @@ function renderWorkingState(state: RuinState): string {
       <div>
         <strong>${active ? '伊雍正在校订史料' : '候选墟境生成未完成'}</strong>
         <p>${escapeHtml(state.status?.detail || state.error)}</p>
+        ${state.status?.progress ? `<span class="working-progress">史稿已完成 ${state.status.progress.current}/${state.status.progress.total}${state.status.progress.item ? `，正在撰写第 ${state.status.progress.item} 份` : ''}</span>` : ''}
       </div>
     </aside>`;
 }
@@ -1286,7 +1489,7 @@ function renderEmptyState(busy: boolean): string {
       <strong>${busy ? '正在检索历史坐标' : '尚未生成候选墟境'}</strong>
       <p>${busy
         ? '伊雍正在比对世界书、正文、谱系与可选传记。'
-        : '填写左侧地点与探索方向后生成；候选不会直接修改墟境状态。'}</p>
+        : '在上方选定历史舞台与探索方向，再编织候选。候选不会直接修改墟境状态。'}</p>
     </div>`;
 }
 
@@ -1310,7 +1513,8 @@ function buildInput(state: RuinState): RuinGenerationInput | null {
       selectedCharacters: state.characters.filter(character =>
         state.selectedCharacterIds.has(ruinCharacterReferenceIdentity(character))),
       wave: waveForCandidateCount(candidateCount),
-      materials: createRuinMaterials(candidateCount),
+      creativeReferences: { ...state.draft.creativeReferences, periods: state.draft.creativeReferences.periods.slice(0, candidateCount) },
+      materials: createReferencedRuinMaterials(candidateCount, state.draft.creativeReferences),
     };
   } catch (error) {
     state.error = errorMessage(error);
@@ -1343,6 +1547,7 @@ function parseInteger(value: string, label: string): number {
 }
 
 function inputToDraft(input: RuinGenerationInput): RuinDraft {
+  const refs = input.creativeReferences ?? defaultRuinReferences(input.materials.map(material => material.periodType));
   return {
     era: input.era,
     start: dateToDraft(input.start),
@@ -1351,6 +1556,7 @@ function inputToDraft(input: RuinGenerationInput): RuinDraft {
     supplementaryDirection: input.supplementaryDirection,
     autoGenealogy: input.autoGenealogy === true,
     candidateCount: input.wave.candidateCount as 3 | 4 | 5,
+    creativeReferences: { ...refs, periods: Array.from({ length: input.wave.candidateCount }, (_, index) => refs.periods[index % refs.periods.length]) },
   };
 }
 

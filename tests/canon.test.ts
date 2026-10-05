@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { continuousStateAt } from '../src/retrieval/continuousState.ts';
+import { buildActiveEvidenceView, renderActiveEvidenceBlock } from '../src/prompts/activeEvidence.ts';
 
 import type { WorkbenchNamespace } from '../src/core/namespace.ts';
 import type {
@@ -368,6 +369,71 @@ function withBase(branch: Awaited<ReturnType<MemoryCanonRepository['getBranch']>
     },
   };
 }
+
+test('历史赎出跨时地投递本人离去，旧后续人生退出；早年、新生活和回滚保留', async () => {
+  const repository = new MemoryCanonRepository();
+  const change = deathChange({ runId: 'redemption', assistantMessageId: 10, year: 405, now: 100 });
+  const op = change.delta.operations[0]!;
+  op.op = 'assert'; op.originalFactIds = []; op.factKey = 'entity:person-a|historical_redemption|world';
+  op.current.predicate = 'historical_redemption'; op.current.temporalScope = '复兴纪元405年1月1日09:05';
+  op.current.statement = 'A在405年离开原历史，保持当时形态抵达现世488年。';
+  op.current.object = op.current.statement; change.delta.preconditionFactIds = [];
+  change.delta.cascadeScope.time = { start: { label: '复兴纪元405年' }, end: { label: '复兴纪元405年' } };
+  await repository.commitIntervention(change);
+  const branch = withBase(await repository.getBranch(namespace));
+  const early = { ...identityFact, factId: 'early', temporalScope: '复兴纪元404年', statement: 'A在童年认识了朋友' };
+  const adult = { ...identityFact, factId: 'adult', predicate: 'role_status', temporalScope: '复兴纪元460年', statement: 'A成年后担任旧堡记录官' };
+  const other = { ...adult, factId: 'other', subjectEntityId: 'entity:other', statement: '另一人在旧堡工作' };
+  const newMvu = { ...adult, factId: 'new-mvu', sourceRefs: ['mvu-character:A'], sourceSnapshotIds: [],
+    statement: 'A抵达现世后认识了档案员' };
+  const newChat = { ...newMvu, factId: 'new-chat', sourceRefs: ['chat:11'], statement: 'A抵达现世后学会说话' };
+  branch.baseCanon.facts.push(early, adult, other, newMvu, newChat);
+  branch.baseCanon.personViews[0]!.lifespan = { ...personView.lifespan, ageAtRecord: 88, basedOnEra: '复兴纪元', basedOnYear: 488 };
+  const original = JSON.stringify(branch);
+  const futureScope = { ...scope, temporalScopes: ['复兴纪元488年'], spatialScopes: ['现世港口'] };
+  const view = resolveCanon(branch, 1, futureScope);
+  assert.ok(view.activeFacts.some(f => f.predicate === 'historical_redemption'), '本人抽离不被原墟境时地闸丢掉');
+  assert.ok(view.activeFacts.some(f => f.factId === early.factId));
+  assert.ok(view.activeFacts.some(f => f.factId === other.factId));
+  assert.ok(view.activeFacts.some(f => f.factId === newMvu.factId), '普通MVU的新生活不因revision 0被删除');
+  assert.ok(view.activeFacts.some(f => f.factId === newChat.factId), '普通聊天的新生活保留');
+  assert.ok(!view.activeFacts.some(f => f.factId === adult.factId));
+  assert.ok(!view.activeFacts.some(f => f.factId === deathFact.factId));
+  assert.equal(view.personViews[0]!.lifespan?.born?.year, 400);
+  assert.equal(view.personViews[0]!.lifespan?.died, undefined, '赎出不是死亡，不继承原人生的未来死期');
+  assert.equal(view.personViews[0]!.lifespan?.ageAtRecord, undefined);
+  assert.equal(JSON.stringify(branch), original, '底稿保持只读');
+  const projected = projectEvidenceBundleCanon({ query: '复兴纪元488年探查A原历史',
+    receipt: { warnings: [] }, passages: [], claims: [], conflictGroupIds: [], sourceSnapshots: [],
+    personTimeline: [{ name: 'A', state: 'alive', narrative: 'A已经88岁', lifespan: personView.lifespan }],
+  } as unknown as EvidenceBundle, view);
+  assert.equal(projected.personTimeline![0]!.state, 'unknown');
+  assert.match(projected.personTimeline![0]!.narrative, /原历史不得沿用/u);
+  const active = buildActiveEvidenceView(projected, '复兴纪元', { targetYear: 488 });
+  assert.equal(active.personTimeline[0]!.state, 'unknown', 'Active层不得重算成年年龄覆盖赎出状态');
+  assert.doesNotMatch(active.personTimeline[0]!.narrative, /已经88岁/u);
+  const prompt = renderActiveEvidenceBlock(active, { atTimes: ['复兴纪元404年', '复兴纪元460年', '远古末期'] });
+  assert.match(prompt, /复兴纪元404年：早于历史离去点/u);
+  assert.match(prompt, /复兴纪元460年：不早于历史离去点，在原历史中不在场/u);
+  assert.match(prompt, /远古末期：先后未决/u);
+  const before = resolveCanon(branch, 1, { ...scope, temporalScopes: ['复兴纪元404年'] });
+  assert.ok(!before.activeFacts.some(f => f.predicate === 'historical_redemption'));
+  assert.equal(before.personViews[0]!.lifespan?.ageAtRecord, 88);
+  assert.ok(resolveCanon(branch, 0, futureScope).activeFacts.some(f => f.factId === adult.factId));
+  const unrelated = resolveCanon(branch, 1, { ...futureScope, subjectEntityIds: ['entity:other'], sourceIds: [] });
+  assert.ok(!unrelated.activeFacts.some(f => f.predicate === 'historical_redemption'));
+  const next = deathChange({ runId: 'new-life', assistantMessageId: 20, year: 489, now: 110 });
+  const nextOp = next.delta.operations[0]!;
+  nextOp.op = 'assert'; nextOp.originalFactIds = []; nextOp.factKey = 'entity:person-a|role_status|new-life';
+  nextOp.current.predicate = 'role_status'; nextOp.current.statement = 'A抵达现世后学习档案整理';
+  next.delta.preconditionFactIds = []; next.delta.cascadeScope.locations = ['现世港口'];
+  await repository.commitIntervention(next);
+  const newBranch = { ...branch, ...await repository.getBranch(namespace) };
+  assert.ok(resolveCanon(newBranch, 2, { ...futureScope, temporalScopes: [] }).activeFacts.some(f => f.factId === nextOp.current.factId));
+  const rollback = await repository.rollbackByMessageId(namespace, 10, 200);
+  assert.ok(rollback);
+  assert.ok(resolveCanon({ ...branch, ...rollback!.branch }, rollback!.branch.headRevision, scope).activeFacts.some(f => f.factId === adult.factId));
+});
 
 test('G-01B：持续状态跨发生窗口召回，回滚只失效依赖结果，旧 revision 和事件保留', async () => {
   const repository = new MemoryCanonRepository();

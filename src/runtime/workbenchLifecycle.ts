@@ -85,8 +85,8 @@ export class WorkbenchLifecycle {
   private rollbackBarrier: Promise<void> = Promise.resolve();
   /**
    * MESSAGE_SENT 比输入框 DOM 更接近宿主事实：无论点击、回车还是其他扩展
-   * 建楼，只要酒馆确认了玩家楼，就在这里启动同一份遣返准备。生成前钩子
-   * 会等待这份 Promise，避免事件监听器与生成钩子各自冻结一次历史。
+   * 建楼，只要酒馆确认了工作台遣返玩家楼，就在这里承接已准备事务。生成前
+   * 钩子等待同一 Promise；手写遣返只触发引导，不冻结历史。
    */
   private returnPreparation: {
     messageId: number;
@@ -158,7 +158,7 @@ export class WorkbenchLifecycle {
       await this.ruinTurnGuard.prepareOrdinaryTurn();
       return false;
     }
-    await this.ruinTurnGuard.clear();
+    if (command.type !== 'ruin.return') await this.ruinTurnGuard.clear();
 
     if (command.type === 'biography.generate') {
       return (await this.biography.prepareText(userMessage.message)) !== null;
@@ -184,18 +184,22 @@ export class WorkbenchLifecycle {
       ) {
         const result = await queued.result;
         this.assertReturnActive(epoch);
+        if (result) await this.ruinTurnGuard.clear();
+        else await this.ruinTurnGuard.prepareOrdinaryTurn();
         return result;
       }
       const result = (await this.butterfly.prepareText(userMessage.message)) !== null;
       this.assertReturnActive(epoch);
+      if (result) await this.ruinTurnGuard.clear();
+      else await this.ruinTurnGuard.prepareOrdinaryTurn();
       return result;
     }
     return false;
   }
 
   /**
-   * 酒馆已创建玩家楼后的权威入口。这里不创建楼、不触发正文，只提前启动
-   * 遣返冻结；普通消息保持零副作用。返回值主要供测试与宿主诊断使用，真正
+   * 酒馆已创建玩家楼后的承接入口。只恢复工作台已准备的遣返事务，
+   * 不从聊天文字发起冻结；普通消息保持零副作用。返回值主要供测试与宿主诊断使用，真正
    * 的 fail-closed 仍由 beforeGeneration 等待同一 Promise 后执行。
    */
   onUserMessageSent(messageId: number): Promise<boolean> {

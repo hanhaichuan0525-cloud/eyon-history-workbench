@@ -54,7 +54,7 @@ async function harness() {
       read: async (ns: any) => [...referenceStore.get(namespaceKey(ns))!],
       write: async (ns: any, next: any[]) => { referenceStore.set(namespaceKey(ns), next); },
     },
-    settings: { read: () => ({ ruinDraft: draft }), update: (patch: any) => { draft = patch.ruinDraft; } },
+    settings: { getRuinDraft: (ns: any) => { assert.equal(namespaceKey(ns),namespaceKey(namespace)); return draft; }, setRuinDraft: (ns: any, next: any) => { assert.equal(namespaceKey(ns),namespaceKey(namespace)); draft = next; } },
     publishDataChanged: (detail: any) => dataEvents.push(detail),
     publishRuinReferences: (refs: any) => referenceEvents.push(refs),
   };

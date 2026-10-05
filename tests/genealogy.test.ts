@@ -1071,6 +1071,30 @@ test('GB-08 权威时间覆盖错误生卒；世界书年龄反推中心生年�
   assert.equal(inferredResult.nodes[0].profile.lifeExperience, raw.nodes[0].profile.lifeExperience);
 });
 
+test('无出生或实际年龄锚时保留未知生年，不截断已成立的亲属树；明确锚仍覆盖未知', () => {
+  const context = makeContext();
+  context.evidenceBundle.personCanonViews![0].facts = context.evidenceBundle.personCanonViews![0].facts
+    .filter(fact => fact.predicate !== 'birth_time');
+  const raw = makeResult();
+  raw.nodes[0].birth = life('unknown', null, '生年不详');
+  const prompt = buildGenealogyApiPrompt({
+    requestId, directive: '建立族谱', generationInput: input, context,
+    rules: { generationContract: '测试合同' },
+  });
+  assert.match(prompt, /依据不足.*unknown|依据不足.*未知/u);
+  const result = parseAndValidateGenealogy(JSON.stringify(raw), { requestId, input, context });
+  assert.equal(result.nodes[0].birth.year, null);
+  assert.equal(result.nodes[0].birth.precision, 'unknown');
+  assert.equal(result.nodes.length, raw.nodes.length);
+  assert.equal(result.edges.length, raw.edges.length);
+  assert.equal(result.nodes[0].profile.lifeExperience, raw.nodes[0].profile.lifeExperience);
+  const locked = parseAndValidateGenealogy(JSON.stringify(raw), { requestId, input, context: makeContext() });
+  assert.equal(locked.nodes[0].birth.year, 464, '明确出生原点仍优先，不能被unknown取消');
+  const future = makeResult();
+  future.nodes[0].birth = life('known', 490, '复兴纪元490年');
+  assert.throws(() => parseAndValidateGenealogy(JSON.stringify(future), { requestId, input, context }), /later than/u);
+});
+
 test('GB-10 historyRefs 从已校验候选建立，模型漏写/乱写不触发结构失败', () => {
   for (const value of [undefined, '错误格式', [{ biographyId: 'fake', stageId: 'fake' }]]) {
     const context = makeContext();

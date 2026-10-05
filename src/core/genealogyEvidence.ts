@@ -159,7 +159,7 @@ export function buildGenealogyEvidenceRoster(
 /**
  * 中心 MVU 人物的出生原点只在谱系任务内派生，不写回 Canon：
  * 当前 revision 的明确出生事实优先；其次读取匹配人物的世界书整条目；
- * 再退到 MVU 整条目；两者都没有可计算时间时才让模型给出低权约年。
+ * 再退到 MVU 整条目；两者都没有可计算时间时允许低权约年或未知，不强迫猜日期。
  */
 export function resolveGenealogyFocusChronology(
   input: GenealogyGenerationInput,
@@ -221,8 +221,8 @@ export function resolveGenealogyFocusChronology(
     basedOn: parseBaseline(view, context),
     sourceRefs: worldbook.map(item => item.sourceId),
     instruction: worldbook.length
-      ? '世界书人物条目没有可直接换算的年龄或生年；结合该条目、MVU资料与亲属代际推断一个约略出生年。'
-      : '没有匹配的世界书人物条目；结合MVU资料、现世年份与亲属代际推断一个约略出生年。',
+      ? '世界书人物条目没有可直接换算的实际年龄或生年；有可信代际定位时可给低权约年，依据不足保留birth=unknown与原文相对日期，不为生成族谱猜精确年份。'
+      : '没有匹配的世界书人物条目；可依据MVU资料及可信代际定位给低权约年，依据不足保留birth=unknown，不把现世年份当作出生依据。',
   };
 }
 

@@ -40,6 +40,7 @@ import type {
 } from '../retrieval/contracts.ts';
 import { resolveCanon } from '../retrieval/canonResolver.ts';
 import { buildButterflySourceScope } from './butterflySources.ts';
+import type { ButterflyReferences } from '../core/creativeReferences.ts';
 
 // 仅用于识别旧版裁剪策略的 pending；新版选择完整楼/来源，不裁掉契约确认。
 // API prompt 对重复来源去重投递，控制体量而不切正文。
@@ -116,7 +117,12 @@ export class TavernButterflyContextAssembler {
     this.canonRepository = canonRepository;
   }
 
+  currentRun(sourceMessageId?: number): Promise<ButterflyFreezeSnapshot> {
+    return this.host.getButterflyFreezeSnapshot(sourceMessageId);
+  }
+
   async freeze(input: {
+    creativeReferences?: ButterflyReferences;
     requestId: string;
     namespace: WorkbenchNamespace;
     userMessageId: number;
@@ -173,7 +179,8 @@ export class TavernButterflyContextAssembler {
       this.sources.getBiographySources(),
       this.sources.getButterflySources(),
     ]);
-    const worldbooks = worldbookCorpus.sources;
+    // 消费端用途路由，不改宿主世界书/完整语料回执，也不裁任何正文。
+    const worldbooks = worldbookCorpus.sources.filter(source => !isButterflyUpdateProtocol(source));
     const relevantWorldbook = trimSources(worldbooks, 18);
     const involvedEntities = trimSources(characters, 12);
     const relevantGenealogy = trimSources(genealogies, 8);
@@ -216,6 +223,7 @@ export class TavernButterflyContextAssembler {
         roll: input.roll,
         scope: scopeForRoll(input.roll),
       },
+      ...(input.creativeReferences ? { creativeReferences: input.creativeReferences } : {}),
       ruinHistory: historyFromEntry(entrySource, snapshot),
       playerInterventions,
       involvedEntities,
@@ -237,11 +245,7 @@ export class TavernButterflyContextAssembler {
       ...toContextSources(currentRealityContext, 'mvu', 100),
     ];
     const canonBranch = await this.canonRepository?.getBranch(input.namespace);
-    const active = await resolveActiveRetrieval({
-      retrieval: this.retrievalShadow,
-      requestId: input.requestId,
-      taskType: 'butterfly',
-      query: [
+    const actionQuery = [
         input.rawCommand,
         legacyRequest.ruinHistory.title,
         legacyRequest.ruinHistory.era,
@@ -251,7 +255,17 @@ export class TavernButterflyContextAssembler {
         ...legacyRequest.ruinHistory.locationChain,
         entrySource?.message ?? '',
         ...legacyRequest.playerInterventions.flatMap(source => [source.title, source.content]),
-      ].join('\n'),
+      ].join('\n');
+    const active = await resolveActiveRetrieval({
+      retrieval: this.retrievalShadow,
+      requestId: input.requestId,
+      taskType: 'butterfly',
+      query: [actionQuery, ...(input.creativeReferences ? [
+        input.creativeReferences.focus.trim(),
+        input.creativeReferences.domain === '顺势生长' ? '' : input.creativeReferences.domain,
+      ] : [])].filter(Boolean).join('\n'),
+      // 关注栏是资料/未来传播的观察重心，不是已发生的行动或必到场演员。
+      castRequirementQuery: actionQuery,
       contextQuery: [
         ...legacyRequest.involvedEntities.flatMap(source => [source.title, source.content]),
         ...legacyRequest.currentRealityContext.flatMap(source => [source.title, source.content]),
@@ -450,6 +464,15 @@ function toButterflySource(source: ContextSource) {
     title: source.title,
     content: source.content,
   };
+}
+
+/** 题名和协议正文共证；混入人物原文则保留，不能只因 EJS 或“规则”二字丢史料。 */
+function isButterflyUpdateProtocol(source: { title: string; content: string }): boolean {
+  const title = source.title.normalize('NFKC');
+  if (!/(?:MVU|变量).*(?:更新规则|更新指令)/iu.test(title)) return false;
+  const content = source.content;
+  if (/<[^<>\n]{1,60}(?:角色详情|人物档案)>|const\s+profile\s*=|背景故事\s*[:：]/u.test(content)) return false;
+  return /variables_update_rules\s*:|JSONPatch|<UpdateVariable>/iu.test(content);
 }
 
 function scopeForRoll(roll: number): ButterflyScope {

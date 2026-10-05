@@ -1,4 +1,6 @@
 import type { GenerationSettings } from './settings.ts';
+import type { ButterflyReferences } from '../core/creativeReferences.ts';
+import type { RuinPlace } from '../core/ruinGeography.ts';
 import type {
   GenerationTaskType,
   WorkbenchSettings,
@@ -59,7 +61,9 @@ export interface WorkbenchDataChangedDetail {
     | 'ruin-generated'
     | 'ruin-candidate-retried'
     | 'ruin-task-requested'
+    | 'ruin-presence-refreshed'
     | 'ruin-references'
+    | 'butterfly-references'
     | 'biography-generated'
     | 'biography-deleted'
     | 'biography-references'
@@ -87,6 +91,8 @@ export interface WorkbenchStatusDetail {
     max: number;
   };
   technicalDetail?: string;
+  /** 已持久化的墟境记录；仅用于视图增量同步，不进入模型协议。 */
+  recordKey?: string;
   /** 仅运行时 UI 元数据，不参与模型契约或存档。 */
   startedAt?: number;
   request?: { label: string; startedAt: number };
@@ -125,6 +131,9 @@ export interface EyonHistoryWorkbenchFacade {
     settings: GenerationSettings,
   ): WorkbenchSettings;
   setRuinDraft(input: RuinGenerationInput | null): WorkbenchSettings;
+  getRuinGeography(): Promise<RuinPlace[]>;
+  getButterflyReferences(): Promise<{ runId: string; references: ButterflyReferences; confirmed: boolean } | null>;
+  setButterflyReferences(runId: string, references: ButterflyReferences, confirmed: boolean): Promise<void>;
   /** 最近的 Retrieval v1 旁路回执；只读、有界，不参与正式上下文。 */
   listRetrievalShadowObservations(): RuntimeShadowObservation[];
   /** 实际生成请求的字符数诊断；只读、有界，不保存 Prompt 或证据正文。 */

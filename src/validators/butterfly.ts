@@ -107,7 +107,7 @@ export function parseAndValidateButterfly(
   }
   if (
     result.effect.roll !== request.dice.roll
-    || result.effect.scope !== request.dice.scope
+    || (!request.creativeReferences && result.effect.scope !== request.dice.scope)
   ) {
     throw new ButterflyValidationError('Butterfly dice scope was changed', 'DICE_MISMATCH');
   }
@@ -126,13 +126,11 @@ export function parseAndValidateButterfly(
     );
   }
   const evolutionLength = textLength(result.effect.historicalEvolution);
-  const evolutionContract = butterflyEvolutionLengthContract(request.dice.scope);
-  if (
-    evolutionLength < evolutionContract.acceptedMin
-    || evolutionLength > evolutionContract.acceptedMax
-  ) {
+  const evolutionScope = request.creativeReferences ? result.effect.scope : request.dice.scope;
+  const evolutionContract = butterflyEvolutionLengthContract(evolutionScope);
+  if (evolutionLength < evolutionContract.acceptedMin) {
     throw new ButterflyValidationError(
-      `Historical evolution length ${evolutionLength} is outside the accepted ${evolutionContract.acceptedMin}-${evolutionContract.acceptedMax} range for ${request.dice.scope}`,
+      `Historical evolution length ${evolutionLength} is below the accepted minimum ${evolutionContract.acceptedMin} for ${evolutionScope}`,
       'EVOLUTION_LENGTH_INVALID',
     );
   }

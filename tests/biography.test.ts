@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 
 import { extractRecordedAge } from '../src/retrieval/catalog.ts';
 import {
   buildBiographyPassagePrompt,
+  buildBiographyPassageBatchPrompt,
   buildBiographyPlanPrompt,
   extractTargetBornYear,
   resolveTargetBornYear,
@@ -2039,23 +2041,22 @@ test('单块响应结构漂移被容错吸收：过渡字段/多余字段被忽�
   assert.equal(validated.elementChecklist.decisiveMoment, true);
   // transitionFromPrevious 已从结果中整组移除
   assert.equal((validated as unknown as Record<string, unknown>).transitionFromPrevious, undefined);
-  // 字符串化 false 与真实 false 一样按缺项拒绝（三要素必须全部 true）
+  // 字符串化 false 保留诚实软自评，不为了文学评分拒收正文。
   raw.elementChecklist = {
     sceneGrounded: 'true',
     figureVivid: '是',
     decisiveMoment: '否',
   };
-  assert.throws(
-    () => parseAndValidateBiographyPassage(JSON.stringify(raw), {
+  const withFalse = parseAndValidateBiographyPassage(JSON.stringify(raw), {
       requestId,
       passageId: 'stage-1',
       kind: 'stage',
       eventId: passage.eventId,
       eventUsage: passage.eventUsage,
       knownSources: new Set(biography.stages[0]!.sourceRefs),
-    }),
-    /decisiveMoment/u,
-  );
+  });
+  assert.equal(withFalse.elementChecklist.decisiveMoment, false);
+  assert.equal(withFalse.content, passage.content);
 });
 
 // ===== internal.79 v4 止血：repair 报错文本剥离 legacy 源 ID（G-07 最小止血）=====
@@ -2146,6 +2147,36 @@ test('目标年龄锚：只接受人物事实时间轴，绝不把规划起源�
     originTitle: '起源(复兴纪元320年)',
   } as unknown as BiographyPlan;
   assert.equal(resolveTargetBornYear(placeTarget), null, '非人物对象不生成出生年龄锚');
+});
+
+test('真实传记装配统一事实寿命、软自评与篇幅，单段和批量不再互相矛盾', () => {
+  const biography = makeBiography();
+  const rules = {
+    sharedContext: '', retrievalContract: '', validationContract: '',
+    generationContract: readFileSync(new URL('../rules/13_寻根溯源生成规则-API.txt', import.meta.url), 'utf8'),
+  };
+  const planning = buildBiographyPlanPrompt({
+    requestId, directive: biography.playerDirective.raw, context: makeContext(),
+    rules, stagePlan: makeStagePlan(biography),
+  });
+  assert.match(planning, /所有种族.*明确的出生、死亡/u);
+  assert.match(planning, /历史赎出后的原历史缺席/u);
+  assert.match(planning, /本段年份 − 出生年/u);
+  assert.doesNotMatch(planning, /允许跨任意时期|出生年 \+ \(本段年份/u);
+  const plan = makePlan(biography);
+  const passage = {
+    passageId: 'origin', kind: 'origin' as const, title: plan.originTitle,
+    sourceRefs: [sourceId], eventAssignment: plan.eventAssignments[0]!,
+  };
+  const single = buildBiographyPassagePrompt({ requestId, plan, passage, rules });
+  const batch = buildBiographyPassageBatchPrompt({ requestId, plan, passages: [passage], rules });
+  for (const prompt of [single, batch]) {
+    assert.match(prompt, /允许 false|允许false/u);
+    assert.match(prompt, /260~329.*同样有效/u);
+    assert.match(prompt, /不必硬造转折/u);
+    assert.doesNotMatch(prompt, /全部为 true 才可提交|必须全部为 true|少于 300 视为无效/u);
+    assert.match(prompt, /eventId.*eventUsage/u, '事件归属协议仍保留');
+  }
 });
 
 test('传记规划与扩写都把 revision 物品状态作为按时间生效的连续性事实，并保持 fail-soft', () => {

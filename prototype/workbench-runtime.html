@@ -61,6 +61,10 @@
       ruinTime: '',
       ruinLocation: '',
     };
+    if (previewParams.get('run') === 'active') Object.assign(runtime, {
+      flowState: 'exploring', runId: 'preview-run-creative', ruinTime: '神明纪元12年-6月-8日-09:00', ruinLocation: '亚尔夫海姆-幽谷-溪畔',
+    });
+    let butterflyPreferences = JSON.parse(window.localStorage?.getItem('eyon-creative-preview:' + runtime.runId) || 'null');
     const previewBiographyRecords = [{
       key: 'preview::biography::dusk-tide-notebook',
       namespace: { characterKey: 'preview', chatId: 'preview-chat' },
@@ -204,8 +208,53 @@
         input: { focusCharacter: character, depth: result.depth, lineageKind: 'auto' }, result,
         localView: { nodes, edges, units: nodes.map(item => ({ unitId: item.id, unitType: 'node', reusable: true, disposition: 'available' })) } });
     }
+    // Opt-in UI-only progression fixture. Never sends chat messages or model requests.
+    const previewRuinRecords = [];
+    const simulateRuin = previewParams.get('simulate') === 'ruin';
+    const pausePreview = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+    const previewRuinStatus = detail => window.dispatchEvent(new CustomEvent('eyon-history-workbench:status', {
+      detail: { taskType: 'ruin', phase: 'running', ...detail },
+    }));
+    async function generatePreviewRuin(input) {
+      if (!simulateRuin) throw new Error('预览页不调用生成 API');
+      previewRuinStatus({ status: 'assembling_context', detail: '预览模拟：正在读取历史舞台' });
+      await pausePreview(1500);
+      const titles = ['烛光里的一招', '未曾说破的笑意', '清晨重读的一页'];
+      const candidates = input.materials.map((material, index) => ({
+        id: 'preview-candidate-' + index, candidateKey: material.candidateKey, title: titles[index % titles.length],
+        periodType: material.periodType, span: { start: { year: 488, month: 2, day: 14 }, end: { year: 488, month: 2, day: 15 }, label: '复兴纪元488年2月14日 — 2月15日' },
+        premise: '一本书使平常的夜晚有了小小变化。', summary: '认真模仿书中剑招的片刻，成了内廷心照不宣的趣事。',
+        historyProse: '', shift: { from: material.periodType, to: material.periodType, explanation: '小事未改时代主调。' },
+        fusion: { historicalResult: '书仍留在案头，灯罩却换成了更稳当的一只。' },
+        nodes: ['origin', 'process', 'anomaly', 'result'].map((kind, i) => ({
+          id: `preview-${index}-node-${i}`, kind, title: ['翻开旧书', '试演剑招', '烛火一晃', '彼此会意'][i],
+          time: { year: 488, month: 2, day: 14, hour: 20 + i, minute: 0 }, location: input.location,
+          summary: '灯下的一件小事，给人留下可以改变的片刻。', visibleTrace: '桌角一抹新添的蜡痕。',
+          cause: '书中情节引起好奇。', causalMechanism: '一次试演使平常的房间有了变化。',
+          participants: ['维奥莱塔'], interests: [], materialConditions: [], opposition: '', possibleBranches: [],
+          intervention: '在现场观察或交谈', enterable: true, inference: true, sourceRefs: [],
+        })), sourceRefs: [], cast: [], biographyUsage: [],
+      }));
+      const key = 'preview-ruin-' + Date.now();
+      const record = { key, namespace: { characterKey: 'preview', chatId: 'preview-chat' }, requestId: key, input,
+        result: { schema: 'eyon.ruin.candidates.v1', requestId: key, era: input.era, candidates },
+        expandedCandidateIds: [], candidateStates: Object.fromEntries(candidates.map(c => [c.id, { status: 'pending', attempt: 1, generationEpoch: 1, updatedAt: Date.now() }])), createdAt: Date.now() };
+      previewRuinRecords.splice(0, previewRuinRecords.length, record);
+      previewRuinStatus({ status: 'ruin_outlines_ready', detail: '预览模拟：候选大纲已保存', recordKey: key, progress: { current: 0, total: candidates.length } });
+      for (let index = 0; index < candidates.length; index++) {
+        const candidate = candidates[index];
+        record.candidateStates[candidate.id].status = 'generating';
+        previewRuinStatus({ status: 'generating_candidate', detail: '预览模拟：正在撰写史稿', recordKey: key, progress: { current: index, total: candidates.length, item: index + 1 }, request: { startedAt: Date.now(), label: '正在撰写史稿' } });
+        await pausePreview(3500);
+        candidate.historyProse = '寝殿只剩下一盏灯。维奥莱塔读到《勇者丝特拉》断剑脱困的段落，停了一会儿，伸手拿起桌上的裁纸刀。她不是第一次练剑，却仍想知道书中那招能不能成立。刀锋刚划过灯罩，烛火便偏向一侧。门外传来侍女轻轻的问候，她迅速收刀，答说只是在看书。待脚步远去，她望着桌角新添的蜡痕，忍不住笑了。第二天，灯罩被换成了稳当的一只；没有人提起缘由，书也依旧摆在她伸手可及的地方。';
+        record.candidateStates[candidate.id].status = 'ready'; record.expandedCandidateIds.push(candidate.id);
+        previewRuinStatus({ status: 'candidate_ready', detail: '预览模拟：一份史稿已保存', recordKey: key, progress: { current: index + 1, total: candidates.length } });
+      }
+      previewRuinStatus({ status: 'ready', phase: 'success', detail: '预览模拟完成，不是模型生成结果', recordKey: key, progress: { current: candidates.length, total: candidates.length } });
+      return structuredClone(record);
+    }
     const facade = {
-      version: '0.14.14',
+      version: '0.14.26',
       getSettings: () => structuredClone(settings),
       updateSettings: patch => {
         Object.assign(settings, patch);
@@ -226,6 +275,20 @@
         settings.ruinDraft = structuredClone(input);
         return structuredClone(settings);
       },
+      getRuinGeography: async () => [
+        { id:'c',name:'阿斯塔利亚大陆',path:'阿斯塔利亚大陆' },
+        { id:'e',name:'奥古斯提姆帝国',parent:'c',path:'阿斯塔利亚大陆-奥古斯提姆帝国' },
+        { id:'p',name:'艾瑟嘉德',parent:'e',path:'阿斯塔利亚大陆-奥古斯提姆帝国-艾瑟嘉德' },
+        { id:'f',name:'亚尔夫海姆',parent:'c',path:'阿斯塔利亚大陆-亚尔夫海姆' },
+        { id:'r',name:'幽谷溪畔',parent:'f',path:'阿斯塔利亚大陆-亚尔夫海姆-幽谷溪畔' },
+      ],
+      getButterflyReferences: async () => !runtime.runId ? null : { runId:runtime.runId, ...(butterflyPreferences || { references:{ scope:'顺势生长',focus:'',domain:'顺势生长',intensity:'顺势生长',absurdity:35,legend:'值得流传',evolution:'顺势生长',mood:'随历史生长',manifestation:'自然遇见' }, confirmed:false }) },
+      setButterflyReferences: async (runId,references,confirmed) => {
+        if(runId !== runtime.runId) throw new Error('预览轮次已变化');
+        butterflyPreferences={references:structuredClone(references),confirmed};
+        window.localStorage?.setItem('eyon-creative-preview:' + runId,JSON.stringify(butterflyPreferences));
+        window.dispatchEvent(new CustomEvent('eyon-history-workbench:data-changed',{detail:{views:['ruin'],reason:'butterfly-references'}}));
+      },
       getRuinRuntimeSnapshot: async () => structuredClone(runtime),
       listGenealogyCharacters: async () => [structuredClone(character)],
       listCharacterWorldbookEntries: async () => [],
@@ -239,8 +302,8 @@
       listRuinBiographyReferences: async () => [],
       toggleBiographyRuinReference: async () => [],
       removeRuinBiographyReference: async () => [],
-      generateRuin: async () => { throw new Error('预览页不调用生成 API'); },
-      listRuins: async () => [],
+      generateRuin: generatePreviewRuin,
+      listRuins: async () => structuredClone(previewRuinRecords),
       listBiographies: async () => structuredClone(previewBiographyRecords),
       deleteBiography: async () => true,
       listButterflies: async () => [],
@@ -264,7 +327,7 @@
       exportCurrentData: async () => ({
         format: 'eyon-history-workbench-backup',
         schemaVersion: 1,
-        workbenchVersion: '0.14.14',
+        workbenchVersion: '0.14.26',
         exportedAt: new Date().toISOString(),
         namespace: { characterKey: 'preview', chatId: 'preview-chat' },
         settings: structuredClone(settings),
@@ -287,7 +350,7 @@
       generateRuinTaskDraft: async () => { throw new Error('预览页不调用生成 API'); },
       updateRuinTaskDraft: async () => { throw new Error('预览页不写入任务'); },
       confirmRuinTaskDraft: async () => { throw new Error('预览页不写入任务'); },
-      returnRuin: async () => undefined,
+      returnRuin: async () => { throw new Error('预览页不发送酒馆消息或调用模型；请在真实酒馆验收遣返。'); },
       retryButterfly: async () => undefined,
       dispose: () => undefined,
     };
@@ -305,7 +368,7 @@
       () => { document.querySelector('[data-eyon-workbench-reopen]').style.display = 'none'; },
     );
   </script>
-  <script type="module" src="../dist/workbench.js?v=0.14.14"></script>
+  <script type="module" src="../dist/workbench.js?v=0.14.26"></script>
   <script type="module">
     // The preview must announce its mock facade after the production bundle has
     // installed its listeners. Keeping this page on the real bundle prevents a

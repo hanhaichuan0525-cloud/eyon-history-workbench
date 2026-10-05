@@ -2,6 +2,8 @@ import { BiographyController } from './runtime/biographyController.ts';
 import { TaskStatusProjection } from './runtime/taskStatus.ts';
 import { WORKBENCH_CONTEXT_EVENT } from './runtime/facade.ts';
 import { WORKBENCH_VERSION } from './core/version.ts';
+import { parseTextCommand } from './core/commands.ts';
+import { assertRuinGenerationAvailable } from './core/ruinPanelAccess.ts';
 import { ButterflyController } from './runtime/butterflyController.ts';
 import { TavernButterflyNarrativeShell } from './runtime/tavernButterflyShell.ts';
 import { TavernButterflyContextAssembler } from './runtime/butterflyContext.ts';
@@ -206,6 +208,7 @@ async function bootstrap(): Promise<void> {
   const dataBindings = createGlobalDataBindings(globalObject);
   const settings = new ScriptWorkbenchSettings(
     createGlobalScriptVariableBindings(globalObject),
+    () => scopeReader.getNamespace(),
   );
   const taskStatuses = new TaskStatusProjection();
   let contextRevision = 0;
@@ -441,6 +444,7 @@ async function bootstrap(): Promise<void> {
     now: Date.now,
     assertCurrent: createRuinIdentityAssertion(runtime, ruinGuard),
     canonRepository: canon,
+    onOutlineReady: recordKey => emitTaskStatus('ruin', 'ruin_outlines_ready', '候选大纲已就绪，开始逐份撰写史稿', { phase: 'running', recordKey }),
     onCandidateProgress: event => {
       emitTaskStatus(
         'ruin',
@@ -455,6 +459,7 @@ async function bootstrap(): Promise<void> {
           ? '本份墟境史稿已完成'
           : `第${event.candidateIndex}个墟境未完成，可单独重试`,
         {
+          recordKey: event.recordKey,
           phase: event.stage === 'running'
             ? 'running'
           : event.stage === 'success'
@@ -586,8 +591,28 @@ async function bootstrap(): Promise<void> {
     now: Date.now,
     narrativeShell: new TavernButterflyNarrativeShell(runtime),
     hooks: {
+      onReturnPrepared: pending => {
+        if (!timeKernel.authorizeReturn(pending)) throw new Error('本轮遣返事务未能登记，请保留玩家楼并重试。');
+      },
+      onReturnRendered: async pending => {
+        if (!await timeKernel.restoreAuthorizedReturn(pending)) {
+          throw new Error('遣返正文已保留，但本轮现实时间地点尚未恢复或校验未通过，请重试本轮结算。');
+        }
+      },
       onStatus: (status, detail) =>
         emitTaskStatus('butterfly', status, detail),
+      requireReferences: async sourceMessageId => {
+        const namespace = scopeReader.getNamespace();
+        const current = await host.getButterflyFreezeSnapshot(sourceMessageId);
+        if (namespaceKey(namespace) !== namespaceKey(scopeReader.getNamespace())) throw new GenerationCancelledError('butterfly');
+        const saved = settings.getButterflyReferences(namespace, current.runId);
+        if (!saved?.confirmed) {
+          const detail = '请先在墟境探索 → 蝴蝶效应中确认本轮参考方案，再点击「遣返现世」；可以直接确认默认方案，关注对象可留空。';
+          emitTaskStatus('butterfly', 'butterfly_pending', detail);
+          throw new Error(detail);
+        }
+        return saved.references;
+      },
     },
   });
   let activeReturnTurnController: AbortController | null = null;
@@ -610,13 +635,29 @@ async function bootstrap(): Promise<void> {
     globalObject,
   );
   const canonMemory = new CanonMemoryChannel(runtime);
+  let renderedMemoryBarrier = Promise.resolve();
+  let generationMemoryRefreshes = 0;
   const registration = registerWorkbenchLifecycle(
     {
-      beforeGeneration: type => lifecycle.beforeGeneration(type),
+      beforeGeneration: async type => {
+        const prepared = await lifecycle.beforeGeneration(type);
+        await refreshCanonMemory('before-generation');
+        return prepared;
+      },
       onUserMessageSent: messageId => lifecycle.onUserMessageSent(messageId),
-      onAssistantRendered: messageId => lifecycle.onAssistantRendered(messageId),
+      onAssistantRendered: async messageId => {
+        const revision = contextRevision;
+        const committing = lifecycle.onAssistantRendered(messageId);
+        renderedMemoryBarrier = committing.catch(() => {});
+        await committing;
+        if (!disposed && revision === contextRevision) {
+          publishDataChanged({ views: ['ruin', 'timeline'], reason: 'ruin-presence-refreshed' });
+          await refreshCanonMemory('message-committed');
+        }
+      },
       onChatChanged: async () => {
         contextRevision += 1;
+        renderedMemoryBarrier = Promise.resolve();
         timeKernel.onChatChanged();
         // Clear synchronously at the context edge, before any old reads resume.
         if (!disposed) void canonMemory.clear('chat-changed', Date.now());
@@ -644,6 +685,9 @@ async function bootstrap(): Promise<void> {
   // 让「当前分支仍有效的改写历史」直接进入正文模型（不再依赖世界书激活）；
   // 刷新时机：正文生成前（最准）/ 切聊天 / 删楼回退 / AI 楼渲染后 / 手动。
   const loadCanonMemory = async (trigger: string) => {
+    // Commit/background refreshes must not invalidate the awaited generation ticket.
+    // The generation read already waits for the commit; CHAT_CHANGED still clears immediately.
+    if (trigger !== 'before-generation' && generationMemoryRefreshes > 0) return null;
     const namespace = scopeReader.getNamespace();
     const revision = contextRevision;
     const isCurrent = () => {
@@ -651,7 +695,8 @@ async function bootstrap(): Promise<void> {
       try { return namespaceKey(scopeReader.getNamespace()) === namespaceKey(namespace); }
       catch { return false; }
     };
-    return canonMemory.refreshFromSource(async () => {
+    const read = async () => {
+      if (trigger === 'before-generation') await renderedMemoryBarrier;
       const [records, tombstones, biographyRecords, branch] = await Promise.all([
         butterflies.list(namespace),
         butterflies.listMemoryTombstones(namespace),
@@ -667,36 +712,26 @@ async function bootstrap(): Promise<void> {
         currentInput: readTavernComposerText(globalObject) ?? '',
         now: Date.now(),
       };
-    }, isCurrent);
+    };
+    if (trigger !== 'before-generation') return canonMemory.refreshFromSource(read, isCurrent);
+    generationMemoryRefreshes += 1;
+    try { return await canonMemory.refreshBeforeGeneration(read, isCurrent); }
+    finally { generationMemoryRefreshes -= 1; }
   };
-  const refreshCanonMemory = (trigger: string): void => {
+  const refreshCanonMemory = async (trigger: string): Promise<void> => {
     if (disposed) return;
     try { scopeReader.getNamespace(); }
     catch { return; } // 无活动聊天 → 跳过
-    void loadCanonMemory(trigger).catch(error => console.error(
+    await loadCanonMemory(trigger).catch(error => console.error(
       '[Eyon History Workbench] canon memory refresh failed',
       error,
     ));
   };
-  const onCanonMemoryBeforeGeneration = (): void => {
-    refreshCanonMemory('before-generation');
-  };
   const onCanonMemoryChatChanged = (): void => {
-    refreshCanonMemory('chat-changed');
+    void refreshCanonMemory('chat-changed');
   };
-  const onCanonMemoryRendered = (...args: unknown[]): void => {
-    const messageId = Number(args[0]);
-    if (!Number.isInteger(messageId) || messageId < 0) return;
-    refreshCanonMemory('message-rendered');
-  };
-  if (events.names.generationAfterCommands) {
-    events.bridge.on(events.names.generationAfterCommands, onCanonMemoryBeforeGeneration);
-  }
   if (events.names.chatChanged) {
     events.bridge.on(events.names.chatChanged, onCanonMemoryChatChanged);
-  }
-  if (events.names.characterMessageRendered) {
-    events.bridge.on(events.names.characterMessageRendered, onCanonMemoryRendered);
   }
   // 删楼回退:释放进入防重标记(宿主不支持该事件时静默降级)
   // F-03（internal.83）：宿主批量删除/截断只对部分消息派发 messageDeleted
@@ -843,13 +878,46 @@ async function bootstrap(): Promise<void> {
     contextRevision,
     version: WORKBENCH_VERSION,
     resolveDisplayText: text => resolveWorkbenchDisplayText(text, globalObject),
-    getSettings: () => settings.read(),
+    getSettings: () => {
+      const next = settings.read();
+      try { next.ruinDraft = settings.getRuinDraft(scopeReader.getNamespace()); }
+      catch { next.ruinDraft = null; }
+      return next;
+    },
     updateSettings,
     setGenerationSettings: (taskType, next) =>
       settings.setGeneration(taskType, next),
     applyGenerationSettingsToAll: next =>
       settings.applyGenerationToAll(next),
-    setRuinDraft: input => settings.update({ ruinDraft: input }),
+    setRuinDraft: input => settings.setRuinDraft(scopeReader.getNamespace(), input),
+    getRuinGeography: async () => {
+      const namespace = scopeReader.getNamespace();
+      const loaded = readRuinGeography(dataBindings.getChatVariables().runtime_geo_compact_data);
+      if (loaded.length) return loaded;
+      const [world, worldbooks] = await Promise.all([sources.getCurrentWorld(), sources.getWorldbookSources()]);
+      if (namespaceKey(namespace) !== namespaceKey(scopeReader.getNamespace())) return [];
+      return readRuinGeography(null, [world.location, ...worldbooks.flatMap(source => geographyPathsFromText(source.content))]);
+    },
+    getButterflyReferences: async () => {
+      const namespace = scopeReader.getNamespace();
+      const current = await host.getRuinRuntimeSnapshot();
+      if (namespaceKey(namespace) !== namespaceKey(scopeReader.getNamespace())) throw new GenerationCancelledError('butterfly');
+      if (!current.runId || current.flowState === 'idle') return null;
+      const saved = settings.getButterflyReferences(namespace, current.runId);
+      return { runId: current.runId, references: saved?.references ?? { ...DEFAULT_BUTTERFLY_REFERENCES }, confirmed: saved?.confirmed ?? false };
+    },
+    setButterflyReferences: async (runId, references, confirmed) => {
+      const namespace = scopeReader.getNamespace();
+      // 编辑即撤销确认；异步读取宿主期间不能让旧已确认方案被遣返门误用。
+      const prior = settings.getButterflyReferences(namespace, runId);
+      if (!confirmed && prior?.confirmed) settings.setButterflyReferences(namespace, runId, prior.references, false);
+      const current = await host.getRuinRuntimeSnapshot();
+      if (namespaceKey(namespace) !== namespaceKey(scopeReader.getNamespace()) || current.runId !== runId || !['exploring', 'anchored'].includes(current.flowState)) {
+        throw new Error('墟境轮次已变化，请刷新后确认当前方案');
+      }
+      settings.setButterflyReferences(namespace, runId, references, confirmed);
+      publishDataChanged({ views: ['ruin', 'timeline'], reason: 'butterfly-references' });
+    },
     listRetrievalShadowObservations: () => retrievalShadow.list(),
     listPromptDiagnostics,
     listCanonResolvedViews: listCanonResolvedViewDiagnostics,
@@ -950,6 +1018,9 @@ async function bootstrap(): Promise<void> {
     },
     generateRuin: input => runTask('ruin', async assertActive => {
       assertWorkbenchEnabled();
+      const current = await host.getRuinRuntimeSnapshot();
+      assertActive();
+      assertRuinGenerationAvailable(current);
       const record = await ruinController.generateFromPanel(input);
       assertActive();
       publishDataChanged({ views: ['ruin'], reason: 'ruin-generated' });
@@ -986,11 +1057,11 @@ async function bootstrap(): Promise<void> {
       // 已发起的本地写只作用于捕获的聊天；切换后不把旧结果写进新聊天设置。
       await ruinReferences.write(namespace, next);
       assertActive();
-      const draft = settings.read().ruinDraft;
-      if (draft) settings.update({ ruinDraft: {
+      const draft = settings.getRuinDraft(namespace);
+      if (draft) settings.setRuinDraft(namespace, {
         ...draft,
         selectedCharacters: pruneStaleGenealogyReferences(draft.selectedCharacters, requestIds, mvuId),
-      } });
+      });
       const references = await sources.projectRuinCharacters(next);
       assertActive();
       publishRuinReferences(references);
@@ -1052,6 +1123,9 @@ async function bootstrap(): Promise<void> {
     listRuins: async () => ruins.list(scopeReader.getNamespace()),
     retryRuinCandidate: (recordKey, candidateId) => runTask('ruin', async assertActive => {
       assertWorkbenchEnabled();
+      const current = await host.getRuinRuntimeSnapshot();
+      assertActive();
+      assertRuinGenerationAvailable(current);
       const record = await ruinController.retryCandidate(recordKey, candidateId);
       assertActive();
       publishDataChanged({
@@ -1186,7 +1260,8 @@ async function bootstrap(): Promise<void> {
       butterflyController.cancelPending();
       generator.cancel('butterfly');
       lifecycle.resetReturnPreparation();
-      settings.update({ ruinDraft: null });
+      settings.setRuinDraft(namespace, null);
+      settings.clearButterflyReferences(namespace);
       const butterflyPending = await butterflies.listPending(namespace);
       const [genealogiesCleared, ruinsCleared] = await Promise.all([
         genealogies.clear(namespace),
@@ -1216,6 +1291,9 @@ async function bootstrap(): Promise<void> {
     getRuinPresenceDiagnostics: () => listRuinPresenceDiagnostics(),
     enterRuin: (recordKey, candidateId, nodeId) => runTask('ruin', async assertActive => {
       assertWorkbenchEnabled();
+      const current = await host.getRuinRuntimeSnapshot();
+      assertActive();
+      assertRuinGenerationAvailable(current);
       const composerText = readTavernComposerText(globalObject);
       if (composerText === null) {
         throw new Error('读取酒馆输入框失败，已中止进入特异点（输入框可能尚未加载）');
@@ -1263,18 +1341,29 @@ async function bootstrap(): Promise<void> {
     },
     returnRuin: () => runTask('butterfly', async assertActive => {
       assertWorkbenchEnabled();
+      const composerText = readTavernComposerText(globalObject);
+      if (composerText === null) {
+        throw new Error('读取酒馆输入框失败，已中止遣返（输入框可能尚未加载）');
+      }
+      const draft = composerText.trim();
+      // 点击按钮已经明确授权返程；草稿不必自行包含命令，也不能被默认语覆盖。
+      const playerText = parseTextCommand(draft)?.type === 'ruin.return'
+        ? draft
+        : [draft, '遣返'].filter(Boolean).join('\n\n');
       const controller = new AbortController();
       activeReturnTurnController = controller;
-      return userTurns.sendUserTurn('遣返', {
+      return userTurns.sendUserTurn(playerText, {
         signal: controller.signal,
         beforeCreate: async expectedMessageId => {
           assertActive();
-          await butterflyController.prepareBeforeUserTurn('遣返', expectedMessageId);
+          await butterflyController.prepareBeforeUserTurn(playerText, expectedMessageId);
           assertActive();
         },
         afterCreate: async messageId => {
           assertActive();
-          await butterflyController.confirmPreparedUserFloor('遣返', messageId);
+          // 此时唯一玩家楼已核验，触发正文前释放已发送草稿；后来新写的内容不清空。
+          clearTavernComposerText(composerText, globalObject);
+          await butterflyController.confirmPreparedUserFloor(playerText, messageId);
           assertActive();
         },
       }).finally(() => {
@@ -1298,6 +1387,7 @@ async function bootstrap(): Promise<void> {
     refreshCanonMemory: async () => {
       const memorySnapshot = await loadCanonMemory('manual');
       if (!memorySnapshot) throw new GenerationCancelledError('butterfly');
+      if (canonMemory.lastFailure()) throw new Error(canonMemory.lastFailure());
       publishDataChanged({ views: ['settings'], reason: 'canon-memory-refreshed' });
       return memorySnapshot;
     },
@@ -1309,14 +1399,8 @@ async function bootstrap(): Promise<void> {
       if (events.names.messageDeleted) {
         events.bridge.off?.(events.names.messageDeleted, onMessageDeleted);
       }
-      if (events.names.generationAfterCommands) {
-        events.bridge.off?.(events.names.generationAfterCommands, onCanonMemoryBeforeGeneration);
-      }
       if (events.names.chatChanged) {
         events.bridge.off?.(events.names.chatChanged, onCanonMemoryChatChanged);
-      }
-      if (events.names.characterMessageRendered) {
-        events.bridge.off?.(events.names.characterMessageRendered, onCanonMemoryRendered);
       }
       void canonMemory.clear('dispose', Date.now());
       clearP4DerivedCache('dispose');
@@ -1769,3 +1853,5 @@ globalThis.addEventListener('pagehide', () => {
   disposeCurrent?.();
   disposeCurrent = null;
 }, { once: true });
+import { readRuinGeography, geographyPathsFromText } from './core/ruinGeography.ts';
+import { DEFAULT_BUTTERFLY_REFERENCES } from './core/creativeReferences.ts';

@@ -14,6 +14,7 @@ import {
   type GenerationSettings,
 } from './settings.ts';
 import type { GenerationSettingsProvider } from './tavernGeneration.ts';
+import { ButterflyReferencesSchema, type ButterflyReferences } from '../core/creativeReferences.ts';
 
 const emptyGenerationSettings = (): GenerationSettings => ({
   apiurl: '',
@@ -90,6 +91,11 @@ export const WorkbenchSettingsSchema = z.object({
     butterfly: emptyGenerationSettings(),
   })),
   ruinDraft: RuinGenerationInputSchema.nullable().default(null),
+  ruinDrafts: z.record(z.string(), RuinGenerationInputSchema.nullable()).optional(),
+  butterflyReferences: z.record(z.string(), z.object({
+    references: ButterflyReferencesSchema,
+    confirmed: z.boolean(),
+  })).optional(),
   genealogyDepth: z.object({
     ancestors: z.number().int().min(1).max(8).default(4),
     descendants: z.number().int().min(0).max(6).default(3),
@@ -152,9 +158,11 @@ const SETTINGS_KEY = 'eyonHistoryWorkbench';
 export class ScriptWorkbenchSettings
 implements GenerationSettingsProvider, RuinGenerationInputProvider {
   private readonly bindings: ScriptVariableBindings;
+  private readonly namespace?: () => WorkbenchNamespace;
 
-  constructor(bindings: ScriptVariableBindings) {
+  constructor(bindings: ScriptVariableBindings, namespace?: () => WorkbenchNamespace) {
     this.bindings = bindings;
+    this.namespace = namespace;
   }
 
   read(): WorkbenchSettings {
@@ -183,6 +191,37 @@ implements GenerationSettingsProvider, RuinGenerationInputProvider {
         ...(patch.generation ?? {}),
       },
     });
+  }
+
+  getRuinDraft(namespace: WorkbenchNamespace): RuinGenerationInput | null {
+    // 旧全局草稿不能冒充另一个聊天的选择。已归档候选不受此草稿迁移影响。
+    return this.read().ruinDrafts?.[namespaceKey(namespace)] ?? null;
+  }
+
+  setRuinDraft(namespace: WorkbenchNamespace, draft: RuinGenerationInput | null): WorkbenchSettings {
+    const current = this.read();
+    return this.update({ ruinDrafts: { ...current.ruinDrafts, [namespaceKey(namespace)]: draft } });
+  }
+
+  getButterflyReferences(namespace: WorkbenchNamespace, runId: string) {
+    return this.read().butterflyReferences?.[`${namespaceKey(namespace)}::${encodeURIComponent(runId)}`] ?? null;
+  }
+
+  clearButterflyReferences(namespace: WorkbenchNamespace): void {
+    const prefix = `${namespaceKey(namespace)}::`;
+    const current = this.read();
+    this.update({ butterflyReferences: Object.fromEntries(Object.entries(current.butterflyReferences ?? {}).filter(([key]) => !key.startsWith(prefix))) });
+  }
+
+  setButterflyReferences(namespace: WorkbenchNamespace, runId: string, references: ButterflyReferences, confirmed: boolean) {
+    if (!runId.trim()) throw new Error('进入墟境后才能设置本轮蝴蝶效应');
+    const current = this.read();
+    return this.update({ butterflyReferences: {
+      ...current.butterflyReferences,
+      [`${namespaceKey(namespace)}::${encodeURIComponent(runId)}`]: {
+        references: ButterflyReferencesSchema.parse(references), confirmed,
+      },
+    } });
   }
 
   async get(
@@ -285,7 +324,7 @@ implements GenerationSettingsProvider, RuinGenerationInputProvider {
   }
 
   async getInput(_command: WorkbenchCommand): Promise<RuinGenerationInput> {
-    const draft = this.read().ruinDraft;
+    const draft = this.namespace ? this.getRuinDraft(this.namespace()) : this.read().ruinDraft;
     if (!draft) {
       // 引导类问题：不能走 fail-closed，否则会掐掉整楼生成（见 workbenchGuidance.ts）。
       throw new WorkbenchGuidanceError('请先在伊雍历史工作台中填写墟境生成条件');

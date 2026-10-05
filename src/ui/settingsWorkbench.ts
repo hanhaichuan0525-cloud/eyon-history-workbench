@@ -473,8 +473,8 @@ export function mountSettingsWorkbench(
         <section class="error-log">
           <header>
             <div>
-              <strong>蝴蝶记忆注入</strong>
-              <p>正文生成前会把这些「仍有效的改写历史」注入模型（常驻最近变化，更早的按关键词触发；失效片段不注入）。这里可核对是否注入、注入了什么、为什么。</p>
+              <strong>正文原文召回</strong>
+              <p>从当前聊天全部归档按关键词召回蝴蝶效应与传记原文。最近变化常驻；完整事件／章节按数量投递，不截字。失效历史不冒充现行事实。</p>
             </div>
             <div>
               <button class="quiet-button" type="button" data-action="refresh-canon-memory">${icon('refresh-cw')}重新计算</button>
@@ -1120,7 +1120,7 @@ function renderCanonMemory(inspection: CanonMemoryInspection | null): string {
   }
   const snapshot: CanonMemorySnapshotView = inspection.snapshot;
   const statusBadge = snapshot.injectedText
-    ? `<span class="scope-badge">注入中 · 正史 ${snapshot.counts.resident + snapshot.counts.triggered} 条 · 传记 ${snapshot.continuity.anchorCount} 条</span>`
+    ? `<span class="scope-badge">注入中 · 正史 ${snapshot.counts.resident + snapshot.counts.triggered} 条 · 传记原文 ${snapshot.continuity.passageCount ?? 0} 章</span>`
     : '<span class="scope-badge">未注入（无有效条目命中）</span>';
   const rows = snapshot.entries.length === 0
     ? '<div class="error-log-empty">当前聊天还没有已归档的蝴蝶效应档案。</div>'
@@ -1130,7 +1130,7 @@ function renderCanonMemory(inspection: CanonMemoryInspection | null): string {
         : entry.status === 'triggered'
           ? `触发（分 ${entry.score}）`
           : entry.status === 'unmatched'
-            ? '未命中'
+            ? (entry.reasons.includes('budget:whole-record-not-selected') ? '已命中·本轮数量省略' : '未命中')
             : '已失效·不注入';
       return `
         <article>
@@ -1152,7 +1152,7 @@ function renderCanonMemory(inspection: CanonMemoryInspection | null): string {
         </header>
         <p>revision ${snapshot.headRevision} · 最近刷新：${escapeHtml(snapshot.trigger)} · ${new Date(snapshot.computedAt).toLocaleString()}</p>
         <p>档案合计 ${snapshot.counts.total}：常驻 ${snapshot.counts.resident} · 触发 ${snapshot.counts.triggered} · 未命中 ${snapshot.counts.unmatched} · 已失效 ${snapshot.counts.filtered}</p>
-        <p>源 A 紧凑残片 ${snapshot.tombstoneCount} 条；源 B 传记锚 ${snapshot.continuity.anchorCount} · 未决关系 ${snapshot.continuity.relationCount} · 预算省略 ${snapshot.continuity.omittedCount}</p>
+        <p>蝴蝶紧凑残片 ${snapshot.tombstoneCount} 条；传记原文 ${snapshot.continuity.passageCount ?? 0} 章；连续性锚 ${snapshot.continuity.anchorCount}；未决关系 ${snapshot.continuity.relationCount}；未投递 ${snapshot.continuity.omittedCount}</p>
         ${snapshot.continuity.warnings.length ? `<p class="error-log-meta">源 B 降级：${escapeHtml(snapshot.continuity.warnings.join('；'))}</p>` : ''}
         ${inspection.failure ? `<p class="error-log-meta">最近一次注入失败：${escapeHtml(inspection.failure)}</p>` : ''}
         ${snapshot.injectedText

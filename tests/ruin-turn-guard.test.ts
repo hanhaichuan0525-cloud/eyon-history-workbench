@@ -26,6 +26,9 @@ test('活动墟境普通轮次注入防误返边界，渲染后可清除', async
 
   await guard.prepareOrdinaryTurn();
   assert.match(prompts[0].value, /任务完成.*不等于玩家授权遣返/u);
+  assert.match(prompts[0].value, /正文里的.*仅表达意愿/u);
+  assert.match(prompts[0].value, /即使此前确认过方案.*必须.*点击/u);
+  assert.match(prompts[0].value, /蝴蝶效应.*确认本轮参考方案.*遣返现世/u);
   assert.match(prompts[0].value, /不得把流程状态改为 idle/u);
   await guard.clear();
   assert.equal(prompts.at(-1)?.value, '');

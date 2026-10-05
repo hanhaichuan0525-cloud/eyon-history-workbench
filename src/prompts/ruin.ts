@@ -17,6 +17,7 @@ import type {
   RuinMaterial,
 } from '../schemas/ruin.ts';
 import { KNOWN_EYON_ERAS } from '../schemas/ruin.ts';
+import { renderRuinCreativeReferences } from '../core/creativeReferences.ts';
 import {
   findPersonTimelineEntry,
   personMentionedIn,
@@ -329,7 +330,7 @@ export function buildRuinTaskSpine(input: RuinPromptInput) {
       '先理解 sourceText 要探索的事件、主体、关系、群体规模与叙事焦点',
       '再从已知实体中权衡谁在该时代与地点有资格、有动机且能实际贡献',
       '史料没有合适具名者时，允许创造受限于当地与当时的历史人物或组织',
-      '最后才用骰材决定表现角度、压力和触发方式，不得让骰材改写任务主体',
+      '最后才参考时期基调和文风倾向展开表达，不得改写任务主体或为了文风制造事件',
     ],
     priority: ['hardScope', 'sourceText', 'qualifiedCanon', 'creativeMaterials'],
   };
@@ -398,22 +399,22 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
   const prompt = [
     '<RUIN_OUTLINE_BATCH_TASK>',
     'Create all requested ruin candidates in one compact batch. This stage is an outline, not the final historical prose.',
-    'A great ruin manuscript: era-credible (location, institutions, peoples fit the era), characters independent and vivid (every named person carries their own identity, motive and price), events with causality and reversal (not a mechanical war report), ending with resonance. History is history, the present is the present: never arrange a historical predecessor for anything contemporary.',
+    'A great ruin manuscript makes the requested history vivid and playable: credible people do concrete things in a place and era that fit the evidence. Curiosity, affection, play, discovery, conflict and ordinary work can all carry an event. Causality means understandable progression, not a mandatory reversal, sacrifice or catastrophe.',
     'Treat explicit LOCKED facts in EVIDENCE_LEDGER_READ_ONLY as immutable canon. QUALIFIED_EVIDENCE_VIEW decides whether a related passage may serve as stage, actor, cause, background, aftermath or reference; only then invent missing connective history.',
     'Build one shared historical stage first, then create different causal branches from it. Reuse only a small canonical anchor cast; each branch must still have its own indispensable local actors and must not merely rename the same roles.',
     'For open history, candidates must be genuinely different events, not cosmetic redating. For one requested canonical incident, preserve that incident across evidence-compatible alternative interpretations; differentiate only genuinely unknown causes, mechanisms or perspectives, never its established date, age, participants or outcome.',
-    'Fuse each material set into natural in-world history. Never expose dice labels, seed names, writing stages, or phrases such as background/conflict/trigger.',
+    'Use each selected period as the historical main tone, not an event-topic seed. Never expose configuration labels or writing stages in the prose.',
     'Source and worldbook titles are script labels, not in-world names: never write a book name, character-card name or worldbook version (e.g. a title containing an era name plus a work name, or "v4.2") into the manuscript, and never use such a label as an item, technique or organization name.',
     'Use the requested location, focus references, supplementary direction and relevant sources. A related external place or later relic is not automatically the event stage. Inference may freely fill OPEN local gaps, but may not rewrite an established fact.',
     'The form location is the sole target stage. Current-scene places and places mentioned only by related passages are retrieval references, never alternative stages. A newly invented street, camp, fort or district is allowed only as a local sub-location inside the form location.',
     'PLAYER_TASK_SPINE_READ_ONLY is the task-completion contract. Analyze its sourceText as a whole before selecting actors: identify the requested historical subject, event anchor, relationships, collective scale and narrative focus. Do not reduce it to isolated keywords.',
-    'TASK_SUBJECT_BOUNDARY is shared with biography generation. Keep stage, subject and requested direction distinct: the form location is where events happen; sourceText says what history is being explored; dice only changes pressure and texture. Decide in natural language whether the subject is an individual, a collection, an industry, a group, a place or another phenomenon, and what keeps it the same subject through time. Do not output or validate a fixed type enum.',
+    'TASK_SUBJECT_BOUNDARY is shared with biography generation. Keep stage, subject and requested direction distinct: the form location is where events happen; sourceText says what history is being explored; period and style references guide how it is told, not what event must happen. Decide in natural language whether the subject is an individual, a collection, an industry, a group, a place or another phenomenon, and what keeps it the same subject through time. Do not output or validate a fixed type enum.',
     'A current MVU object is attested in the present, not automatically throughout the requested past. If a requested period predates its earliest evidence, write the site, lineage, predecessor or conditions that later produce it, unless dated evidence or the player explicitly establishes that the object itself already existed.',
     'Choose people and organizations because their period, place, allegiance, abilities, motives and contribution fit the interpreted task. Known entities are optional unless directly required; invented local historical actors are valid when the evidence has no suitable named actor.',
     'A selected biography is continuity evidence, not an actor quota. Preserve its established states when the requested history touches them, but do not pull every named person into the ruin. A known person may appear only when the whole player request needs them and their identity, profession, period and route to the location can naturally fit; otherwise create a local actor. Travel is allowed when plausibly established, not banned by distance alone.',
     'UI-selected characters are focus references, not mandatory actors. They raise retrieval priority and may guide relationships, identity or historical leads. Put one in sharedCast, candidate.cast and node participants only when this candidate truly makes that person act, speak, decide, suffer or otherwise participate. Merely being selected, related to an actor, or useful as background is never enough. A name in candidate.cast is a claim of actual participation, not a reference list.',
-    'Retrieval may return current-chat contemporary people (MVU/relationship-list personas such as judges, nobles or companions, and DLC character cards) — they are living people of the present era. A historical candidate must never adopt a contemporary person under their real name — if their role fits the task, invent an original person of that era, or use a same-named historical person only when the worldbook explicitly records one. Do not arrange a historical predecessor for a contemporary person, their family name, or their title (e.g. no "ancestor of this judge" or "proto-version of that title"): history stands on its own. Passages tagged as contemporary references are listed only for relationships, current state or naming conventions; they are never actor candidates for a historical era task.',
-    'Every newly introduced historical person needs an original, memorable name with era, region or racial flavor — no generic placeholders like "craftsman A / lord B", no reusing the same good name across people or branches, and no borrowing names, family names or titles of contemporary (MVU) people. Prefer worldbook-named historical persons when suitable; otherwise invent someone who belongs to that era.',
+    'A person known in the present may also have a source-backed past. Judge participation by the requested date, lifespan, life stage, identity and route to this place—not by presence in the current MVU list. When the requested canonical person existed then, use that person under the established name with the appropriate age and role, not an invented substitute. Present-only evidence does not prove past participation; do not automatically invent ancestors or predecessors to force a contemporary reference into an unrelated event. An explicitly requested, source-supported family history remains valid.',
+    'Every genuinely new historical person needs an original, memorable name with era, region or racial flavor, not a generic placeholder. Established people and families retain their exact names; avoid accidentally giving an unrelated invention the identity of a known contemporary person.',
     'Objects and equipment belong to the time band where they first appear in reference material (e.g. an seal-suppression ring first seen in 476-479 band); they may persist into later periods, but must not be re-introduced as newly acquired in a later candidate unless the sources describe a replacement or a change of ownership. Respect the original prose context of an object (who holds it, what it does, where it stays): do not transfer, gift or repurpose an object against that context unless the source describes the transfer; if you do create a transfer, make the story self-consistent with both the old and the new holder.',
     'Stable landmarks and key destinations of established events keep the exact name from the reference narrative (for example the dungeon a person is sent into, the pass they escape through). Do not merge or rename them into a semantically similar place from another entry — a different real location (like winged-people seal ruins versus a post-war prison-dungeon) must not stand in for the established one, and one story must not use two names for the same destination.',
     'CAST_MANIFEST_READ_ONLY is the event-role contract. Every temporally eligible required and group-required canonical actor must remain in sharedCast, every candidate.cast, and at least one node participant list. A person proven unborn or dead by CHARACTER_TIME_ANCHORS is the only override: keep that canonical identity as an absent subject, but do not put the person in sharedCast, candidate.cast or node participants. Preserve every eligible actor\'s canonical name and identity; never substitute an invented actor for it.',
@@ -446,7 +447,7 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
     'castDemand contains mode (single/ensemble/open), minimumDistinctActors (1-5), requiredKinds (short natural-language actor categories) and selectionRule. Interpret the player wording rather than matching a fixed keyword list. Ensemble means at least three consequential contributors.',
     'mustServe is a 1-5 item array of concrete requirements derived from sourceText. materialRole must be exactly support-only.',
     'Each candidate may contain only: candidateKey, branchSignature, taskFit, canonInterpretation, title, premise, summary, historicalResult, span, shift, cast, nodes.',
-    'taskFit is a soft self-record of how this candidate serves the task: subjectServed, eventAnchorServed, servedRequirements and contributions (actor, action, reason). The script does NOT grade it field-by-field: keep it honest and self-consistent, but wording may differ from taskInterpretation. Do not make contributions exist only on paper — the cast and the prose must genuinely perform them. Dice/material may shape how these contributions unfold but cannot become the subject.',
+    'taskFit is a soft self-record of how this candidate serves the task: subjectServed, eventAnchorServed, servedRequirements and contributions (actor, action, reason). The script does NOT grade it field-by-field: keep it honest and self-consistent, but wording may differ from taskInterpretation. The cast and prose must genuinely perform these contributions. Period and style references shape the telling without replacing the requested subject.',
     'sharedCast normally contains 1 to 2 actors who genuinely participate across every candidate as {name, kind, identity, role}; however every temporally eligible required/group-required CAST_MANIFEST actor must be included even when that exceeds the normal count. Hard absence from CHARACTER_TIME_ANCHORS takes priority over required presence for this ruin task only. Selected focus references are not preferred by default: include them only when every branch actually needs their participation. Otherwise prefer source-backed named people, families or organizations that truly act. Copy established names and identities exactly, including punctuation and surname order.',
     'Every candidate.cast must include sharedCast unchanged and in the same order. A candidate normally adds 1 to 2 event-local actors, but may add enough local actors to satisfy an ensemble minimum up to five. Prefer source-backed actors when the sources support them. Local actors should differ across branches when their causal roles differ.',
     'Before using any established person, compare the candidate date with the person lifespan, age or dated deeds in the sources. Never place a person before birth or after death. Match authority, occupation, independence and action to the person\'s age in that exact year: do not back-project a later adult office into childhood or adolescence unless the evidence explicitly establishes exceptional physiology or a special social custom. If age is not explicit, infer one plausible age once and keep that identity and chronology consistent across all candidates.',
@@ -455,7 +456,7 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
     'The player may give a short place name. Keep every node inside that requested location hierarchy, but write each node.location as the rolecard MVU full path with 4 to 8 levels from large to small, joined by ASCII hyphens: 大陆名+方位-势力/区域-子级势力-聚落/地标-区位-详细位置. Reconstruct established parent levels from qualified evidence; a more specific room, street or site is allowed. Never jump to an unrelated city, province or realm, never use unknown/placeholder levels, and never repeat one short name merely to reach the count.',
     'When the complete player request calls for a collective or group portrait, make several suitable people, units or organizations perform consequential actions across different functions. Do not replace the requested collective with one mysterious savior or one scenic landmark.',
     'candidates must follow generationRequest.materials one-to-one and in the same order.',
-    'Dice/material may shape how the requested history unfolds but cannot become its subject. The player request remains the center of actor selection, event design and historical result.',
+    'The player request remains the center of actor selection, event design and historical result. The materials input is a compatibility shell: current creative references do not draw event topics from old dice tables.',
     'branchSignature is a machine-only event identity object with exactly actor, action, object, mechanism, outcome (all concise strings). Describe what is actually done, to what, by what mechanism, and what concrete result follows; omit dates and decorative wording. It will not be shown to players.',
     'Across candidates, branchSignature must differ in the substantive action/mechanism/outcome. For alternative interpretations of one known incident, vary only evidence-compatible open mechanisms or actions; an established outcome stays fixed. Different dates, titles, place-name details or actor aliases never count as substantive difference.',
     'canonInterpretation is the machine-readable reasoning receipt. It contains mode, hypothesis, evidenceFactRefs, evidencePassageRefs, eventUsages and assumptions. Copy only handles literally listed in TASK_CITATION_CONTRACT_V2. An empty allowed list requires an empty output list.',
@@ -464,7 +465,7 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
     input.automaticTimeRange
       ? 'span contains start, end and label. Dates contain year, month and day. generationRequest.start/end is an automatically computed feasible envelope, not a demand to start at a person’s birth or spread nodes across the envelope. Choose the event’s exact span from the original evidence and life stage. Alternative interpretations of the same known incident may share the same span and central date; never redate it to distinguish candidates. Keep the chronology consistent across the whole candidate.'
       : 'span contains start, end and label. Dates contain year, month and day. generationRequest contains the player’s binding concrete range; copy explicit calendar dates inside it.',
-    'shift contains from, to and explanation. from is the state at the start of this candidate, to is the state at its end. They must differ (stable/transition/turbulent). Either endpoint may equal the dominant periodType; it is NOT a fourth forbidden value. Example: a stable-dominant candidate may turn stable → transition. Keep explanation within 20-45 Chinese characters.',
+    'shift contains from, to and explanation. from and to describe the local start/end states (stable/transition/turbulent). They may be equal and may equal periodType. Do not invent a transition or irreversible catastrophe merely for this field. Explain what changed or persisted in 20-45 Chinese characters.',
     'cast is the actual cast, not a reference list. It contains only shared actors and indispensable local actors who visibly participate in this candidate as {name, kind, identity, role}. Every listed member must appear in at least one node and genuinely act in the final prose. kind must be person, family, organization, faction or community; keep the total at five or fewer.',
     'nodes contains exactly 4 chronological items, one each in this order: origin, process, anomaly, result. The anomaly machine key is the player-visible 高潮 stage and remains for old-record compatibility. Each item contains only id, kind, time, location, title, summary, visibleTrace and participants. participants is a short array using names copied from this candidate.cast.',
     'All four stages are playable entry points: origin explores or changes the cause, process affects accumulation, anomaly is the causal climax, and result explores evidence, rescue and downstream consequences. Keep motives, branches, texture and secondary actors for the later expansion stage.',
@@ -541,9 +542,9 @@ export function buildRuinExpansionApiPrompt(
     'Preserve every node id, node kind, structured time and full 4–8 level MVU location exactly. Add detail; do not move, replace or reorder the four playable stages.',
     'The selected outline cast is a read-only canonical ledger. Keep every name, kind, identity and role exactly; do not add, remove, rename, merge or replace actors. Only desire, constraint and inference may be enriched. Preserve the lifespan and age logic already implied by the outline.',
     'Selected biographies remain continuity evidence rather than an actor quota. When this event overlaps a biography stage, keep its already-established survival, profession, ownership and later continuation intact. Do not declare a person, craft line, institution or object totally ended in an earlier event when the supplied later biography still records it, unless the prose naturally explains a remnant, revival, succession or narrowed meaning.',
-    'The player task remains the narrative center during expansion. Dice/material supplies pressure and texture only; every major paragraph must advance the selected outline actors, event anchor or requested historical subject.',
+    'The player task remains the narrative center during expansion. Use period and style references to tell this event with a distinctive voice; scenes, discoveries, relationships and actions should develop the selected outline rather than manufacture pressure for an old material slot.',
     'Keep the whole subject reading from TASK_SUBJECT_BOUNDARY: a collection must not collapse into one decorative object, an industry must not become an object inventory, and an individual organism must not appear before its own life begins. A predecessor, habitat, lineage or site history may be written, but must not masquerade as the subject itself.',
-    'Write one continuous history. Smoothly transform the semantic seeds into concrete people, institutions, resources, pressures, decisions and consequences.',
+    'Write one continuous history from the outline and complete evidence, using the selected period as main tone and styles as adaptable preferences. Let concrete people, actions and circumstances carry the event; do not fabricate a crisis merely for the legacy fusion field names.',
     'Historical blanks may be filled generously, including durable family customs or institutions when they grow naturally from the local causes and do not contradict supplied evidence. Do not turn a local connective invention into an unrelated continent-wide law, divine treaty or civilizational rewrite.',
     'Never mention dice labels, seed stages, backstage terms or how materials were combined.',
     ruinProseLengthInstruction(),
@@ -592,11 +593,12 @@ export function buildRuinExpansionApiPrompt(
     'The only additional top-level field is candidate.',
     'candidate contains only the creative fields: title, premise, summary, historyProse, fusion, shift, nodes, cast, historicalTexture, inferenceNotes.',
     'fusion contains normalOrder, latentFault, pressuredActors, bridge, triggerImpact, forcedDecision, irreversibleTurn, historicalResult.',
+    'These legacy field names describe the local causal progression, not mandatory disaster: latentFault may be an ordinary uncertainty, forcedDecision a freely made response, and irreversibleTurn a meaningful discovery or small lasting choice. Daily life, games and quiet encounters are valid; no forced opposed factions, danger, tragedy or institutional crisis.',
     'bridge contains type, name and explanation. shift only needs explanation.',
     'Each node repeats its existing id and adds title, summary, cause, causalMechanism, participants, interests, materialConditions, opposition, visibleTrace, intervention, possibleBranches and inference.',
-    'Each node has one interests item containing actor, wants and fears, a non-empty intervention suited to that stage, and one possibleBranches item containing condition and consequence. Every stage is enterable: origin may alter causes, process may alter accumulation, anomaly is the climax, and result may alter aftermath without pretending the established earlier event never happened.',
+    'Each node has one interests item containing actor, wants and fears, a non-empty intervention suited to that stage, and one possibleBranches item containing condition and consequence. The legacy fears field may express an ordinary concern or "无明显忧惧"; it does not require danger. Every stage is enterable: origin may alter causes, process may alter accumulation, anomaly is the climax, and result may alter aftermath without pretending the established earlier event never happened.',
     'cast items contain name, kind, identity, role, desire, constraint and inference.',
-    'historicalTexture contains dailyLife, institutions, materialCulture and socialDivisions; each is a one-item short string array.',
+    'historicalTexture contains dailyLife, institutions, materialCulture and socialDivisions; each is a one-item short string array. Describe relevant life, customs, objects and differences of experience. If institutions or social divisions do not affect this event, state that briefly instead of manufacturing bureaucracy or class conflict to fill a slot.',
     'Do not output sourceRefs, qualityChecks, selectedCharacterUsage, biographyUsage, IDs other than existing node IDs, dates, locations, schema fields, or any fixed field the script can supply.',
     '<PRE_SUBMISSION_CHECK>',
     'Before responding, silently verify: one JSON object only; the fixed header is copied verbatim; candidate is the only added top-level key; cast names and kinds are unchanged; all four node ids, kinds, times, locations and order match the outline; every inference is boolean; every interests item has non-empty actor, wants and fears.',
@@ -829,7 +831,7 @@ export function buildCompactRuinExpansionRecoveryPrompt(
     '<RUIN_COMPACT_EXPANSION_RECOVERY>',
     'The full expansion transport closed twice. Complete only the indispensable prose for the already selected outline.',
     'Treat the selected outline as immutable: preserve all names, identities, dates, locations, node order and causal direction exactly.',
-    'Write one continuous in-world history of 420-520 Chinese characters. Use concrete actions, institutions, resources, pressures, decisions and consequences.',
+    'Write one continuous in-world history, normally 320-650 Chinese characters, without cutting a complete passage to fit. Let concrete actions, relationships, discoveries and choices develop this event; institutions, resources or pressures belong only when relevant, not as mandatory story ingredients.',
     'Begin at the exact date of the origin node, make the opening month or season agree with that date, then carry time forward through process, climax and result with visible transitions. Never borrow a later node\'s season for the opening. If the era uses a custom calendar, keep the environment neutral unless the supplied evidence explicitly maps its months to seasons.',
     'Include the outline cast naturally and make the four outline nodes read as one causal sequence. Do not mention prompts, dice, seed labels, stages or recovery.',
     '</RUIN_COMPACT_EXPANSION_RECOVERY>',
@@ -971,6 +973,7 @@ function buildReferenceDataSection(
     passages: passages.map(({ content: _content, ...passage }) => passage),
   };
   return [
+    renderRuinCreativeReferences(input.generationInput),
     ...(input.context.actorPolicy ? [
       '<RUIN_ACTOR_POLICY_READ_ONLY>',
       JSON.stringify(input.context.actorPolicy),
@@ -997,7 +1000,7 @@ function buildReferenceDataSection(
     ...renderCharacterTimeAnchors(input),
     ...renderCharacterCardsFull(input),
     '<KNOWN_EVENT_FAITHFULNESS_READ_ONLY>',
-    '先从人物完整条目、有效Canon与史料原句判断玩家是否在探讨一个已知事件。已知事件的当事人、亲属关系、事件年龄、日期、时刻、先后及结果先固定，骰材和候选差异只能补未知部分；不得为了制造不同候选给同一已知事件重排年份或改写年龄。补充习惯中的“对应经历”也是事件证据，不只是性格装饰。',
+    '先从人物完整条目、有效Canon与史料原句判断玩家是否在探讨一个已知事件。已知事件的当事人、亲属关系、事件年龄、日期、时刻、先后及结果先固定，时期、文风和候选差异只能补未知部分；不得为了制造不同候选给同一已知事件重排年份或改写年龄。补充习惯中的“对应经历”也是事件证据，不只是性格装饰。',
     '年龄属于紧邻的具体事件，不是人物当前年龄，不能把兄弟姐妹的不同经历互相挪用。“N岁生日当天/当晚”结合显式出生年月日，应落在出生年加N的同月同日；原句时刻同样保留。仅有“某岁时”则保留年龄窗口，未知月日可合理补齐，不伪称原文已有日期。生日月日前后的周岁要据原文校准，年差只是年份级参考。',
     '已知事件日期优先于自动可行时间带内的自由选日。若玩家明确范围与已知事件不相容，只能探索该范围内的前因/后果，不能把事件搬入范围。多个候选可解释同一事件尚未说明的原因、行动与视角，但共有的已知事实不变；采用alternative-interpretation，不用改名或改日期伪造不同事件。原文未说明的细节仍可自由创作。',
     '当前有效蝴蝶日志的墟境行动记录与历史演变是本聊天已生成的历史。探讨其目击者、前因或后果时，承接其中已定的行为、地点、能力来源与结果；不得把已定事件的起因换成自然灾变或另一场袭击。候选差异只补日志未确定的细节，角色当前世界书用于补充而非抹掉干预。尊重有效Canon修订与原文时序，不把后世传播写成当时已有能力，也不因本轮换地点就搬走原事件。',
@@ -1064,7 +1067,7 @@ function contemporaryReferenceTag(
     (passage.title ?? '').includes(name) || name.includes(passage.title ?? ''));
   return isSelected
     ? '[已选重点参考·提高检索注意力·不保证出场]'
-    : '[当代参考·仅供关系/现状/命名惯例·不得采用为历史演员或舞台]';
+    : '[当前人物参考·现状不证明过去在场·历史参与须核对年代、生命阶段与到场渠道]';
 }
 
 function referenceFactExcerpt(content: string, scopeTerms: string[]): string {
@@ -1512,11 +1515,6 @@ function toCreativeMaterial(material: RuinMaterial) {
   return {
     candidateKey: material.candidateKey,
     periodType: material.periodType,
-    semanticSeeds: {
-      socialBaseline: materialDirection(material.background),
-      accumulatedPressure: materialDirection(material.conflict),
-      decisiveCatalyst: materialDirection(material.trigger),
-    },
   };
 }
 

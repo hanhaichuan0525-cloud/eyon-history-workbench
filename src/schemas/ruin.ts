@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { GenealogyIdentitySchema } from './genealogy.ts';
+import { RuinCreativeReferencesSchema } from '../core/creativeReferences.ts';
 
 z.config({ jitless: true });
 
@@ -41,46 +42,6 @@ export const RuinWaveLevelSchema = z.enum([
 
 const NullableCalendarPart = z.number().int().nullable();
 const SourceRefs = z.array(z.string().min(1));
-
-const HISTORY_PROSE_TARGET_MAX = 650;
-const HISTORY_PROSE_SENTENCE_FLOOR = 480;
-
-function chineseCharacterCount(source: string): number {
-  return source.match(/\p{Script=Han}/gu)?.length ?? 0;
-}
-
-function normalizeHistoryProse(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  const source = value.trim();
-  if (chineseCharacterCount(source) <= HISTORY_PROSE_TARGET_MAX) return source;
-
-  let hanCount = 0;
-  let hardCut = source.length;
-  let sentenceCut = -1;
-  for (let index = 0; index < source.length;) {
-    const codePoint = source.codePointAt(index);
-    if (codePoint === undefined) break;
-    const character = String.fromCodePoint(codePoint);
-    const width = character.length;
-    if (/\p{Script=Han}/u.test(character)) hanCount += 1;
-    if (
-      hanCount >= HISTORY_PROSE_SENTENCE_FLOOR
-      && hanCount <= HISTORY_PROSE_TARGET_MAX
-      && /[。！？；]/u.test(character)
-    ) {
-      sentenceCut = index + width;
-    }
-    if (hanCount >= HISTORY_PROSE_TARGET_MAX) {
-      hardCut = index + width;
-      break;
-    }
-    index += width;
-  }
-
-  const cut = sentenceCut >= 0 ? sentenceCut : hardCut;
-  const trimmed = source.slice(0, cut).trimEnd();
-  return /[。！？；]$/u.test(trimmed) ? trimmed : `${trimmed}。`;
-}
 
 function ruinNodeTimeTuple(value: unknown): number[] | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -311,7 +272,7 @@ export const RuinCandidateSchema = z.strictObject({
   }),
   premise: z.string().min(1),
   summary: z.string().min(1),
-  historyProse: z.preprocess(normalizeHistoryProse, z.string().min(1)),
+  historyProse: z.string().trim().min(1),
   fusion: z.strictObject({
     normalOrder: z.string().min(1),
     latentFault: z.string().min(1),
@@ -450,6 +411,7 @@ export const RuinMaterialSchema = z.strictObject({
 });
 
 export const RuinGenerationInputSchema = z.strictObject({
+  creativeReferences: RuinCreativeReferencesSchema.optional(),
   era: EyonEraSchema,
   start: RuinDateSchema.nullable(),
   end: RuinDateSchema.nullable(),

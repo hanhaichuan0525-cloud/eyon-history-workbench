@@ -12,6 +12,7 @@ import {
   taskCitationRegistry,
 } from '../retrieval/citations.ts';
 import { projectContinuousStates, renderContinuousStateContract, renderContinuousStatesAtTimes, type ContinuousStateInterval } from '../retrieval/continuousState.ts';
+import { HISTORICAL_REDEMPTION_CONTINUITY, isHistoricalRedemption, renderHistoricalRedemptions } from '../core/historicalRedemption.ts';
 import {
   activeTemporalEligibilityRules,
   assessPersonTimeline,
@@ -188,7 +189,15 @@ export function buildActiveEvidenceView(
     }
     for (const item of personTimeline) {
       const resolved = byName.get(item.name);
-      if (!resolved?.lifespan) continue;
+      if (!resolved) continue;
+      const redemption = resolved.facts.find(isHistoricalRedemption);
+      if (redemption) {
+        item.state = 'unknown';
+        item.narrative = `${item.name}：${redemption.statement} 赎出前可在场，离去之后的原历史不在场；现世新生活另按证据判断，不能用原生年相减计算现世年龄。`;
+        item.lifespan = resolved.lifespan ?? {};
+        continue;
+      }
+      if (!resolved.lifespan) continue;
       const entity: KnowledgeEntity = {
         entityId: resolved.entityId,
         canonicalName: resolved.canonicalName,
@@ -315,9 +324,12 @@ export function renderActiveEvidenceBlock(
     ...(citationRegistry ? [renderTaskCitationContract(citationRegistry)] : []),
     ...renderContinuousStateContract(view.continuousStates ?? []),
     ...renderContinuousStatesAtTimes(view.continuousStates ?? [], options.atTimes ?? []),
+    ...renderHistoricalRedemptions((view.personCanonViews ?? []).flatMap(person => person.facts), options.atTimes ?? []),
     ...(view.canonResolvedView ? [
       '<CANON_CURRENT_VIEW>',
       '以下内容是当前聊天分支、当前 revision、当前任务范围内的正史投影；只约束本次命中的对象，不得外推污染其他人物、地点或时期。',
+      '若有效行动原文确认了历史赎出，旧格式缺少专门索引也不取消该事实；按以下连续性理解原文，不从机制说明或签约意图自行推定成功：',
+      HISTORICAL_REDEMPTION_CONTINUITY,
       `当前版本：revision ${view.canonResolvedView.resolvedRevision}`,
       ...(view.canonResolvedView.activeRevisionFacts.length > 0
         ? [
@@ -333,7 +345,7 @@ export function renderActiveEvidenceBlock(
       ...((view.canonResolvedView.currentTemporalOrigins?.length ?? 0) > 0
         ? [
           '<CURRENT_TEMPORAL_ORIGINS_READ_ONLY>',
-          '以下是当前 revision 对本任务命中对象采用的时间原点。人物年龄、建筑存续时长、机构历史长度都只能由具体事件年份减去对应原点得到；不得拿某次事件中的年龄或时长反推另一套原点。',
+          '以下是当前 revision 对本任务命中对象采用的时间原点。未发生时间轨跳转的人物年龄、建筑存续时长、机构历史长度由具体事件年份减去对应原点得到；历史赎出人物按其离去/抵达两条时间轨及实际经历判断，不把跨过的纪元算成年龄。不得拿某次事件中的年龄或时长反推另一套原点。',
           '若原点来自 intervention，表示玩家干涉后的现行值，已经取代该对象在旧 revision 的原点；回看旧 revision 才恢复旧值。',
           ...view.canonResolvedView.currentTemporalOrigins!.map(origin => JSON.stringify(origin)),
           '</CURRENT_TEMPORAL_ORIGINS_READ_ONLY>',

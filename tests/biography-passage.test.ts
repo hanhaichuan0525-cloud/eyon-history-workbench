@@ -143,15 +143,14 @@ test('PASSAGE_SCHEMA_INVALID 报错可操作化：eventId 空/eventUsage 非法�
   }
 });
 
-test('内容要素缺失报 PASSAGE_ELEMENT_MISSING', () => {
+test('文学要素软自评允许false，保留正文与诚实自评，不因缺少转折重试', () => {
   const passage = makePassage('stage');
-  passage.elementChecklist = { ...passage.elementChecklist, decisiveMoment: false };
-  assert.throws(
-    () => parseAndValidateBiographyPassage(JSON.stringify(passage), {
+  passage.elementChecklist = { sceneGrounded: false, figureVivid: false, decisiveMoment: false };
+  const parsed = parseAndValidateBiographyPassage(JSON.stringify(passage), {
       requestId, passageId: 'stage-1', kind: 'stage', eventId: passage.eventId, eventUsage: passage.eventUsage, knownSources,
-    }),
-    /not satisfied/u,
-  );
+  });
+  assert.deepEqual(parsed.elementChecklist, passage.elementChecklist);
+  assert.equal(parsed.content, passage.content);
 });
 
 test('kind 与期望不符报 PASSAGE_IDENTITY_MISMATCH', () => {

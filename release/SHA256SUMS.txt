@@ -1,8 +1,9 @@
 # Release checksums (SHA-256)
-38bea02358b111692859672ae431e085df5e24cbb16b70b3d5df74fc5134ec2b  酒馆助手脚本-伊雍历史工作台-v0.14.14.json
-a856018d6cc5dba36b04a0fd8ff1304507ecd5514b064fee63b7ff47ccb4aa6f  酒馆助手脚本-伊雍历史工作台-β1.json
+2c5da994cf1f6cb38edad149b7d848a4b6c2ae515cfc0db932f5ac497fa9ddf3  命定系统-伊雍-β1.9-核心规则.txt
+4a1635b426e57c9d563c3df66548d97e84f8a3a8c814cd1387b9542437afff37  酒馆助手脚本-伊雍历史工作台-v0.14.26.json
+c382ce9bb2ad9c532c537184614fb088505c4195799a1b382bf213f5a6fb2007  酒馆助手脚本-伊雍历史工作台-β1.json
 ebd436749781c8de62d91bc371d703a658c3df0683a53f30d56d925c26abab25  extension/auto-loader.js
 4f55622c8ab402cd4301c7b538f14b288474f71afed566a9e6b2648d0c9fc5d2  regex/regex-伊雍-传记美化（as）.json
 2fa224b078e8fd9b96f399ee91d92404561f2e45a84d51c8da48680d468b1c5f  regex/regex-伊雍-对话框美化（as）.json
-0f6f0e0013f6e0b84397aae570eb5dd42a5e5b8430554e4374f7b0c5e38ec432  regex/regex-伊雍-蝴蝶效应面板美化（as）.json
+94031054831f38e568c49c70ae5ebbbdda2c924e0227ef392112f643eb22651a  regex/regex-伊雍-蝴蝶效应面板美化（as）.json
 e6cbc93292113f0e4d29f93fd2e58804118824eed9f3e1bc2509b675cc449392  regex/regex-伊雍-墟境输出面板美化（as）.json

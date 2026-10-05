@@ -14,10 +14,13 @@ export interface ButterflyArchiveAnchors {
   ruinExit: { time: string; location: string };
 }
 
-export function serializeButterflyPanel(effect: ButterflyEffect): string {
+export function serializeButterflyPanel(
+  effect: ButterflyEffect,
+  options: { creativeReferences?: boolean } = {},
+): string {
   return [
     '<butterfly_panel>',
-    `[波及范围|${effect.roll}|${panelUserName(effect.scope)}]`,
+    `[波及范围|${options.creativeReferences ? '顺势演化' : effect.roll}|${panelUserName(effect.scope)}]`,
     `[现世落点|${panelUserName(effect.presentLanding)}]`,
     `[可感知证据|${effect.perceptibleEvidence.map(panelUserName).join('；')}]`,
     `[墟境行动记录|${panelUserName(effect.ruinActionRecord)}]`,
@@ -36,6 +39,7 @@ export function serializeButterflyArchive(input: {
   title: string;
   anchors: ButterflyArchiveAnchors;
   effect: ButterflyEffect;
+  creativeReferences?: boolean;
 }): string {
   const { anchors, effect } = input;
   return [
@@ -55,7 +59,7 @@ export function serializeButterflyArchive(input: {
     '',
     '| 蝴蝶效应面板 | 内容 |',
     '|:---|:---|',
-    `| 波及范围 | ${effect.roll} / ${effect.scope} |`,
+    `| 波及范围 | ${input.creativeReferences ? effect.scope : `${effect.roll} / ${effect.scope}`} |`,
     `| 现世落点 | ${effect.presentLanding} |`,
     `| 可感知证据 | ${effect.perceptibleEvidence.join('；')} |`,
     `| 墟境行动记录 | ${effect.ruinActionRecord} |`,

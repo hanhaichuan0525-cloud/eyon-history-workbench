@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import * as creativeReferences from '../src/core/creativeReferences.ts';
+import * as ruinPanelAccess from '../src/core/ruinPanelAccess.ts';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { selectAddedRuinReferences } from '../src/ui/ruinReferenceSelection.ts';
@@ -66,10 +68,12 @@ test('实际UI事件、按钮与生成输入一致；关闭后刷新、新建任
       for (const match of raw.matchAll(/\b(data-[\w-]+)(?=\s|$)/gu)) this.attributes.set(match[1], '');
     }
     getAttribute(key: string) { return this.attributes.get(key); }
+    setAttribute(key: string, value: string) { this.attributes.set(key, value); }
   }
   class Root extends EventTarget {
     buttons: Button[] = [];
-    set innerHTML(value: string) { this.buttons = [...value.matchAll(/<button\b([^>]*)>/gu)].map(match => new Button(match[1])); }
+    html = '';
+    set innerHTML(value: string) { this.html = value; this.buttons = [...value.matchAll(/<button\b([^>]*)>/gu)].map(match => new Button(match[1])); }
     querySelectorAll(selector: string) { return this.buttons.filter(button => button.attributes.has(selector.slice(1, -1))); }
     querySelector(selector: string) { return this.querySelectorAll(selector)[0] ?? null; }
   }
@@ -84,10 +88,13 @@ test('实际UI事件、按钮与生成输入一致；关闭后刷新、新建任
   let pool: RuinSelectedCharacter[] = [person('已有但关闭的人物')];
   let onReferences: (references: RuinSelectedCharacter[]) => void = () => {};
   const submissions: NonNullable<typeof draft>[] = [];
+  let runtime: { flowState: 'idle' | 'exploring' | 'anchored' | 'returning'; runId: string } = { flowState: 'idle', runId: '' };
+  const panelChanges: string[] = [];
   const facade = {
     getSettings: () => ({ ruinDraft: draft }),
     setRuinDraft: (input: typeof draft) => { draft = input; },
     listRuins: async () => [],
+    getRuinGeography: async () => [],
     generateRuin: async (input: NonNullable<typeof draft>) => { submissions.push(input); throw new Error('不调用模型'); },
   };
   const client = {
@@ -97,7 +104,7 @@ test('实际UI事件、按钮与生成输入一致；关闭后刷新、新建任
     onRuinReferences: (listener: typeof onReferences) => { onReferences = listener; return () => {}; },
     listRuinCharacterReferences: async () => pool,
     listRuinBiographyReferences: async () => [],
-    getRuinRuntimeSnapshot: async () => ({ flowState: 'idle' }), getRuinTaskReview: async () => null,
+    getRuinRuntimeSnapshot: async () => runtime, getRuinTaskReview: async () => null,
   };
   const source = readFileSync(new URL('../src/ui/ruinWorkbench.ts', import.meta.url), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -110,11 +117,17 @@ test('实际UI事件、按钮与生成输入一致；关闭后刷新、新建任
     '../storage/ruins.ts': {}, '../storage/ruinReferences.ts': { ruinCharacterReferenceIdentity },
     './workbenchClient.ts': {}, './ruinReferenceSelection.ts': { selectAddedRuinReferences },
     './ruinWorkbench.css?raw': { default: '' }, './appearance.ts': {},
+    './creativeWorkbench.css?raw': { default: '' },
+    '../core/creativeReferences.ts': creativeReferences,
+    '../core/ruinPanelAccess.ts': ruinPanelAccess,
+    './butterflyWorkbench.ts': { mountButterflyWorkbench: () => ({ async refresh() {}, setAppearance() {}, dispose() {} }) },
     './scrollPan.ts': { installScrollPan: () => () => {} }, './ruinPresentation.ts': {},
   };
   runInNewContext(compiled, { exports, require: (id: string) => dependencies[id], document: { createElement: () => host } });
-  const handle = exports.mountRuinWorkbench!({ replaceChildren() {} }, client);
+  const handle = exports.mountRuinWorkbench!({ replaceChildren() {} }, client, { onPanelChange: (panel: string) => panelChanges.push(panel) });
   await handle.refresh();
+  handle.selectPanel('tasks'); handle.selectPanel('butterfly');
+  assert.equal(panelChanges.length, 0, '未入境时程序化切页也不放行');
   const added = person('塞缪尔·克罗');
   pool = [...pool, added];
   onReferences(pool);
@@ -130,6 +143,23 @@ test('实际UI事件、按钮与生成输入一致；关闭后刷新、新建任
   onReferences(pool);
   await handle.refresh();
   assert.equal(selectedButton().getAttribute('aria-pressed'), 'false');
+  const preservedDraft = draft;
+  runtime = { flowState: 'exploring', runId: '当前轮次' };
+  await handle.refresh();
+  assert.equal(panelChanges.at(-1), 'tasks');
+  assert.equal(root.querySelector('[data-generate]'), null, '入境后生成按钮与编辑表单均不挂载');
+  assert.equal(root.querySelector('[data-new-task]'), null);
+  assert.match(root.html, /墟境生成已锁定/u);
+  handle.selectPanel('generation');
+  assert.equal(panelChanges.at(-1), 'tasks', '活动墟境不能程序化切回生成页');
+  assert.equal(draft, preservedDraft, '锁定不清空草稿');
+  handle.selectPanel('butterfly');
+  assert.equal(panelChanges.at(-1), 'butterfly');
+  runtime = { flowState: 'idle', runId: '' };
+  await handle.refresh();
+  assert.equal(panelChanges.at(-1), 'generation', '归返后自动回到可用的生成页');
+  assert.ok(root.querySelector('[data-generate]'));
+  assert.equal(draft, preservedDraft);
   selectedButton().dispatchEvent(new Event('click'));
   root.querySelector('[data-new-task]')!.dispatchEvent(new Event('click'));
   onReferences(pool);

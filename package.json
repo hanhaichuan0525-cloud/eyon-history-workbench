@@ -1,6 +1,6 @@
 {
   "name": "eyon-history-workbench",
-  "version": "0.14.26",
+  "version": "0.14.34",
   "private": true,
   "type": "module",
   "scripts": {

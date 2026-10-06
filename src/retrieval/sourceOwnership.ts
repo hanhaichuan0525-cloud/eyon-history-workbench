@@ -135,3 +135,16 @@ export function templateIndependentText(content: string): string {
     : mask(suffix));
   return parts.join('').replace(/\{\{[\s\S]*?\}\}/gu, mask);
 }
+
+/** 瞬时识别视图：格式/样式不是实体，原文和 UTF-16 证据偏移保持不变。 */
+export function entityRecognitionText(content: string): string {
+  const mask = (value: string) => value.replace(/[^\r\n]/g, ' ');
+  return templateIndependentText(content)
+    .replace(/<(?:style|script)\b[^>]*>[\s\S]*?<\/(?:style|script)\s*>/giu, mask)
+    .replace(/<!--[\s\S]*?-->/gu, mask)
+    // 只识别 HTML 标签，不误删角色详情、契约和 UpdateVariable 的实际内容。
+    .replace(/<\/?(?:html|head|body|div|span|p|section|article|table|tr|td|th|button|input|textarea|a|img|svg|path|h[1-6])\b[^>]*>/giu, mask)
+    .replace(/^\s*#{1,6}\s+[^\r\n]*(?:生成|输出|编译)格式\s*$/gmu, mask)
+    // Patch 的值仍可供检索；只屏蔽命令键，不能整段删掉死亡/契约等真实状态。
+    .replace(/["'](?:op|path|from)["']\s*:/gu, mask);
+}

@@ -50,6 +50,7 @@ function rollbackGate<T>() {
 function rollbackHarness(
   requireReferences?: (sourceMessageId: number) => Promise<typeof DEFAULT_BUTTERFLY_REFERENCES>,
   onReturnRendered?: (pending: PendingSettlement) => Promise<void>,
+  beforeFreeze?: () => void,
 ) {
   const repository = new MemoryButterflyRepository();
   const messages: RuntimeChatMessage[] = [
@@ -96,7 +97,7 @@ function rollbackHarness(
   } as unknown as ButterflyWorkflow;
   const controller = new ButterflyController({ assembler, workflow, repository, runtime,
     createRequestId: () => `request-${freezeCalls + 1}`, roll: () => 68, now: () => 100,
-    hooks: { requireReferences, onReturnRendered, onStatus: status => { statuses.push(status); } },
+    hooks: { requireReferences, onReturnRendered, beforeFreeze, onStatus: status => { statuses.push(status); } },
     narrativeShell: { async arm() {}, async clear() {}, async clearActive() {}, async assertRenderedFloor() {} },
   });
   return { controller, repository, runtime, messages, assembler, workflow, statuses,
@@ -155,6 +156,24 @@ test('方案内容相同而属性排列不同，同楼准备仍复用完整冻�
   const second = await h.controller.prepareBeforeUserTurn('遣返', 9);
   assert.equal(first.request.requestId, second.request.requestId);
   assert.equal(h.calls().freezeCalls, 1);
+});
+
+test('独立API预检只保护新冻结，已有结果的同楼复用与正文重roll不再检查地址', async () => {
+  let configured = true; let checks = 0;
+  const h = rollbackHarness(async () => ({ ...DEFAULT_BUTTERFLY_REFERENCES }), undefined, () => {
+    checks++;
+    if (!configured) throw new Error('独立 API 地址为空');
+  });
+  const first = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  await h.controller.confirmPreparedUserFloor('遣返', 9);
+  configured = false;
+  const reused = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  const rerolled = await h.controller.prepareText('遣返');
+  assert.equal(reused.request.requestId, first.request.requestId);
+  assert.equal(rerolled?.request.requestId, first.request.requestId);
+  assert.equal(checks, 1);
+  assert.equal(h.calls().freezeCalls, 1);
+  assert.equal((await h.repository.getRecord(butterflyRecordKey(namespace, first.runId)))?.revision, 1);
 });
 
 for (const fails of [false, true]) test(`返程时地交接${fails ? '失败保留可重试快照' : '先于归档且恢复丢失的同楼授权'}`, async () => {

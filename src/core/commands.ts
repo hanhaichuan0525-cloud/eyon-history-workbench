@@ -110,7 +110,9 @@ export function isExplicitReturnIntent(input: string): boolean {
 
   const action = RETURN_SUFFIX_PATTERN.exec(raw);
   if (!action || action.index <= 0) return false;
-  const prefix = raw.slice(0, action.index).trimEnd();
+  // 换行是独立指令的句界；trimEnd 会把按钮追加的换行也删掉，
+  // 导致无标点行动草稿与「遣返」被误当成同一句。
+  const prefix = raw.slice(0, action.index);
   const clause = prefix.split(/[。.!！?？；;\n]/u).at(-1)?.trim() ?? '';
   // 前面是完整叙事句、末句只有指令，也属于玩家此刻的明确行动。
   if (!clause) return true;

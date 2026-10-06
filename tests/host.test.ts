@@ -1025,8 +1025,11 @@ test('脚本设置保留其他脚本变量，并为四个生成模块提供默�
     temperature: 0.8,
   });
   assert.equal((await settings.get('ruin')).model, 'model-a');
+  assert.throws(() => settings.applyGenerationToAll({
+    apiurl: '', key: '', model: '', source: 'openai', maxTokens: 4096, temperature: 0.8,
+  }), /地址为空/u, '未配置模块可读取，但显式保存不能覆盖为一个空地址');
   settings.applyGenerationToAll({
-    apiurl: '',
+    apiurl: 'https://example.com/v1',
     key: '',
     model: '',
     source: 'openai',
@@ -1034,7 +1037,7 @@ test('脚本设置保留其他脚本变量，并为四个生成模块提供默�
     temperature: 0.8,
   });
   assert.deepEqual(await settings.get('butterfly'), {
-    apiurl: '',
+    apiurl: 'https://example.com/v1',
     key: '',
     model: '',
     source: 'openai',

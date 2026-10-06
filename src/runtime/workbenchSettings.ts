@@ -15,6 +15,7 @@ import {
 } from './settings.ts';
 import type { GenerationSettingsProvider } from './tavernGeneration.ts';
 import { ButterflyReferencesSchema, type ButterflyReferences } from '../core/creativeReferences.ts';
+import { requireCustomApiBaseUrl } from './customApiCredentials.ts';
 
 const emptyGenerationSettings = (): GenerationSettings => ({
   apiurl: '',
@@ -299,6 +300,7 @@ implements GenerationSettingsProvider, RuinGenerationInputProvider {
     next: GenerationSettings,
   ): WorkbenchSettings {
     const parsed = GenerationSettingsSchema.parse(next);
+    requireCustomApiBaseUrl(parsed.apiurl);
     const current = this.read();
     return this.write({
       ...current,
@@ -311,6 +313,7 @@ implements GenerationSettingsProvider, RuinGenerationInputProvider {
 
   applyGenerationToAll(next: GenerationSettings): WorkbenchSettings {
     const parsed = GenerationSettingsSchema.parse(next);
+    requireCustomApiBaseUrl(parsed.apiurl);
     const current = this.read();
     return this.write({
       ...current,

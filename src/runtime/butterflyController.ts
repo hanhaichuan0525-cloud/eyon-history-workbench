@@ -41,6 +41,8 @@ export type ButterflyControllerStatus =
 
 export interface ButterflyControllerHooks {
   onStatus?(status: ButterflyControllerStatus, detail?: string): void;
+  /** 新冻结前检查配置；已有结果的正文重roll不需要重新检查或调用模型。 */
+  beforeFreeze?(): void;
   requireReferences?(sourceMessageId: number): Promise<ButterflyReferences>;
   onReturnPrepared?(pending: PendingSettlement): void;
   onReturnRendered?(pending: PendingSettlement): Promise<void>;
@@ -643,6 +645,7 @@ export class ButterflyController {
     epoch: number,
   ) {
     try {
+      this.hooks.beforeFreeze?.();
       const frozen = await this.assembler.freeze(input);
       this.assertActive(epoch);
       return frozen;

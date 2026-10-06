@@ -9,6 +9,7 @@ import {
   customAuthorizationHeader,
   isAuthenticationFailure,
   normalizeCustomApiBaseUrl,
+  requireCustomApiBaseUrl,
   requireCustomApiKey,
 } from './customApiCredentials.ts';
 
@@ -374,8 +375,7 @@ export async function requestCustomChatCompletion(
     deepseekStructured?: boolean;
   },
 ): Promise<unknown> {
-  const endpoint = normalizeCustomApiBaseUrl(config.custom_api.apiurl ?? '');
-  if (!endpoint) throw new Error('Custom API endpoint is empty');
+  const endpoint = requireCustomApiBaseUrl(config.custom_api.apiurl ?? '');
 
   const fetchFunction = requireFunction<typeof fetch>(
     globalObject.fetch ?? globalThis.fetch,

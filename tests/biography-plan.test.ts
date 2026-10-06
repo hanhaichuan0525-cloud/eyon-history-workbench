@@ -573,7 +573,8 @@ test('规划、扩写与批量复核区分资料用途，混合核心不包装�
   const explicit = buildBiographyPassageBatchPrompt({ requestId, plan, passages: [passage], rules, evidence: [core] });
   assert.match(explicit, /伊雍核心｜机制与设定参考，不作历史身份证/u);
   assert.match(explicit, /工作台操作说明：命定契约原文完整保留/u);
-  assert.match(explicit, /不可把伊雍核心无据实体化/u);
+  assert.match(explicit, /所有命定系统的核心机制/u);
+  assert.match(explicit, /不可把任何系统核心无据实体化/u);
 });
 
 test('规划提示词只注入一份上下文（sourceIndex 权威清单，分组数组置空）', () => {

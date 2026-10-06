@@ -16,7 +16,7 @@ import {
 import { buildTemporalEligibilityLedger, extractEraNames, parseWorldTime } from './temporal.ts';
 import { GenealogyIdentitySchema } from '../schemas/genealogy.ts';
 import { parseNumber } from './prosePersonReview.ts';
-import { characterDocumentOwner, characterReferenceIdentity, entityHeadingName, isEntityName, templateIndependentText } from './sourceOwnership.ts';
+import { characterDocumentOwner, characterReferenceIdentity, entityHeadingName, isEntityName, templateIndependentText, entityRecognitionText } from './sourceOwnership.ts';
 
 interface EntitySeed {
   name: string;
@@ -101,6 +101,7 @@ export function buildWorldKnowledgeCatalog(
     if (anchors.length > 0) entity.lifeAnchors = anchors;
   }
   const aliases = aliasIndex(entities);
+  relationSeeds.push(...eventCharacterReferences(snapshots, aliases));
   relationSeeds.push(...characterReferenceRelations(snapshots, aliases));
   const relations = materializeRelations(relationSeeds, aliases);
   const temporalEligibility = buildTemporalEligibilityLedger(snapshots, entities, relations);
@@ -141,7 +142,7 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
 } {
   const entities: EntitySeed[] = [];
   const relations: RelationSeed[] = [];
-  const literal = templateIndependentText(snapshot.content);
+  const literal = entityRecognitionText(snapshot.content);
   const titleParts = [...snapshot.title.matchAll(/[【\[]([^】\]]+)[】\]]/gu)].map(match => match[1].trim());
   const cleanTitle = snapshot.title.replace(/[【\[][^】\]]+[】\]]/gu, '').trim();
   const taggedName = [...titleParts].reverse().find(part =>
@@ -182,9 +183,12 @@ function extractSnapshotSeeds(snapshot: SourceSnapshot): {
       ?? (snapshot.sourceType === 'mvu' ? undefined : extractEraNames(literal)[0])
     : extractEraNames(literal)[0];
   if (isEntityName(titleName) && !GENERIC_TITLES.has(titleName)) {
+    const metadata = snapshot.metadata as Partial<import('./contracts.ts').WorldbookRetrievalMetadata>;
+    const eventKeys = titleKind === 'event' && metadata.schema === 'eyon.retrieval.worldbook-metadata.v1'
+      ? (metadata.strategy?.primaryKeys ?? []).filter(key => isEntityName(key) && literal.includes(key)) : [];
     entities.push({
       ...entitySeed(snapshot, titleName, titleKind, titleKind !== 'unknown'),
-      aliases: referenceIdentity?.aliases,
+      aliases: referenceIdentity?.aliases ?? eventKeys,
       tags: /(?:神明|神祇|女神|男神)/u.test(titleParts.join(' ')) ? ['deity'] : [],
       temporal: titleTemporal,
     });
@@ -362,7 +366,7 @@ function explicitTitleKind(parts: readonly string[]): KnowledgeEntityKind | null
     [/^(?:组织|机构)$/u, 'organization'],
     [/^势力$/u, 'faction'],
     [/^(?:家族|宗族)$/u, 'family'],
-    [/^(?:事件|历史)$/u, 'event'],
+    [/^(?:事件|历史|历史事件)$/u, 'event'],
   ];
   for (const part of parts) {
     for (const [pattern, kind] of tags) if (pattern.test(part)) return kind;
@@ -781,6 +785,38 @@ function characterReferenceRelations(
           status: 'explicit', snapshotId: snapshot.snapshotId, span: locateSpan(snapshot, clause) ?? undefined });
       }
     }
+  }
+  return output;
+}
+
+/** 事件原文单跳引用已存在的唯一人物，不从作者题注或背景地区扩展人物树。 */
+function eventCharacterReferences(snapshots: SourceSnapshot[], aliases: Map<string, KnowledgeEntity[]>): RelationSeed[] {
+  const output: RelationSeed[] = [];
+  const entities = [...new Map([...aliases.values()].flat().map(e => [e.entityId, e])).values()];
+  const people = entities.filter(e => e.kinds.includes('person'));
+  for (const snapshot of snapshots) {
+    if (snapshot.sourceType !== 'worldbook' || characterReferenceIdentity(snapshot)) continue;
+    const tags = [...snapshot.title.matchAll(/[【\[]([^】\]]+)[】\]]/gu)].map(m => m[1]!);
+    const title = snapshot.title.replace(/[【\[][^】\]]+[】\]]/gu, '').trim();
+    if (explicitTitleKind(tags) !== 'event' && inferKind(title, '') !== 'event') continue;
+    const events = entities.filter(e => e.kinds.includes('event')
+      && e.sourceSnapshotIds.includes(snapshot.snapshotId));
+    const text = entityRecognitionText(snapshot.content);
+    const normalized = normalize(text);
+    const mentioned = new Map<string, KnowledgeEntity>();
+    for (const [name, matches] of aliases) {
+      if (matches.length !== 1 || !matches[0]!.kinds.includes('person') || !normalized.includes(name)) continue;
+      // 别名藏在另一个完整姓名里不能独立成为参与者。
+      const unshadowed = people.filter(e => e.entityId !== matches[0]!.entityId
+        && normalize(e.canonicalName).includes(name)).reduce((value, e) => value.split(normalize(e.canonicalName)).join(' '), normalized);
+      const independent = normalized.includes(normalize(matches[0]!.canonicalName)) || unshadowed.includes(name);
+      if (independent) mentioned.set(matches[0]!.entityId, matches[0]!);
+    }
+    for (const event of events) for (const person of mentioned.values()) output.push({
+      subject: event.canonicalName, predicate: 'character_reference', object: person.canonicalName,
+      status: 'explicit', snapshotId: snapshot.snapshotId,
+      span: locateSpan(snapshot, person.canonicalName) ?? undefined,
+    });
   }
   return output;
 }

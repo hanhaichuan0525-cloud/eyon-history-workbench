@@ -45,6 +45,8 @@ import {
   resolveLifespanFromBaseline,
 } from './temporal.ts';
 import { buildTaskCitationRegistry } from './citations.ts';
+import { assessSourcePurpose, retrievalSignalText } from './sourcePurpose.ts';
+import { entityRecognitionText } from './sourceOwnership.ts';
 
 export interface ShadowComparison {
   legacyLogicalIds: string[];
@@ -122,14 +124,22 @@ export class UnifiedShadowRetrievalEngine {
   }): Promise<ShadowRetrievalResult> {
     const started = performance.now();
     const profile = RETRIEVAL_TASK_PROFILES[input.taskType];
-    const query = normalizeRetrievalText(input.query);
-    const fragments = queryFragments(input.query);
-    const eventFrame = buildEventFrame(input.query, this.index.catalog);
+    const matchingQuery = entityRecognitionText(input.query);
+    const purpose = new Map(this.index.sources.map(source => [source.snapshot.snapshotId,
+      assessSourcePurpose(source.snapshot, { taskType: input.taskType, query: matchingQuery,
+        explicitlySelected: input.forcedSourceLogicalIds?.includes(source.snapshot.logicalId) })]));
+    const unused = this.index.sources.filter(source => purpose.get(source.snapshot.snapshotId)?.use === 'not-used');
+    // 原始候选池/语料回执保持；用途明确不符的资料不能提前污染演员和事实覆盖门。
+    const index = unused.length ? buildRetrievalIndex(this.index.sources
+      .filter(source => purpose.get(source.snapshot.snapshotId)?.use !== 'not-used').map(source => source.snapshot)) : this.index;
+    const query = normalizeRetrievalText(matchingQuery);
+    const fragments = queryFragments(matchingQuery);
+    const eventFrame = buildEventFrame(matchingQuery, index.catalog);
     const castRequirementFrame = input.castRequirementQuery === undefined
       ? eventFrame
-      : buildEventFrame(input.castRequirementQuery, this.index.catalog);
-    const roleReferences = resolveRoleReferences(input.castRequirementQuery ?? input.query,
-      this.index.catalog, this.index.sources.map(source => source.snapshot));
+      : buildEventFrame(entityRecognitionText(input.castRequirementQuery), index.catalog);
+    const roleReferences = resolveRoleReferences(entityRecognitionText(input.castRequirementQuery ?? input.query),
+      index.catalog, index.sources.map(source => source.snapshot));
     for (const id of roleReferences.required) {
       if (!castRequirementFrame.directEntityIds.includes(id)) castRequirementFrame.directEntityIds.push(id);
     }
@@ -139,10 +149,10 @@ export class UnifiedShadowRetrievalEngine {
     for (const id of castRequirementFrame.directEntityIds) {
       if (!eventFrame.directEntityIds.includes(id)) eventFrame.directEntityIds.push(id);
     }
-    const initialCastManifest = buildCastManifest(eventFrame, this.index.catalog, {
+    const initialCastManifest = buildCastManifest(eventFrame, index.catalog, {
       focusEntityNames: input.focusEntityNames,
       requiredDirectEntityIds: castRequirementFrame.directEntityIds,
-      actionQuery: input.castRequirementQuery,
+      actionQuery: input.castRequirementQuery === undefined ? undefined : entityRecognitionText(input.castRequirementQuery),
     });
     for (const entry of initialCastManifest.entries) {
       if (roleReferences.required.includes(entry.entityId)) entry.reasons.push('role-grounded-subject');
@@ -154,11 +164,11 @@ export class UnifiedShadowRetrievalEngine {
     const territorialWarnings: string[] = [];
     if ((input.mode ?? 'shadow') === 'active' && requestedEras.length === 1) {
       const directConflicts = eventFrame.directEntityIds.flatMap(entityId =>
-        this.index.catalog.entities.find(entity => entity.entityId === entityId) ?? [])
+        index.catalog.entities.find(entity => entity.entityId === entityId) ?? [])
         .filter(entity => !entityTemporallyEligible(
           entity,
           requestedEras[0],
-          this.index.catalog.temporalEligibility,
+          index.catalog.temporalEligibility,
         ));
       // 时间冲突不再致命：一律降级为 warning，由模型基于时代画像合理处理
       // （异界来源/疆域语义/时间错位锚），保证任务不截断。
@@ -174,11 +184,11 @@ export class UnifiedShadowRetrievalEngine {
     }
     const castSnapshotIds = castSourceSnapshotIds(initialCastManifest);
     const directlyNamedSnapshotIds = new Set(eventFrame.directEntityIds.flatMap(entityId =>
-      this.index.catalog.entities.find(entity => entity.entityId === entityId)?.sourceSnapshotIds ?? []));
-    const matchedEntities = [...this.index.entities.keys()]
+      index.catalog.entities.find(entity => entity.entityId === entityId)?.sourceSnapshotIds ?? []));
+    const matchedEntities = [...index.entities.keys()]
       .filter(entity => fragments.some(fragment =>
         fragment.includes(entity) || entity.includes(fragment)));
-    const ranked = this.index.sources.map(source => {
+    const ranked = index.sources.map(source => {
       const item = rankDirect(
         source.snapshot,
         source.normalizedTitle,
@@ -186,12 +196,14 @@ export class UnifiedShadowRetrievalEngine {
         source.strongSearchTerms,
         query,
         fragments,
-        this.index.entities,
+        index.entities,
       );
       item.eligible = item.score > 0 && (
         !profile.strongPrimarySourceTypes.includes(item.snapshot.sourceType)
         || item.strongPrimary
       );
+      const use = purpose.get(source.snapshot.snapshotId);
+      if (use && item.score > 0) item.reasons.push(`task-purpose:${use.use}:${use.reason}`);
       return item;
     });
     const bySnapshotId = new Map(ranked.map(item => [item.snapshot.snapshotId, item]));
@@ -199,7 +211,7 @@ export class UnifiedShadowRetrievalEngine {
     // 与 cast boost 同级后的确定性通道；时间资格门照常在下方 applyTemporalSourceGate 生效。
     const forcedLogicalIds = new Set(input.forcedSourceLogicalIds ?? []);
     if (forcedLogicalIds.size > 0) {
-      for (const source of this.index.sources) {
+      for (const source of index.sources) {
         if (!forcedLogicalIds.has(source.snapshot.logicalId)) continue;
         boost(
           bySnapshotId.get(source.snapshot.snapshotId),
@@ -210,7 +222,7 @@ export class UnifiedShadowRetrievalEngine {
       }
     }
     for (const entityId of eventFrame.directEntityIds) {
-      const entity = this.index.catalog.entities.find(candidate => candidate.entityId === entityId);
+      const entity = index.catalog.entities.find(candidate => candidate.entityId === entityId);
       if (!entity) continue;
       for (const snapshotId of entity?.sourceSnapshotIds ?? []) {
         boost(bySnapshotId.get(snapshotId), 520, `catalog-direct:${entity.canonicalName}`, true);
@@ -223,8 +235,8 @@ export class UnifiedShadowRetrievalEngine {
         boost(bySnapshotId.get(snapshotId), score, `cast-${entry.disposition}:${entry.identity.canonicalName}`, true);
       }
     }
-    expandRelations(this.index, profile, matchedEntities, bySnapshotId);
-    applyContextSupport(this.index, ranked, input.contextQuery);
+    expandRelations(index, profile, matchedEntities, bySnapshotId);
+    applyContextSupport(index, ranked, input.contextQuery);
     for (const item of ranked) {
       if (!item.eligible) continue;
       const sourceWeight = profile.sourceWeights[item.snapshot.sourceType] ?? 0;
@@ -239,10 +251,10 @@ export class UnifiedShadowRetrievalEngine {
     // 唯一人物的整条目可能同时记载多个时代。原文保留不等于允许人物越过生卒约束；
     // 同名跨时代的不同实体仍走原来的来源门，避免把两个身份合成一个人。
     const personNameCounts = new Map<string, number>();
-    for (const entity of this.index.catalog.entities) {
+    for (const entity of index.catalog.entities) {
       if (entity.kinds.includes('person')) personNameCounts.set(entity.normalizedName, (personNameCounts.get(entity.normalizedName) ?? 0) + 1);
     }
-    const personRawSnapshotIds = new Set(this.index.catalog.entities.flatMap(entity =>
+    const personRawSnapshotIds = new Set(index.catalog.entities.flatMap(entity =>
       entity.kinds.includes('person')
       && personNameCounts.get(entity.normalizedName) === 1
         ? entity.sourceSnapshotIds.filter(id => temporallyEssentialSnapshotIds.has(id)) : []));
@@ -273,7 +285,9 @@ export class UnifiedShadowRetrievalEngine {
       || (right.snapshot.sourceOrder ?? -1) - (left.snapshot.sourceOrder ?? -1)
       || left.snapshot.snapshotId.localeCompare(right.snapshot.snapshotId));
     const selected: RankedSource[] = [];
-    const rejected: RetrievalDecision[] = [];
+    const rejected: RetrievalDecision[] = unused.map(source => decision(rankDirect(source.snapshot,
+      source.normalizedTitle, source.searchTerms, source.strongSearchTerms, query, fragments, this.index.entities),
+      `task-purpose:not-used:${purpose.get(source.snapshot.snapshotId)?.reason}`));
     for (const item of ranked) {
       if (item.score <= 0) {
         rejected.push(decision(item, 'no-retrieval-signal'));
@@ -287,7 +301,7 @@ export class UnifiedShadowRetrievalEngine {
     }
 
     const selectedIds = new Set(selected.map(item => item.snapshot.snapshotId));
-    const selectedClaims = this.index.claims.filter(claim =>
+    const selectedClaims = index.claims.filter(claim =>
       claim.sourceSnapshotIds.some(snapshotId => selectedIds.has(snapshotId)));
     const queryHash = await stableSha256({
       profileId: profile.id,
@@ -295,6 +309,8 @@ export class UnifiedShadowRetrievalEngine {
       query,
       contextQuery: normalizeRetrievalText(input.contextQuery ?? ''),
       snapshotIds: this.index.sources.map(source => source.snapshot.snapshotId),
+      purposePolicy: 'local-task-purpose.v3-fated-systems',
+      forcedSourceLogicalIds: [...(input.forcedSourceLogicalIds ?? [])].sort(),
     });
     const passageStarted = performance.now();
     const desiredCoverageAnchors = castDesiredAnchors(initialCastManifest);
@@ -317,7 +333,7 @@ export class UnifiedShadowRetrievalEngine {
     const groundedSelected = ranked.filter(item => passageSnapshotIds.has(item.snapshot.snapshotId));
     const ungroundedSelected = selected.filter(item => !passageSnapshotIds.has(item.snapshot.snapshotId));
     const groundedSnapshotIds = new Set(groundedSelected.map(item => item.snapshot.snapshotId));
-    const groundedSelectedClaims = this.index.claims.flatMap(claim => {
+    const groundedSelectedClaims = index.claims.flatMap(claim => {
       const sourceSnapshotIds = claim.sourceSnapshotIds.filter(id => groundedSnapshotIds.has(id));
       return sourceSnapshotIds.length > 0 ? [{ ...claim, sourceSnapshotIds }] : [];
     });
@@ -326,7 +342,7 @@ export class UnifiedShadowRetrievalEngine {
     const conflictGroupIds = [...new Set(claims.flatMap(claim =>
       claim.conflictGroupId ? [claim.conflictGroupId] : []))].sort();
     const personTimeline = buildPersonTimeline(
-      this.index.catalog.entities,
+      index.catalog.entities,
       requestedEras[0] ?? null,
       input.baselineWorldTime ?? null,
       input.query,
@@ -334,8 +350,8 @@ export class UnifiedShadowRetrievalEngine {
     const personArtifacts = await buildTaskPersonArtifacts({
       taskType: input.taskType,
       query: input.query,
-      entities: this.index.catalog.entities,
-      snapshots: this.index.sources.map(source => source.snapshot),
+      entities: index.catalog.entities,
+      snapshots: index.sources.map(source => source.snapshot),
       eventFrame,
       castManifest,
     });
@@ -345,7 +361,7 @@ export class UnifiedShadowRetrievalEngine {
       castManifest,
       passages: finalPassages,
       claims,
-      catalog: this.index.catalog,
+      catalog: index.catalog,
       requestedLocations: input.territorialReferences,
     });
     const citationRegistry = buildTaskCitationRegistry({
@@ -362,8 +378,8 @@ export class UnifiedShadowRetrievalEngine {
       passages: finalPassages,
       claims,
       conflictGroupIds,
-      catalogCoverage: this.index.catalog.coverage,
-      temporalEligibility: this.index.catalog.temporalEligibility,
+      catalogCoverage: index.catalog.coverage,
+      temporalEligibility: index.catalog.temporalEligibility,
       eventFrame,
       castManifest,
       personTimeline: personTimeline.length > 0 ? personTimeline : undefined,
@@ -425,21 +441,21 @@ export class UnifiedShadowRetrievalEngine {
         fallback: 'none',
         durationMs: performance.now() - started,
         catalog: {
-          schema: this.index.catalog.schema,
+          schema: index.catalog.schema,
           catalogHash: await stableSha256({
-            entities: this.index.catalog.entities.map(entity => [
+            entities: index.catalog.entities.map(entity => [
               entity.entityId,
               entity.sourceSnapshotIds,
               entity.characterFacts?.facts.map(fact => fact.factId) ?? [],
             ]),
-            relations: this.index.catalog.relations.map(relation => relation.relationId),
-            temporalEligibility: this.index.catalog.temporalEligibility,
-            coverage: this.index.catalog.coverage,
+            relations: index.catalog.relations.map(relation => relation.relationId),
+            temporalEligibility: index.catalog.temporalEligibility,
+            coverage: index.catalog.coverage,
           }),
-          entityCount: this.index.catalog.entities.length,
-          relationCount: this.index.catalog.relations.length,
-          temporalRuleCount: this.index.catalog.temporalEligibility.rules.length,
-          coverage: catalogCoverageCounts(this.index.catalog.coverage),
+          entityCount: index.catalog.entities.length,
+          relationCount: index.catalog.relations.length,
+          temporalRuleCount: index.catalog.temporalEligibility.rules.length,
+          coverage: catalogCoverageCounts(index.catalog.coverage),
         },
         cast: castReceipt(castManifest),
         personCanon: {
@@ -530,7 +546,7 @@ function rankDirect(
     reasons.push(`indexed-term:${strongMatched.slice(0, 3).join(',')}`);
     if (strongMatched.some(term => strongSet.has(term))) strongPrimary = true;
   }
-  const normalizedContent = normalizeRetrievalText(snapshot.content);
+  const normalizedContent = normalizeRetrievalText(retrievalSignalText(snapshot));
   const contentHits = independentContentHits(
     fragments.filter(fragment => normalizedContent.includes(fragment)),
   );
@@ -629,6 +645,12 @@ function applyTemporalSourceGate(
   // 候选；其真实年代与用途仍由 passage qualification 判定，不能在来源门提前删除。
   if (item.specificContentAnchor) return;
   if (essentialSnapshotIds.has(item.snapshot.snapshotId)) return;
+  // 只放行直接强主题命中且确实年代未定的原文，不替它编造纪元/年份。
+  if (item.strongPrimary && /远古|上古|年代不详|时期未定|年代未定/u.test(item.snapshot.content)
+    && item.reasons.some(reason => reason.startsWith('indexed-term:') || reason === 'title-exact-in-query')) {
+    item.reasons.push('undated-topic-reference');
+    return;
+  }
   item.eligible = false;
   item.rejectionReason = 'temporal-scope-unanchored';
 }

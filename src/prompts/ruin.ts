@@ -17,7 +17,7 @@ import type {
   RuinMaterial,
 } from '../schemas/ruin.ts';
 import { KNOWN_EYON_ERAS } from '../schemas/ruin.ts';
-import { renderRuinCreativeReferences } from '../core/creativeReferences.ts';
+import { renderRuinCreativeReferences, renderRuinStyleReminder } from '../core/creativeReferences.ts';
 import {
   findPersonTimelineEntry,
   personMentionedIn,
@@ -477,6 +477,7 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
     'Before responding, silently read any selected biography as a chronology rather than an actor quota. For each candidate date, distinguish what already exists from what is only established in a later biography stage. Do not move a later named person, unique object, ritual, institution, construction or final closure into an earlier period, and do not permanently end something that the later biography still records as active. An earlier local precursor remains allowed when historically plausible, but give it its own local identity instead of borrowing the later proper name or claiming the later event has already happened. For every known person retained in cast, calculate that event-year age from CHARACTER_TIME_ANCHORS and make the role and agency fit that life stage.',
     'If a draft conflicts with an earlier or later biography state, correct the outline itself before sending. Keep uncertain gaps open to plausible invention; do not add fields, explanations or a printed checklist.',
     '</PRE_SUBMISSION_CHECK>',
+    renderRuinStyleReminder(input.generationInput),
     '</MANDATORY_FINAL_OUTPUT_CONTRACT>',
   ].join('\n\n');
   return maskTaskCitationIdentifiers(
@@ -607,6 +608,7 @@ export function buildRuinExpansionApiPrompt(
     'For a custom calendar, use its exact written dates and neutral environmental description unless the supplied worldbook explicitly maps its months to seasons. Never import Earth-like spring/summer/autumn/winter assumptions into an unknown calendar.',
     'If any check fails, correct it before sending. Never print this checklist or its result.',
     '</PRE_SUBMISSION_CHECK>',
+    renderRuinStyleReminder(input.generationInput),
     '</MANDATORY_FINAL_OUTPUT_CONTRACT>',
   ].join('\n\n');
   return maskTaskCitationIdentifiers(
@@ -818,8 +820,9 @@ export function buildCompactRuinExpansionRecoveryPrompt(
   );
   const knownEventFaithfulness = extractTaggedBlock(originalPrompt, 'KNOWN_EVENT_FAITHFULNESS_READ_ONLY');
   const characterTimeAnchors = extractTaggedBlock(originalPrompt, 'CHARACTER_TIME_ANCHORS');
+  const styleReminder = extractTaggedBlock(originalPrompt, 'RUIN_STYLE_REMINDER');
   // 恢复只缩减输出，不裁掉生成已消费的原文。否则生日/对应经历会在恢复时消失。
-  const sourceBlocks = ['CHARACTER_CARDS_FULL', 'HISTORICAL_AUTHORITY_READ_ONLY',
+  const sourceBlocks = ['RUIN_CREATIVE_REFERENCES', 'CHARACTER_CARDS_FULL', 'HISTORICAL_AUTHORITY_READ_ONLY',
     'HISTORICAL_REFERENCE_FACTS_READ_ONLY', 'REFERENCE_DATA_READ_ONLY']
     .flatMap(tag => {
       const content = extractTaggedBlock(originalPrompt, tag);
@@ -872,6 +875,7 @@ export function buildCompactRuinExpansionRecoveryPrompt(
     'The only additional top-level field is candidate.',
     'candidate contains exactly one field: historyProse.',
     'Do not output nodes, cast, dates, locations, fusion, shift, source data, Markdown, analysis or comments. The script restores all omitted structure from the selected outline.',
+    ...(styleReminder ? ['<RUIN_STYLE_REMINDER>', styleReminder, '</RUIN_STYLE_REMINDER>'] : []),
     '</MANDATORY_FINAL_OUTPUT_CONTRACT>',
   ].join('\n\n');
 }
@@ -1353,6 +1357,7 @@ function renderCharacterCardsFull(input: RuinPromptInput): string[] {
   if (attachments.length === 0 && cards.length === 0) return [];
   // 名单 = 选中人物 + 补充方向点名人物（点名即进入）。
   const names = new Set<string>();
+  const confirmedEntityIds = new Set<string>();
   for (const character of selected) {
     const name = normalize(character.name);
     if (name) names.add(name);
@@ -1367,19 +1372,23 @@ function renderCharacterCardsFull(input: RuinPromptInput): string[] {
   }
   // 上游已经以别名共证定位本人/关联资料；这里不能再要求输入包含全名。
   for (const entry of input.context.evidenceBundle.castManifest?.entries ?? []) {
-    if (entry.reasons.includes('character-reference-read-only')
+    if (!entry.identity.kinds.includes('person') || ['excluded', 'optional'].includes(entry.disposition)) continue;
+    if (['required', 'group-required'].includes(entry.disposition)
+      || entry.reasons.includes('character-reference-read-only')
       || entry.reasons.includes('relative-document-reference')
       || [entry.identity.canonicalName, ...entry.identity.aliases].some(name => personMentionedIn(mentionText, name))) {
       names.add(entry.identity.canonicalName);
+      confirmedEntityIds.add(entry.entityId);
     }
   }
   if (names.size === 0) return [];
   const lines: string[] = [];
   const delivered = new Set<string>();
   for (const name of names) {
+    const confirmedName = attachments.some(item => confirmedEntityIds.has(item.entityId) && item.canonicalName === name);
     const matchedAttachments = attachments.filter(item =>
-      personNameMatches(item.canonicalName, name)
-      || personNameMatches(item.title, name));
+      confirmedName ? confirmedEntityIds.has(item.entityId) && item.canonicalName === name
+        : personNameMatches(item.canonicalName, name) || personNameMatches(item.title, name));
     if (matchedAttachments.length > 0) {
       for (const attachment of matchedAttachments) {
         const key = `${attachment.snapshotId}\u0000${attachment.contentHash}`;

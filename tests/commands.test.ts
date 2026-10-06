@@ -123,3 +123,16 @@ test('宽容遣返呼语不能放行否定、假设、转述和普通回去', ()
     '如果退出墟境，是否会丢失任务？',
   ]) assert.equal(parseTextCommand(text), null, text);
 });
+
+test('独立换行的遣返保留无标点草稿，同行否定与转述仍不放行', () => {
+  for (const draft of ['我把笔记本放在原地', '好了', '我记下三个工匠\n把笔记本放在原地']) {
+    for (const newline of ['\n', '\r\n']) {
+      const text = `${draft}${newline}${newline}  遣返`;
+      assert.equal(parseTextCommand(text)?.type, 'ruin.return', text);
+      assert.equal(parseTextCommand(text)?.raw, text.replace(/\r\n/gu, '\n'));
+    }
+  }
+  for (const text of ['记录：\n先不要遣返', '记录：\n她说：遣返吧', '记录：\n如果失败，再遣返吧']) {
+    assert.equal(parseTextCommand(text), null, text);
+  }
+});

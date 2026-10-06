@@ -3,6 +3,16 @@ export function normalizeCustomApiBaseUrl(value: string): string {
   return trimmed.replace(/\/(?:chat\/completions|models)$/iu, '');
 }
 
+export function requireCustomApiBaseUrl(value: string, module = '当前生成模块'): string {
+  const endpoint = normalizeCustomApiBaseUrl(value);
+  if (!endpoint) {
+    throw new Error(
+      `「${module}」实际读取的独立 API 地址为空。请在设置 → API调用中选择该模块，重新填写地址并点击「保存当前模块」或「应用到全部模块」；若界面已有地址，请核对保存的模块及是否重复载入脚本。本次请求未发送。`,
+    );
+  }
+  return endpoint;
+}
+
 export function normalizeCustomApiKey(value: string | undefined): string {
   let normalized = value?.trim() ?? '';
   if (

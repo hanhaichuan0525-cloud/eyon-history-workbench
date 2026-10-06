@@ -25,10 +25,17 @@ const GENERIC_ACTOR_DESCRIPTION = /(?:未知|任意|普通|高阶|低阶|巅峰|
 
 export function buildEventFrame(query: string, catalog: WorldKnowledgeCatalog): EventFrame {
   const normalizedQuery = normalize(query);
+  const canonicalMentions = catalog.entities.filter(entity => entity.kinds.includes('person'))
+    .flatMap(entity => mentionOffsets(normalizedQuery, normalize(entity.canonicalName))
+      .map(start => ({ entityId: entity.entityId, start, end: start + normalize(entity.canonicalName).length })));
   const directEntities = catalog.entities
     .filter(entity => entityNames(entity).some(name =>
       isAdmissibleDirectReference(name)
-      && normalizedQuery.includes(normalize(name))))
+      && mentionOffsets(normalizedQuery, normalize(name)).some(start =>
+        !entity.kinds.includes('person') || !canonicalMentions.some(mention =>
+          mention.entityId !== entity.entityId
+          && mention.start <= start && mention.end >= start + normalize(name).length
+          && mention.end - mention.start > normalize(name).length))))
     .sort((left, right) => queryOffset(query, left) - queryOffset(query, right)
       || right.canonicalName.length - left.canonicalName.length);
   const directEntityIds = removeContainedEntities(directEntities).map(entity => entity.entityId);
@@ -69,6 +76,14 @@ export function buildEventFrame(query: string, catalog: WorldKnowledgeCatalog): 
       .map(entity => entity.entityId),
     collectiveTargets,
   };
+}
+
+/** 按每次出现保护全名；独立出现的短名仍有效，不做全局别名黑名单。 */
+function mentionOffsets(query: string, name: string): number[] {
+  if (!name) return [];
+  const offsets: number[] = [];
+  for (let start = query.indexOf(name); start >= 0; start = query.indexOf(name, start + 1)) offsets.push(start);
+  return offsets;
 }
 
 function entityNamesOverlap(left: KnowledgeEntity, right: KnowledgeEntity): boolean {

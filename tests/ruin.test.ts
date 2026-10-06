@@ -199,6 +199,20 @@ function makeInput(): RuinGenerationInput {
   };
 }
 
+test('讲述气质在规划、扩写和恢复中完整接洽，末尾以短提醒保持选择而不输出新字段', () => {
+  const input = makeInput();
+  input.creativeReferences = { periods: ['transition'], telling: '多方讲述', pace: '先缓后紧', mood: '悲伤惋惜' };
+  const promptInput = { requestId, directive: '墟境探索', generationInput: input, context: makeContext(), rules: { generationContract: '' } };
+  const expansion = buildRuinExpansionApiPrompt(promptInput, input.materials[0]!, makeCandidates().candidates[0]!);
+  for (const prompt of [buildRuinOutlineBatchApiPrompt(promptInput), expansion, buildCompactRuinExpansionRecoveryPrompt(expansion)!]) {
+    assert.match(prompt, /写作抓手/u);
+    const reminder = prompt.slice(prompt.lastIndexOf('本轮讲述气质回看'));
+    assert.match(reminder, /多方讲述/u); assert.match(reminder, /先缓后紧/u); assert.match(reminder, /悲伤惋惜/u);
+    assert.match(reminder, /无需输出/u);
+    assert.ok(!reminder.includes('冷静克制'), '不在末尾混入未选风格');
+  }
+});
+
 test('墟境输入接受真实自定义纪年名，拒绝占位符与标签注入', () => {
   const custom = { ...makeInput(), era: '  星辉历  ' };
   assert.equal(RuinGenerationInputSchema.parse(custom).era, '星辉历');

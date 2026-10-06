@@ -54,6 +54,46 @@ function makePreparation(): BiographyPreparation {
   };
 }
 
+test('蝴蝶小说家身份进入两个真实装配通道，检索/协调/任务及其他模块不继承权限', async () => {
+  class RoleCaptureRuntime extends FakeRuntime {
+    customCalls: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+    async generateCustomRaw(config: { messages: Array<{ role: string; content: string }> }) {
+      this.customCalls.push(config);
+      return '{"captured":true}';
+    }
+  }
+  for (const direct of [false, true]) {
+    const runtime = direct ? new RoleCaptureRuntime() : new FakeRuntime();
+    const adapter = new TavernGenerationAdapter(runtime, { async get() {
+      return { apiurl: 'https://example.invalid/v1', model: 'fixture', source: 'openai' };
+    } }, () => 'role-capture');
+    const routes = [
+      { task: 'butterfly' }, { task: 'butterfly', purpose: 'semantic-evidence' },
+      { task: 'butterfly', purpose: 'canon-reconcile' }, { task: 'butterfly', purpose: 'ruin-task' },
+      { task: 'ruin' }, { task: 'biography' }, { task: 'genealogy' },
+    ] as const;
+    for (const route of routes) {
+      await adapter.generate(route.task, '完整任务原文', {
+        purpose: 'purpose' in route ? route.purpose : undefined,
+      });
+      const call = direct
+        ? (runtime as RoleCaptureRuntime).customCalls.at(-1)!
+        : runtime.rawCalls.at(-1) as { ordered_prompts: Array<{ role?: string; content?: string } | string>; user_input: string };
+      const system = 'messages' in call ? call.messages[0].content
+        : (call.ordered_prompts[0] as { content: string }).content;
+      if (route.task === 'butterfly' && !('purpose' in route)) {
+        assert.match(system, /反事实历史小说家/u);
+        assert.match(system, /创作职责.*BUTTERFLY_WRITING_ROLE/u);
+        assert.match(system, /单个 JSON/u);
+      } else {
+        assert.doesNotMatch(system, /反事实历史小说家|新神诞生|神格转移/u);
+      }
+      assert.equal('messages' in call ? call.messages[1].content : call.user_input, '完整任务原文');
+    }
+    assert.equal(direct ? (runtime as RoleCaptureRuntime).customCalls.length : runtime.rawCalls.length, routes.length);
+  }
+});
+
 function deferredRuntime<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(done => { resolve = done; });

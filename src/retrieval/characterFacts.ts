@@ -232,8 +232,8 @@ export async function buildTaskPersonArtifacts(input: {
     if (!entity.kinds.includes('person')) return false;
     return directIds.has(entity.entityId)
       || castIds.has(entity.entityId)
-      || [entity.canonicalName, ...entity.aliases]
-        .some(name => normalizedQuery.includes(normalizeRetrievalText(name)));
+      || (!input.eventFrame && [entity.canonicalName, ...entity.aliases]
+        .some(name => normalizedQuery.includes(normalizeRetrievalText(name))));
   }).slice(0, 16);
   const personCanonViews = people.filter(entity => entity.characterFacts?.facts.length).map(entity => buildPersonCanonView(
     entity,
@@ -244,9 +244,10 @@ export async function buildTaskPersonArtifacts(input: {
   const snapshotsById = new Map(input.snapshots.map(snapshot => [snapshot.snapshotId, snapshot]));
   const taskAnchorAttachments: TaskAnchorAttachment[] = [];
   for (const entity of people) {
+    // 使用同轮 EventFrame 的全名保护，不能在附件层重新裸匹配短名。
     const direct = directIds.has(entity.entityId)
-      || [entity.canonicalName, ...entity.aliases]
-        .some(name => normalizedQuery.includes(normalizeRetrievalText(name)));
+      || (!input.eventFrame && [entity.canonicalName, ...entity.aliases]
+        .some(name => normalizedQuery.includes(normalizeRetrievalText(name))));
     // 原文交付不依赖机器提取到几个字段；定位成功的散文人设也必须交给模型。
     // 阅读归属可以跨条目，但不把角色经营的组织身份并进该角色，也不添加演员。
     const names = [entity.canonicalName, ...entity.aliases].map(normalizeRetrievalText);

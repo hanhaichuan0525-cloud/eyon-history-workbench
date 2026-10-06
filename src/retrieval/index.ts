@@ -6,7 +6,7 @@ import type {
   WorldKnowledgeCatalog,
 } from './contracts.ts';
 import { buildWorldKnowledgeCatalog } from './catalog.ts';
-import { characterReferenceIdentity, entityHeadingName, isEntityName, templateIndependentText } from './sourceOwnership.ts';
+import { characterReferenceIdentity, entityHeadingName, isEntityName, entityRecognitionText } from './sourceOwnership.ts';
 import { extractTemporalScopes } from './temporal.ts';
 
 export interface IndexedRetrievalSource {
@@ -117,7 +117,7 @@ function sourceTerms(snapshot: SourceSnapshot): {
   search: string[];
   strong: string[];
 } {
-  const literal = templateIndependentText(snapshot.content);
+  const literal = entityRecognitionText(snapshot.content);
   const headingTerms = extractHeadingTerms(literal);
   const reference = characterReferenceIdentity(snapshot);
   const entities = [
@@ -168,7 +168,7 @@ function extractClaims(snapshot: SourceSnapshot): EvidenceClaim[] {
   const claims: EvidenceClaim[] = [];
   const structured = parseRecord(snapshot.content);
   if (!structured) {
-    const sentences = templateIndependentText(snapshot.content).split(/[。；;\n，,]/u).map(value => value.trim()).filter(Boolean);
+    const sentences = entityRecognitionText(snapshot.content).split(/[。；;\n，,]/u).map(value => value.trim()).filter(Boolean);
     for (const sentence of sentences) {
       if (/(?:不属于|不隶属于|不归属于|并非.{0,8}(?:所属|归属))/u.test(sentence)) continue;
       const field = sentence.match(/^(?:[-*]\s*)?([^:：]{2,10})[:：](.{2,30})$/u);

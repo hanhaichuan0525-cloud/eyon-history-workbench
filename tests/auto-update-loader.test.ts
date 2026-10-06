@@ -21,7 +21,14 @@ test('源码版本与清单一致，固定β1加载器元信息可落后于当�
   assert.equal(pkg.version, WORKBENCH_VERSION);
   assert.equal(manifest.displayVersion, WORKBENCH_VERSION_LABEL);
   // 固定加载器无需重新导入；说明是其打包时版本，不是当前运行时版本。
-  const packaged = artifact.info.match(/工作台 (β\d+(?:\.\d+)?)[,，]\s*更新协议 (\d+\.\d+\.\d+)/u);
+  const versionInfoPattern = /工作台 (β\d+(?:\.\d+)*)[,，]\s*更新协议 (\d+\.\d+\.\d+)/u;
+  for (const label of ['β1', 'β1.9', 'β1.9.1']) {
+    assert.match(`工作台 ${label}，更新协议 0.14.34`, versionInfoPattern);
+  }
+  for (const label of ['β1.', 'β1.9.', 'β1.9.1-dev']) {
+    assert.doesNotMatch(`工作台 ${label}，更新协议 0.14.34`, versionInfoPattern);
+  }
+  const packaged = artifact.info.match(versionInfoPattern);
   assert.ok(packaged, '加载器须保留合法展示名与三段数字协议说明');
   const current = WORKBENCH_VERSION.split('.').map(Number);
   const shipped = packaged[2]!.split('.').map(Number);

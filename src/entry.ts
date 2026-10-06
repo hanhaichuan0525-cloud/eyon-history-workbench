@@ -65,6 +65,7 @@ import {
   customAuthorizationHeader,
   isAuthenticationFailure,
   normalizeCustomApiBaseUrl,
+  requireCustomApiBaseUrl,
   requireCustomApiKey,
 } from './runtime/customApiCredentials.ts';
 import { TavernScopeReader } from './runtime/tavernScope.ts';
@@ -591,6 +592,9 @@ async function bootstrap(): Promise<void> {
     now: Date.now,
     narrativeShell: new TavernButterflyNarrativeShell(runtime),
     hooks: {
+      beforeFreeze: () => {
+        requireCustomApiBaseUrl(settings.read().generation.butterfly.apiurl, '蝴蝶效应结算');
+      },
       onReturnPrepared: pending => {
         if (!timeKernel.authorizeReturn(pending)) throw new Error('本轮遣返事务未能登记，请保留玩家楼并重试。');
       },

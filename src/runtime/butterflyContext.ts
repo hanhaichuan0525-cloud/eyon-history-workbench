@@ -18,6 +18,7 @@ import { fingerprintText } from './transactionIdentity.ts';
 import type { RetrievalShadowCapture } from '../retrieval/runtimeShadow.ts';
 import type { ContextSource } from '../core/context.ts';
 import { resolveActiveRetrieval } from './activeRetrieval.ts';
+import { isPureUpdateProtocol } from '../retrieval/sourcePurpose.ts';
 import type { ActiveEvidenceView } from '../prompts/activeEvidence.ts';
 import {
   buildActiveEvidenceView,
@@ -153,6 +154,12 @@ export class TavernButterflyContextAssembler {
       title: `${message.role} floor ${message.message_id}`,
       content: message.message.trim(),
     }));
+    // 按钮在建玩家楼之前冻结：输入框原文就是预定的最后一楼，
+    // 必须先参与空行动检查与检索，不能仅在 request.trigger 里回显。
+    if (!chatSources.some(source => source.sourceId === `chat:${input.userMessageId}`)) {
+      chatSources.push({ sourceId: `chat:${input.userMessageId}`,
+        title: `user floor ${input.userMessageId}`, content: input.rawCommand });
+    }
     const interventions = chatSources.filter(source =>
       source.sourceId !== (entrySource ? `chat:${entrySource.message_id}` : '')
       && !/^(?:请)?(?:进入节点|遣返|返回现世|回到现实|结算蝴蝶效应)[吧。！!\s]*$/u.test(source.content)
@@ -180,7 +187,7 @@ export class TavernButterflyContextAssembler {
       this.sources.getButterflySources(),
     ]);
     // 消费端用途路由，不改宿主世界书/完整语料回执，也不裁任何正文。
-    const worldbooks = worldbookCorpus.sources.filter(source => !isButterflyUpdateProtocol(source));
+    const worldbooks = worldbookCorpus.sources.filter(source => !isPureUpdateProtocol(source));
     const relevantWorldbook = trimSources(worldbooks, 18);
     const involvedEntities = trimSources(characters, 12);
     const relevantGenealogy = trimSources(genealogies, 8);
@@ -464,15 +471,6 @@ function toButterflySource(source: ContextSource) {
     title: source.title,
     content: source.content,
   };
-}
-
-/** 题名和协议正文共证；混入人物原文则保留，不能只因 EJS 或“规则”二字丢史料。 */
-function isButterflyUpdateProtocol(source: { title: string; content: string }): boolean {
-  const title = source.title.normalize('NFKC');
-  if (!/(?:MVU|变量).*(?:更新规则|更新指令)/iu.test(title)) return false;
-  const content = source.content;
-  if (/<[^<>\n]{1,60}(?:角色详情|人物档案)>|const\s+profile\s*=|背景故事\s*[:：]/u.test(content)) return false;
-  return /variables_update_rules\s*:|JSONPatch|<UpdateVariable>/iu.test(content);
 }
 
 function scopeForRoll(roll: number): ButterflyScope {

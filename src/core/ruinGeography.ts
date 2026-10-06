@@ -5,6 +5,8 @@ export interface RuinPlace {
   path: string;
 }
 
+const CONTINENT_NAME = '阿斯塔利亚大陆';
+
 /** 只读取数据，不执行地理加载脚本或 EJS。循环、重复ID、缺父级均不伪造路径。 */
 export function readRuinGeography(raw: unknown, fallbackPaths: readonly string[] = []): RuinPlace[] {
   let value = raw;
@@ -18,7 +20,10 @@ export function readRuinGeography(raw: unknown, fallbackPaths: readonly string[]
     if (!entry || typeof entry !== 'object') continue;
     const { id, name, parent } = entry;
     if (typeof id !== 'string' || typeof name !== 'string' || !id.trim() || !name.trim() || source.has(id)) continue;
-    source.set(id, { name: name.trim(), ...(typeof parent === 'string' && parent ? { parent } : {}) });
+    const parentId = typeof parent === 'string' && parent ? parent : undefined;
+    const label = name.trim();
+    // 地理索引中的根简称补成世界正式名称，显示与提交路径共用同一份数据。
+    source.set(id, { name: !parentId && label === '大陆' ? CONTINENT_NAME : label, ...(parentId ? { parent: parentId } : {}) });
   }
   const result: RuinPlace[] = [];
   for (const [id, entry] of source) {
@@ -35,6 +40,7 @@ export function readRuinGeography(raw: unknown, fallbackPaths: readonly string[]
   for (const path of fallbackPaths) {
     const parts = path.trim().split('-').map(part => part.trim()).filter(Boolean);
     if (parts.length < 2 || parts.length > 8 || parts.some(part => /[<>\r\n]/u.test(part))) continue;
+    if (parts[0] === '大陆') parts[0] = CONTINENT_NAME;
     let parent: string | undefined;
     for (let i = 0; i < parts.length; i++) {
       const prefix = parts.slice(0, i + 1).join('-');

@@ -5,8 +5,10 @@ import test from 'node:test';
 import ts from 'typescript';
 import { parseTextCommand } from '../src/core/commands.ts';
 import { SerializedTavernUserTurnAdapter } from '../src/runtime/tavernHost.ts';
+import { ButterflyController } from '../src/runtime/butterflyController.ts';
 import type { TavernRuntime } from '../src/runtime/contracts.ts';
 import type { TavernDataBindings } from '../src/runtime/tavernHost.ts';
+import { requireCustomApiBaseUrl } from '../src/runtime/customApiCredentials.ts';
 
 /** 运行真实门面与真实串行发送器，只替换宿主/模型，不向真实聊天发送。 */
 function harness(draft: string | null) {
@@ -79,11 +81,50 @@ test('空框或空白框点击按钮也能遣返，只建立一个玩家楼并�
   }
 });
 
+test('真实按钮与遣返识别门接洽：无标点或多行草稿原样抵达冻结器', async () => {
+  for (const draft of ['我把笔记本放在原地', '我记下三个工匠\n把笔记本放在原地']) {
+    const h = harness(draft); let frozenText = '';
+    const controller = new ButterflyController({
+      runtime: { getCurrentCharacterName: () => '伊雍', getCurrentChatId: () => '草稿测试',
+        getLastMessageId: () => 0, getChatMessages: () => h.messages, getMessageSwipeId: () => 0 } as never,
+      assembler: { async freeze(input: { rawCommand: string }) {
+        frozenText = input.rawCommand; throw new Error('冻结器已收到完整草稿');
+      } } as never,
+      repository: {} as never, workflow: {} as never,
+      createRequestId: () => 'draft', roll: () => 1, now: () => 0,
+    });
+    h.context.butterflyController = controller;
+    await assert.rejects(h.submit(), /冻结器已收到完整草稿/u);
+    assert.equal(frozenText, `${draft}\n\n遣返`);
+    assert.equal(h.messages.length, 1, '冻结失败不能创建玩家楼或触发回复');
+    assert.equal(h.context.draft, draft);
+  }
+});
+
 test('已有明确返程指令时保留玩家全文，不重复追加命令', async () => {
   const draft = '我把小花灵抱紧。\n好了，遣返吧，伊雍——';
   const h = harness(draft); await h.submit();
   assert.equal(h.messages.at(-1)?.message, draft);
   assert.equal(h.context.draft, '');
+});
+
+test('真实按钮在API未配置时不冻结、不建楼、不清草稿；重新保存后同一草稿可重试', async () => {
+  const draft = '我把笔记本放在原地'; const h = harness(draft);
+  let apiurl = ''; let frozen = 0;
+  h.context.butterflyController = new ButterflyController({
+    runtime: { getCurrentCharacterName: () => '伊雍', getCurrentChatId: () => '配置测试',
+      getLastMessageId: () => 0, getChatMessages: () => h.messages, getMessageSwipeId: () => 0 } as never,
+    assembler: { async freeze() { frozen++; throw new Error('已通过配置检查'); } } as never,
+    repository: {} as never, workflow: {} as never,
+    createRequestId: () => 'config', roll: () => 1, now: () => 0,
+    hooks: { beforeFreeze: () => { requireCustomApiBaseUrl(apiurl, '蝴蝶效应结算'); } },
+  });
+  await assert.rejects(h.submit(), /蝴蝶效应结算.*地址为空/u);
+  assert.equal(frozen, 0); assert.equal(h.messages.length, 1);
+  assert.equal(h.context.draft, draft); assert.ok(!h.calls.includes('trigger'));
+  apiurl = 'https://relay.example/v1';
+  await assert.rejects(h.submit(), /已通过配置检查/u);
+  assert.equal(frozen, 1); assert.equal(h.context.draft, draft);
 });
 
 test('很长的草稿及其他模块命令不被默认语覆盖或截字，末尾明确返程优先', async () => {

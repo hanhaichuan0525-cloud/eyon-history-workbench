@@ -128,7 +128,7 @@ test('实际侧栏点击逻辑：默认收起、点击展开、再次点击收�
     querySelectorAll: (selector: string) => selector === '[data-view]' ? main : selector === '[data-ruin-child]' ? children : [],
     querySelector: (selector: string) => selector === '[data-ruin-children]' ? group : selector === '[data-view="ruin"]' ? main.find(button => button.dataset.view === 'ruin') : null,
   };
-  const context: any = { exports: {}, root, canOpenRuinPanel, normalizeWorkbenchView, WORKBENCH_VIEWS, moduleRoots: new Map(), resetWorkspaceScroll() {}, refreshView: async () => {}, ledgerFor: () => [], statusText: '', runtime: { flowState:'idle',runId:'' } };
+  const context: any = { exports: {}, root, canOpenRuinPanel, normalizeWorkbenchView, WORKBENCH_VIEWS, moduleRoots: new Map(), ensureMounted: () => false, resetWorkspaceScroll() {}, refreshView: async () => {}, ledgerFor: () => [], statusText: '', runtime: { flowState:'idle',runId:'' } };
   runInNewContext(ts.transpileModule(`let active='ruin',ruinMenuExpanded=false,ruinPanel='generation';
     const snapshot={runtime,ruins:[],butterflies:[],genealogies:[],biographies:[]};
     ${[...functions.values()].join('\n')}

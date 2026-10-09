@@ -68,7 +68,7 @@ test('蝴蝶小说家身份进入两个真实装配通道，检索/协调/任务
       return { apiurl: 'https://example.invalid/v1', model: 'fixture', source: 'openai' };
     } }, () => 'role-capture');
     const routes = [
-      { task: 'butterfly' }, { task: 'butterfly', purpose: 'semantic-evidence' },
+      { task: 'butterfly' },
       { task: 'butterfly', purpose: 'canon-reconcile' }, { task: 'butterfly', purpose: 'ruin-task' },
       { task: 'ruin' }, { task: 'biography' }, { task: 'genealogy' },
     ] as const;

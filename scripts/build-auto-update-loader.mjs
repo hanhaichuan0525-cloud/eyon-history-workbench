@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { basename, dirname, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const manifestPath = resolve(root, 'manifest.json');
@@ -20,7 +20,7 @@ const AUTO_LOADER_ID = 'eyon-history-workbench-auto-loader';
 
 const outputPath = resolve(releaseDir, `酒馆助手脚本-伊雍历史工作台-${RELEASE_LABEL}.json`);
 const sumsPath = resolve(releaseDir, 'SHA256SUMS.txt');
-const remoteLoaderPath = resolve(root, 'extension/auto-loader.js');
+const remoteLoaderPath = resolve(root, 'loaders/auto-loader.js');
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -467,6 +467,7 @@ if (runtimeHash !== manifest.sha256) throw new Error(`dist/index.js hash mismatc
 if (workbenchHash !== manifest.workbenchSha256) throw new Error(`dist/workbench.js hash mismatch: ${workbenchHash} != ${manifest.workbenchSha256}`);
 
 const remoteLoaderContent = createLoaderContent();
+await mkdir(dirname(remoteLoaderPath), { recursive: true });
 await writeFile(remoteLoaderPath, `${remoteLoaderContent}\n`, 'utf8');
 // β1：不再生成"只 import 远端模块"的一行脚本。那条路径在 GitHub raw 上会因为
 // text/plain 被浏览器按 MIME 拒绝；现在把实现整段内联进脚本，远端只提供 manifest 与
@@ -481,7 +482,7 @@ const artifact = {
     + `②manifest 与 dist 全走 jsDelivr，读取后逐字节校验 SHA-256，失败则回退最后一次已验证缓存；`
     + `③魔术棒入口已退役，工作台只由角色卡悬浮球打开，并已接上 eyon-history-workbench:open 桥接；`
     + `④ready 通知后补一次 success，避免通知条目永久驻留导致悬浮球不回日常动作。`
-    + `请停用旧版原生扩展和旧版自动更新脚本，避免重复监听。`,
+    + `请只保留一个已启用的工作台脚本，避免重复监听。`,
   button: { enabled: true, buttons: [] },
   data: {},
   export_with: { data: true, button: true },
@@ -494,7 +495,7 @@ const sums = [
   `# Release checksums (SHA-256)`,
   `${sha256(await readFile(resolve(releaseDir, `酒馆助手脚本-伊雍历史工作台-v${manifest.version}.json`)))}  酒馆助手脚本-伊雍历史工作台-v${manifest.version}.json`,
   `${sha256(await readFile(outputPath))}  ${artifactName}`,
-  `${sha256(await readFile(remoteLoaderPath))}  extension/auto-loader.js`,
+  `${sha256(await readFile(remoteLoaderPath))}  loaders/auto-loader.js`,
 ];
 const releaseRegexDir = resolve(releaseDir, 'regex');
 for (const fileName of ['regex-伊雍-传记美化（as）.json', 'regex-伊雍-对话框美化（as）.json', 'regex-伊雍-蝴蝶效应面板美化（as）.json', 'regex-伊雍-墟境输出面板美化（as）.json']) {

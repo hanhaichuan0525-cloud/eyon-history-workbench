@@ -3,7 +3,7 @@
   "enabled": true,
   "name": "伊雍历史工作台-β1（自动更新加载器）",
   "id": "eyon-history-workbench-auto-loader",
-  "info": "伊雍历史工作台 β1（工作台 β1.9.1，更新协议 0.14.34，loader 0.3.1）。①加载器整段内联，无静态 import，规避 GitHub raw 的 text/plain 导致的 module MIME 拒绝；②manifest 与 dist 全走 jsDelivr，读取后逐字节校验 SHA-256，失败则回退最后一次已验证缓存；③魔术棒入口已退役，工作台只由角色卡悬浮球打开，并已接上 eyon-history-workbench:open 桥接；④ready 通知后补一次 success，避免通知条目永久驻留导致悬浮球不回日常动作。请停用旧版原生扩展和旧版自动更新脚本，避免重复监听。",
+  "info": "伊雍历史工作台 β1（工作台 β1.9.1，更新协议 0.14.35，loader 0.3.1）。①加载器整段内联，无静态 import，规避 GitHub raw 的 text/plain 导致的 module MIME 拒绝；②manifest 与 dist 全走 jsDelivr，读取后逐字节校验 SHA-256，失败则回退最后一次已验证缓存；③魔术棒入口已退役，工作台只由角色卡悬浮球打开，并已接上 eyon-history-workbench:open 桥接；④ready 通知后补一次 success，避免通知条目永久驻留导致悬浮球不回日常动作。请只保留一个已启用的工作台脚本，避免重复监听。",
   "button": {
     "enabled": true,
     "buttons": []

@@ -1,3 +1,4 @@
+import { deduplicateEmbeddedRules } from '../prompts/ruleText.ts';
 import sharedContext from '../../rules/01_命定系统-伊雍-脚本上下文.txt?raw';
 import retrievalContract from '../../rules/03_资料检索与上下文装配契约.txt?raw';
 import validationContract from '../../rules/05_生成结果校验与失败恢复契约.txt?raw';
@@ -10,12 +11,12 @@ import type { RuinRuleSet } from '../prompts/ruin.ts';
 import type { GenealogyRuleSet } from '../prompts/genealogy.ts';
 import type { ButterflyRuleSet } from '../prompts/butterfly.ts';
 
-export const embeddedBiographyRules: BiographyRuleSet = {
+export const embeddedBiographyRules: BiographyRuleSet = deduplicateEmbeddedRules({
   sharedContext,
   retrievalContract,
   validationContract,
   generationContract: biographyGenerationContract,
-};
+});
 
 export const embeddedRuinRules: RuinRuleSet = {
   generationContract: ruinGenerationContract,
@@ -25,9 +26,9 @@ export const embeddedGenealogyRules: GenealogyRuleSet = {
   generationContract: genealogyGenerationContract,
 };
 
-export const embeddedButterflyRules: ButterflyRuleSet = {
+export const embeddedButterflyRules: ButterflyRuleSet = deduplicateEmbeddedRules({
   sharedContext,
   retrievalContract,
   validationContract,
   generationContract: butterflyGenerationContract,
-};
+});

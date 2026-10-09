@@ -41,7 +41,7 @@ test('悬浮球：找不到外壳时广播 :open 让活着的加载器重挂，�
   assert.match(companion, /showTapFeedback/u, '点击必须给可见反馈，不能静默');
 });
 
-for (const path of [testLoaderPath, autoLoaderPath, resolve(root, 'extension/index.js')]) {
+for (const path of [testLoaderPath, autoLoaderPath]) {
   test(`${path.split(/[\\/]/u).at(-1)}：弹层用动态视口尺寸，不能依赖宿主 html 的百分比高度`, async () => {
     const source = await readFile(path, 'utf8');
     const overlay = source.match(/\[data-eyon-history-overlay\]\s*\{([^}]+)\}/u)?.[1] ?? '';

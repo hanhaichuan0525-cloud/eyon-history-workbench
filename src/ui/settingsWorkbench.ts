@@ -9,6 +9,7 @@ import type {
   WorkbenchSettings,
 } from '../runtime/workbenchSettings.ts';
 import { resolveTavernHelperFunction } from '../runtime/tavernRuntimeAdapter.ts';
+import { renderGenerationDiagnostics } from './generationDiagnostics.ts';
 import settingsCss from './settingsWorkbench.css?raw';
 import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
 import {
@@ -60,7 +61,7 @@ const TASKS: Array<{
   { id: 'genealogy', label: '宗族谱系', detail: '仅在生成或刷新当前人物族谱时调用。' },
   { id: 'ruin', label: '墟境生成', detail: '仅在界面生成候选历史与因果节点时调用。' },
   { id: 'biography', label: '寻根溯源', detail: '仅在识别明确命令并生成传记时调用。' },
-  { id: 'butterfly', label: '蝴蝶效应结算', detail: '遣返后读取冻结锚点，生成现世变化并写入全局世界书。' },
+  { id: 'butterfly', label: '蝴蝶效应结算', detail: '遣返时读取冻结锚点，生成现世变化并归档到当前聊天，供正文召回。' },
 ];
 
 /** 未配置模块的空白凭据：字段由玩家在设置页填写，保存时至少要求密钥非空。 */
@@ -118,6 +119,8 @@ export function mountSettingsWorkbench(
   let worldbookEntries: CharacterWorldbookEntryOption[] = [];
   let canonConsumption: CanonConsumptionInspection | null = null;
   let canonMemory: CanonMemoryInspection | null = null;
+  // 只有玩家刷新回执时才克隆诊断，默认折叠区不增加页面读负担。
+  let requestDiagnosticReport = renderGenerationDiagnostics([], []);
   let continuityInspection: ContinuityInspection | null = null;
   let appearance: WorkbenchAppearance = {
     ...FALLBACK_SETTINGS.appearance,
@@ -144,6 +147,7 @@ export function mountSettingsWorkbench(
     mutations.invalidate();
     reads.invalidate(); modelRequest += 1; snapshot = null; worldbookEntries = [];
     canonConsumption = null; canonMemory = null; continuityInspection = null;
+    requestDiagnosticReport = renderGenerationDiagnostics([], []);
     busy = false; status = ''; error = ''; render();
   });
 
@@ -156,7 +160,7 @@ export function mountSettingsWorkbench(
     try {
       const [nextSnapshot, entries] = await Promise.all([
         client.readSnapshot(),
-        client.listCharacterWorldbookEntries(),
+        tab === 'retrieval' ? client.listCharacterWorldbookEntries() : Promise.resolve(worldbookEntries),
       ]);
       if (!current()) return;
       snapshot = nextSnapshot; worldbookEntries = entries;
@@ -245,13 +249,6 @@ export function mountSettingsWorkbench(
         ${sectionHeader('plug-zap', '生成模块 API', '四项历史生成能力统一在此配置')}
         <div class="api-stack">
           <section class="api-root-card">
-            ${settingRow(
-              '剧情时刻',
-              '最近一次传记正文产出的剧情时间（文首 → 文尾）。时间跟着剧情走，寻根溯源与蝴蝶效应的时效判定以此为准。',
-              `<span class="story-clock">${current?.storyClock
-                ? `${escapeHtml(current.storyClock.start)} → ${escapeHtml(current.storyClock.end)}`
-                : '尚未产出（完成一次寻根溯源后自动记录）'}</span>`,
-            )}
             ${settingRow(
               '请求超时（秒）',
               '单个生成请求最多等待时长，0 表示不限制。慢中转上游正常成功可达 5 分钟以上，过短会把「慢但会成功」判死；官方 DeepSeek 建议 180~300。',
@@ -418,6 +415,15 @@ export function mountSettingsWorkbench(
       </details>`;
   }
 
+  function refreshRequestDiagnostics(): void {
+    try {
+      const facade = client.facade();
+      requestDiagnosticReport = renderGenerationDiagnostics(facade.listRetrievalShadowObservations?.() ?? [], facade.listPromptDiagnostics?.() ?? []);
+    } catch { requestDiagnosticReport = '<p>诊断暂不可用，不影响生成与档案。</p>'; }
+  }
+
+  function renderRequestDiagnostics(): string { return requestDiagnosticReport; }
+
   function renderData(current: WorkbenchUiSnapshot | null): string {
     const runtimeLabel = current?.runtime.flowState === 'exploring' ? '墟境探索中' : '现实待机';
     const localCount = (current?.biographies.length ?? 0)
@@ -429,11 +435,15 @@ export function mountSettingsWorkbench(
       <section class="section">
         ${sectionHeader('archive', '数据管理', '当前聊天资料隔离、缓存与备份')}
         ${settingRow('聊天存档隔离', '传记、谱系、墟境方案均以当前聊天 ID 为一级索引。', '<span class="scope-badge">已按聊天隔离</span>')}
-        ${settingRow('世界书注入镜像', '已退役：蝴蝶原稿只存本地，正文可见性走「蝴蝶记忆注入」通道；此处仅清理旧版自动挂载的镜像世界书。', `<button class="quiet-button" type="button" data-action="retire-mirrors">${icon('trash')}清理镜像</button>`)}
         ${settingRow('当前运行状态', '不在设置页直接改写墟境状态。', `<span class="scope-badge">${runtimeLabel}</span>`)}
         ${settingRow('本地资料库', `${localCount} 条资料；工作台版本 ${current?.version ?? '等待脚本'}。`, `<button class="quiet-button" type="button" data-action="check-data">${icon('shield-check')}检查资料库</button>`)}
         ${settingRow('导出备份', 'API 密钥不会包含在备份中。', `<button class="quiet-button" type="button" data-action="export-data">${icon('download')}导出全部资料</button>`)}
-        ${settingRow('清理生成缓存', '删除当前聊天生成的谱系、候选墟境、草稿、临时重点参考人物与未归档的蝴蝶效应结算快照；传记和已归档的蝴蝶效应不受影响。', `<button class="danger-button" type="button" data-action="clear-cache">${icon('trash')}清理缓存</button>`)}
+        ${settingRow('删除生成资料', '删除当前聊天生成的谱系、候选墟境、草稿、临时重点参考人物与未归档的蝴蝶效应结算快照；传记和已归档的蝴蝶效应不受影响。', `<button class="danger-button" type="button" data-action="clear-cache" ${busy || !current || current.runtime.flowState !== 'idle' ? 'disabled' : ''}>${icon('trash')}删除资料</button>`)}
+        ${settingRow('清理临时缓存', '只清理可重建的内存视图；保留全部档案、草稿和待结算快照，不停止生成。', `<button class="quiet-button" type="button" data-action="clear-temporary-cache">${icon('refresh-cw')}清理缓存</button>`)}
+        <details class="advanced-diagnostics" data-state-key="advanced-diagnostics">
+          <summary>高级诊断与兼容清理</summary>
+          ${renderRequestDiagnostics()}
+        ${settingRow('旧版镜像清理', '已退役：蝴蝶原稿只存本地，正文可见性走「蝴蝶记忆注入」通道；此处仅清理旧版自动挂载的镜像世界书。', `<button class="quiet-button" type="button" data-action="retire-mirrors">${icon('trash')}清理镜像</button>`)}
         <section class="error-log">
           <header>
             <div>
@@ -483,6 +493,7 @@ export function mountSettingsWorkbench(
           </header>
           ${renderCanonMemory(canonMemory)}
         </section>
+        </details>
         <section class="error-log">
           <header>
             <div>
@@ -509,6 +520,7 @@ export function mountSettingsWorkbench(
         tab = button.dataset.tab as SettingsTab;
         status = '';
         render();
+        if (tab === 'retrieval') void refresh();
       });
     });
     root.querySelectorAll<HTMLButtonElement>('[data-task]').forEach(button => {
@@ -665,13 +677,20 @@ export function mountSettingsWorkbench(
         return '当前聊天资料已导出，API 密钥未包含在备份中';
       });
     });
+    root.querySelector<HTMLButtonElement>('[data-action="clear-temporary-cache"]')?.addEventListener('click', async () => {
+      await runDataAction(async () => {
+        client.clearTemporaryCache();
+        return '临时缓存已释放；所有档案、草稿及生成任务保持不变';
+      });
+    });
+    root.querySelector<HTMLButtonElement>('[data-action="refresh-request-diagnostics"]')?.addEventListener('click', () => { refreshRequestDiagnostics(); render(); });
     root.querySelector<HTMLButtonElement>('[data-action="clear-cache"]')?.addEventListener('click', async () => {
       if (!globalThis.confirm('将删除当前聊天生成的谱系、候选墟境、草稿、临时重点参考人物与未归档的蝴蝶效应结算快照（失败/残留记录一并清除）。传记和已归档的蝴蝶效应会保留，继续吗？')) {
         return;
       }
       await runDataAction(async () => {
         const result = await client.clearGenerationCache();
-        return `生成缓存已清理：删除${result.genealogiesCleared}份谱系、${result.ruinsCleared}组候选墟境、${result.ruinReferencesCleared}名临时重点参考人物与${result.butterflyPendingCleared ?? 0}条蝴蝶待结算`;
+        return `生成资料已删除：删除${result.genealogiesCleared}份谱系、${result.ruinsCleared}组候选墟境、${result.ruinReferencesCleared}名临时重点参考人物与${result.butterflyPendingCleared ?? 0}条蝴蝶待结算`;
       });
     });
     root.querySelector<HTMLButtonElement>('[data-action="retire-mirrors"]')?.addEventListener('click', async () => {

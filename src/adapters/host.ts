@@ -69,7 +69,7 @@ export interface GenerationAdapter {
     options?: {
       progressLabel?: string;
       /** P0-D：复用同一生成通道，但切换到共享语义证据编译系统契约。 */
-      purpose?: 'semantic-evidence' | 'canon-reconcile' | 'ruin-task';
+      purpose?: 'canon-reconcile' | 'ruin-task';
     },
   ): Promise<string>;
 }

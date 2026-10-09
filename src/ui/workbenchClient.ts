@@ -273,6 +273,13 @@ export class WorkbenchUiClient {
     return result;
   }
 
+  clearTemporaryCache(): void {
+    const facade = this.facade();
+    const clear = facade.clearTemporaryCache ?? facade.clearContinuityCache;
+    if (!clear) throw new Error('当前脚本不支持安全清理临时缓存，请更新脚本');
+    clear();
+  }
+
   clearErrorLog() {
     return this.facade().clearErrorLog();
   }

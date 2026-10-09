@@ -154,6 +154,8 @@ export interface EyonHistoryWorkbenchFacade {
   >;
   /** 只清 P4 派生视图缓存；不删除传记、谱系、Canon 或事实锚。 */
   clearContinuityCache?(): void;
+  /** 只释放可重建的进程内派生缓存，不取消任务、不删除玩家资料。 */
+  clearTemporaryCache?(): void;
   /** P2-B 当前聊天局部状态只读诊断；无可比较视图时返回 null。 */
   inspectCurrentArtifactCanonAssessments(requestId?: string): Promise<
     import('./artifactCanonDiagnostics.ts').ArtifactCanonAssessmentInspection | null

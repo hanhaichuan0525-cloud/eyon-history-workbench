@@ -10,7 +10,7 @@ const root = resolve(import.meta.dirname, '..');
 const originalArtifactPath = resolve(root, 'release/酒馆助手脚本-伊雍历史工作台-β1.json');
 const artifactPath = existsSync(originalArtifactPath) ? originalArtifactPath
   : resolve(root, 'release/酒馆助手脚本-伊雍历史工作台 自动更新.json');
-const remoteLoaderPath = resolve(root, 'extension/auto-loader.js');
+const remoteLoaderPath = resolve(root, 'loaders/auto-loader.js');
 
 test('源码版本与清单一致，固定β1加载器元信息可落后于当前运行时', async () => {
   const manifest = JSON.parse(await readFile(resolve(root, 'manifest.json'), 'utf8'));

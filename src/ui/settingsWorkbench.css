@@ -1007,3 +1007,14 @@ button {
     width: 100%;
   }
 }
+.advanced-diagnostics {
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid var(--border, #94849c44);
+  border-radius: 16px;
+}
+.advanced-diagnostics > summary { cursor: pointer; min-height: 32px; font-weight: 600; }
+.advanced-diagnostics .error-log { margin-top: 14px; }
+.request-diagnostic { overflow-wrap: anywhere; }
+.request-diagnostic details { margin-top: 8px; }
+.request-diagnostic ul { padding-inline-start: 20px; }

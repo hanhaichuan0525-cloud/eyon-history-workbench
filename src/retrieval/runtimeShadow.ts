@@ -130,13 +130,15 @@ export class RuntimeShadowRetrievalObserver implements RetrievalShadowCapture {
   private engine: UnifiedShadowRetrievalEngine | null = null;
   private engineKey = '';
   private queue: Promise<void> = Promise.resolve();
+  private observationEpoch = 0;
 
   constructor(maxObservations = 24) {
     this.maxObservations = maxObservations;
   }
 
   capture(input: RuntimeShadowCaptureInput): Promise<RuntimeShadowCaptureResult> {
-    const run = this.queue.then(() => this.captureOne(input));
+    const epoch = this.observationEpoch;
+    const run = this.queue.then(() => this.captureOne(input, epoch));
     this.queue = run.then(() => undefined, () => undefined);
     return run;
   }
@@ -145,8 +147,14 @@ export class RuntimeShadowRetrievalObserver implements RetrievalShadowCapture {
     return structuredClone(this.observations);
   }
 
+  clearObservations(): void {
+    this.observationEpoch += 1;
+    this.observations.length = 0;
+  }
+
   private async captureOne(
     input: RuntimeShadowCaptureInput,
+    epoch: number,
   ): Promise<RuntimeShadowCaptureResult> {
     const started = performance.now();
     try {
@@ -259,7 +267,7 @@ export class RuntimeShadowRetrievalObserver implements RetrievalShadowCapture {
           totalDurationMs: performance.now() - started,
         },
       };
-      this.record(observation);
+      this.record(observation, epoch);
       return structuredClone({ ...observation, bundle: result.bundle });
     } catch (error) {
       const observation: RuntimeShadowFailureObservation = {
@@ -269,13 +277,14 @@ export class RuntimeShadowRetrievalObserver implements RetrievalShadowCapture {
         taskType: input.taskType,
         error: error instanceof Error ? error.message : String(error),
       };
-      this.record(observation);
+      this.record(observation, epoch);
       console.warn('[Eyon History Workbench] retrieval shadow failed', observation);
       return structuredClone(observation);
     }
   }
 
-  private record(observation: RuntimeShadowObservation): void {
+  private record(observation: RuntimeShadowObservation, epoch: number): void {
+    if (epoch !== this.observationEpoch) return;
     this.observations.push(observation);
     if (this.observations.length > this.maxObservations) {
       this.observations.splice(0, this.observations.length - this.maxObservations);

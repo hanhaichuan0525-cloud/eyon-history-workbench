@@ -122,7 +122,7 @@ import {
   type WorkbenchStatusDetail,
   type WorkbenchDataChangedDetail,
 } from './runtime/facade.ts';
-import { listPromptDiagnostics } from './runtime/promptDiagnostics.ts';
+import { listPromptDiagnostics, clearPromptDiagnostics } from './runtime/promptDiagnostics.ts';
 import { inspectCanonBranch } from './runtime/canonDiagnostics.ts';
 import {
   latestArtifactCanonAssessmentTarget,
@@ -661,6 +661,8 @@ async function bootstrap(): Promise<void> {
       },
       onChatChanged: async () => {
         contextRevision += 1;
+        retrievalShadow.clearObservations();
+        clearPromptDiagnostics();
         renderedMemoryBarrier = Promise.resolve();
         timeKernel.onChatChanged();
         // Clear synchronously at the context edge, before any old reads resume.
@@ -955,6 +957,7 @@ async function bootstrap(): Promise<void> {
     },
     inspectContinuityCache: () => inspectP4DerivedCache(),
     clearContinuityCache: () => clearP4DerivedCache('facade'),
+    clearTemporaryCache: () => clearP4DerivedCache('temporary-cache'),
     inspectCurrentArtifactCanonAssessments: async requestId => {
       const namespace = scopeReader.getNamespace();
       const branch = await canon.getBranch(namespace);
@@ -1258,7 +1261,11 @@ async function bootstrap(): Promise<void> {
       const namespace = scopeReader.getNamespace();
       const references = await ruinReferences.read(namespace);
       const biographyReferences = await ruinReferences.readBiographies(namespace);
+      const runtime = await host.getRuinRuntimeSnapshot();
       if (context !== contextRevision) throw new GenerationCancelledError('ruin');
+      if (activeTasks.size > 0 || runtime.flowState !== 'idle') {
+        throw new Error('请先完成或停止生成，并遣返现世，再删除生成资料；当前档案和快照已保留');
+      }
       ruinController.cancelPending();
       genealogyController.cancelPending();
       butterflyController.cancelPending();

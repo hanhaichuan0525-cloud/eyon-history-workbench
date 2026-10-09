@@ -12,7 +12,7 @@ import {
   toGenerationFailureEnvelope,
   type GenerationFailureKind,
 } from './generationError.ts';
-import { recordPromptDiagnostic } from './promptDiagnostics.ts';
+import { recordPromptDiagnostic, recordPromptUsage } from './promptDiagnostics.ts';
 
 export interface GenerationSettingsProvider {
   get(taskType: 'genealogy' | 'ruin' | 'biography' | 'butterfly'): Promise<unknown>;
@@ -109,7 +109,7 @@ export class TavernGenerationAdapter implements GenerationAdapter {
   async generate(
     taskType: GenerationTask,
     prompt: string,
-    options: { progressLabel?: string; purpose?: 'semantic-evidence' | 'canon-reconcile' | 'ruin-task' } = {},
+    options: { progressLabel?: string; purpose?: 'canon-reconcile' | 'ruin-task' } = {},
   ): Promise<string> {
     const epoch = this.epochs.get(taskType) ?? 0;
     const controller = new AbortController();
@@ -130,7 +130,7 @@ export class TavernGenerationAdapter implements GenerationAdapter {
   private async generateActive(
     taskType: GenerationTask,
     prompt: string,
-    options: { progressLabel?: string; purpose?: 'semantic-evidence' | 'canon-reconcile' | 'ruin-task' },
+    options: { progressLabel?: string; purpose?: 'canon-reconcile' | 'ruin-task' },
     epoch: number,
     controller: AbortController,
   ): Promise<string> {
@@ -178,7 +178,7 @@ export class TavernGenerationAdapter implements GenerationAdapter {
       assertActive(): void;
       maxRetries: number;
       progressLabel: string;
-      purpose?: 'semantic-evidence' | 'canon-reconcile' | 'ruin-task';
+      purpose?: 'canon-reconcile' | 'ruin-task';
       timeoutMs: number;
       deepseekStructured: boolean;
     },
@@ -243,13 +243,17 @@ export class TavernGenerationAdapter implements GenerationAdapter {
 
     const request = () => {
       const instruction = systemInstruction(taskType, purpose);
-      recordPromptDiagnostic({
+      const diagnosticId = recordPromptDiagnostic({
         taskType,
         prompt: activePrompt,
         systemPrompt: instruction,
         attempt: retriesUsed + 1,
         compactRecovery: compactRecoveryUsed,
       });
+      const captureUsage = (raw: unknown) => {
+        try { recordPromptUsage(diagnosticId, raw); } catch { /* 诊断失败不改变生成结果。 */ }
+        return raw;
+      };
       const config = {
         generation_id: this.createGenerationId(),
         user_input: activePrompt,
@@ -279,7 +283,7 @@ export class TavernGenerationAdapter implements GenerationAdapter {
           signal: controller.signal,
           timeoutMs,
           deepseekStructured,
-        }), timeoutMs, `Custom API request timed out after ${timeoutMs}ms`, controller.signal);
+        }), timeoutMs, `Custom API request timed out after ${timeoutMs}ms`, controller.signal).then(captureUsage);
       }
       // 兜底通道（TavernHelper generateRaw + 显式 custom_api）：酒馆通道自身没有
       // 我们的超时控制，不包裹的话慢上游会无限等待（“停不下来”）。超时后底层请求
@@ -292,7 +296,7 @@ export class TavernGenerationAdapter implements GenerationAdapter {
         timeoutMs,
         `Custom API request timed out after ${timeoutMs}ms`,
         controller.signal,
-      );
+      ).then(captureUsage);
     };
 
     for (;;) {
@@ -441,15 +445,8 @@ export function awaitTaskCancellation<T>(task: Promise<T>, signal: AbortSignal):
 
 function systemInstruction(
   taskType: 'genealogy' | 'ruin' | 'biography' | 'butterfly',
-  purpose?: 'semantic-evidence' | 'canon-reconcile' | 'ruin-task',
+  purpose?: 'canon-reconcile' | 'ruin-task',
 ): string {
-  if (purpose === 'semantic-evidence') {
-    return [
-      '你是伊雍历史工作台四模块共享的语义证据编译器。',
-      '只阅读用户提供的馆藏目录与候选 passage；不得写正文、不得创造来源标识、不得仲裁 Canon 版本。',
-      '只返回 MANDATORY_FINAL_OUTPUT_CONTRACT 指定的单个 JSON 对象，不得输出解释、Markdown 或上下文。',
-    ].join('');
-  }
   if (purpose === 'canon-reconcile') {
     return [
       '你是伊雍 Canon 的局部因果协调器。',

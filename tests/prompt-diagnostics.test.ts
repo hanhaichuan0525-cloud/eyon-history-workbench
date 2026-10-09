@@ -93,16 +93,8 @@ test('P4-C2 截止改写与独立裁决拥有可区分的内存诊断阶段', ()
   );
 });
 
-test('P0-D 语义证据编译拥有独立阶段与字符诊断', () => {
+test('退役的语义编译器不再拥有独立生成阶段', () => {
   clearPromptDiagnosticsForTest();
-  recordPromptDiagnostic({
-    taskType: 'ruin',
-    prompt: '<SEMANTIC_EVIDENCE_COMPILER>{"requestId":"semantic-1"}</SEMANTIC_EVIDENCE_COMPILER>',
-    systemPrompt: 'semantic',
-    attempt: 1,
-    compactRecovery: false,
-  });
-  const [entry] = listPromptDiagnostics();
-  assert.equal(entry.stage, 'semantic-evidence');
-  assert.ok(entry.semanticEvidenceChars > 0);
+  recordPromptDiagnostic({ taskType: 'ruin', prompt: '<SEMANTIC_EVIDENCE_COMPILER>旧标记</SEMANTIC_EVIDENCE_COMPILER>', systemPrompt: '', attempt: 1, compactRecovery: false });
+  assert.equal(listPromptDiagnostics()[0].stage, 'outline');
 });

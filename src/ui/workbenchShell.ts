@@ -62,7 +62,8 @@ export function mountWorkbenchShell(
   const moduleRoots = new Map<WorkbenchViewId, HTMLElement>();
 
   renderShell();
-  mountModules();
+  registerModuleRoots();
+  ensureMounted(active);
   // Keep the shell and every nested module on one palette even before the
   // Tavern facade becomes ready; the persisted appearance replaces this
   // fallback as soon as refreshAll receives the first snapshot.
@@ -187,11 +188,20 @@ export function mountWorkbenchShell(
     updateChrome();
   }
 
-  function mountModules(): void {
+  function registerModuleRoots(): void {
     for (const view of WORKBENCH_VIEWS) {
       const target = root.querySelector<HTMLElement>(`[data-module="${view.id}"]`);
       if (!target) continue;
       moduleRoots.set(view.id, target);
+    }
+  }
+
+  // 首次只挂当前页；已访问页面保留实例、草稿与逐篇进度订阅。
+  function ensureMounted(viewId: WorkbenchViewId): boolean {
+      if (disposed || handles.has(viewId)) return false;
+      const target = moduleRoots.get(viewId);
+      if (!target) return false;
+      const view = { id: viewId };
       let handle: ModuleHandle;
       if (view.id === 'timeline') {
         handle = mountTimelineWorkbench(target, client, { theme: appearance.mode, embedded: true });
@@ -216,11 +226,12 @@ export function mountWorkbenchShell(
       }
       handles.set(view.id, handle);
       handle.setAppearance(appearance);
-    }
+      return true;
   }
 
   function navigate(view: WorkbenchViewId): void {
     active = normalizeWorkbenchView(view);
+    const firstVisit = ensureMounted(active);
     if (active !== 'ruin') ruinMenuExpanded = false;
     for (const button of Array.from(root.querySelectorAll<HTMLButtonElement>('[data-view]'))) {
       button.setAttribute('aria-current', button.dataset.view === active ? 'page' : 'false');
@@ -232,7 +243,8 @@ export function mountWorkbenchShell(
     }
     resetWorkspaceScroll();
     updateChrome();
-    void refreshView(active);
+    // 各页面首次挂载自带刷新，不重复发起同一批读取。
+    if (!firstVisit) void refreshView(active);
   }
 
   function resetWorkspaceScroll(): void {
@@ -251,7 +263,8 @@ export function mountWorkbenchShell(
     if (disposed || !client.isReady()) return;
     const current = reads.begin();
     try {
-      await Promise.all([...new Set(views)].map(view => handles.get(view)?.refresh()));
+      // 后台页自己的进度订阅仍在；外壳不额外重读未显示的整页资料。
+      if (views.includes(active)) await handles.get(active)?.refresh();
       if (!current()) return;
       const next = await client.readSnapshot();
       if (!current()) return;
@@ -360,7 +373,7 @@ export function mountWorkbenchShell(
       statusText = snapshot.runtime.flowState === 'exploring'
         ? `墟境探索中 · ${snapshot.runtime.runId || '当前轮次'}`
         : '现实待机 · 当前聊天资料已同步';
-      await Promise.all([...handles.values()].map(handle => handle.refresh()));
+      await handles.get(active)?.refresh();
     } catch (cause) {
       if (!current()) return;
       statusText = cause instanceof Error ? cause.message : String(cause);
@@ -374,6 +387,8 @@ export function mountWorkbenchShell(
 
   function applyWorkbenchAppearance(next: WorkbenchAppearance): void {
     appearance = next;
+    if (snapshot) snapshot = { ...snapshot, settings: { ...snapshot.settings, appearance: next } };
+    updateChrome();
     host.dataset.theme = next.mode;
     applyAppearance(host, next);
     const ownerDocument = host.ownerDocument;

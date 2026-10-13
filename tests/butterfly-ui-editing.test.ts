@@ -31,7 +31,7 @@ class Root extends EventTarget {
   elements: Control[] = []; activeElement: Control | null = null; paints = 0; html = '';
   set innerHTML(value: string) {
     this.paints++; this.html = value;
-    this.elements = [...value.matchAll(/<(?:button|input|select|span|p|output)\b([^>]*)>/gu)].map(match => new Control(match[1]));
+    this.elements = [...value.matchAll(/<(?:button|input|select|span|p|output|small)\b([^>]*)>/gu)].map(match => new Control(match[1]));
   }
   querySelectorAll(selector: string) { return this.elements.filter(element => element.matches(selector)); }
   querySelector(selector: string) { return this.querySelectorAll(selector)[0] ?? null; }
@@ -118,7 +118,7 @@ test('底部两句提示响应选项、预设和离奇度，不重建正在拖�
   const domain = h.root.querySelectorAll('[data-reference]').find(item => item.dataset.reference === 'domain')!;
   assert.match(h.root.html, /value="知识与技术"[^>]*>知识技术<\/option>/u);
   domain.value = '知识与技术'; domain.dispatchEvent(new Event('change')); await flush();
-  assert.ok(h.root.querySelector('[data-style-preview]')!.textContent.includes('知识的实际用途'));
+  assert.ok(h.root.querySelector('[data-style-preview]')!.textContent.includes('知识与技术道路'));
   assert.equal(h.writes.at(-1)?.references.domain, '知识与技术');
   const slider = h.root.querySelector('[data-absurdity]')!; h.root.activeElement = slider;
   const paints = h.root.paints, writes = h.writes.length;
@@ -139,12 +139,17 @@ test('底部两句提示响应选项、预设和离奇度，不重建正在拖�
   h.handle.dispose();
 });
 
-test('三组有独立语义卡片且各三项，主题圆角与窄屏重排不改变控件协议', async () => {
+test('三张卡片各两项，五项主参考和可选领域默认可见，不挂载退役项', async () => {
   const h = harness(); await h.handle.refresh();
   const sections = [...h.root.html.matchAll(/<section class="reference-group ([^"]+)" aria-label="([^"]+)">([\s\S]*?)<\/section>/gu)];
   assert.deepEqual(sections.map(match => match[2]), ['影响重点', '历史发展', '阅读体验']);
-  for (const section of sections) assert.equal(section[3].match(/<label class="field">/gu)?.length, 3);
-  assert.match(sections[2][3], /data-reference="legend"/u);
+  for (const section of sections) {
+    assert.equal(section[3].match(/<label class="field">/gu)?.length, 2);
+    assert.equal(section[3].split('仅作示例，切勿照抄').length - 1, 1);
+  }
+  assert.match(sections[2][3], /data-reference="domain"/u);
+  assert.doesNotMatch(h.root.html, /data-reference="(?:legend|evolution|manifestation)"/u);
+  assert.doesNotMatch(h.root.html, /<details/u);
   const css = readFileSync(new URL('../src/ui/creativeWorkbench.css', import.meta.url), 'utf8');
   assert.match(css, /\.reference-group \{[^}]*border-radius:var\(--archive-radius-panel/u);
   assert.match(css, /\.reference-group--history \{ --reference-accent:var\(--gold\)/u);
@@ -165,7 +170,7 @@ test('中文组字不更新提示或重绘，最终文本完整保存，长输�
   assert.equal(h.root.querySelector('[data-focus]'), input);
   assert.equal(h.writes.at(-1)?.references.focus, input.value);
   const preview = h.root.querySelector('[data-style-preview]')!.textContent;
-  assert.ok(preview.includes('围绕重点对象')); assert.ok(preview.length <= 120);
+  assert.ok(preview.includes('靠近关注对象')); assert.ok(preview.length <= 120);
   assert.equal(preview.match(/。/gu)?.length, 2);
   h.root.activeElement = h.root.querySelector('[data-confirm]');
   h.root.activeElement!.dispatchEvent(new Event('click')); await flush();

@@ -791,6 +791,7 @@ async function bootstrap(): Promise<void> {
   const onMessageDeleted = (messageId: unknown): void => {
     const id = typeof messageId === 'number' ? messageId : Number(messageId);
     if (Number.isInteger(id) && id >= 0) {
+      const returnTaskWasRunning = activeTasks.has('butterfly') || activeReturnTurnController !== null;
       generator.cancel('butterfly');
       butterflyController.cancelPending();
       activeReturnTurnController?.abort(new Error('generation was cancelled'));
@@ -801,15 +802,29 @@ async function bootstrap(): Promise<void> {
         error,
       ));
       const namespace = scopeReader.getNamespace();
+      const revision = contextRevision;
       const rollbackBarrier = (async () => {
+        const returnFloorAffected = await butterflyController.hasReturnFloorAtOrAfter(id, namespace).catch(error => {
+          // 通知核对失败不能阻断原有的 Canon 回滚与后台清理。
+          console.warn('[Eyon History Workbench] return rollback notice check failed', error);
+          return false;
+        });
         const rollback = await canon.rollbackByMessageId(namespace, id, Date.now());
         // G-12：即使本次回滚不由这里执行（清扫抢先 / 脚本未加载时由 Y 入口补清），
         // 也要按当前分支状态把记录状态对齐——回执仍按 receipt 附带留痕。
         await syncCanonRecordStatuses(namespace, rollback?.receipt);
         await butterflyController.onMessageDeleted(id, namespace);
+        if (!disposed && revision === contextRevision
+          && namespaceKey(namespace) === namespaceKey(scopeReader.getNamespace())) {
+          if (returnFloorAffected || rollback) {
+            emitTaskStatus('butterfly', 'cancelled', '遣返楼已回滚，旧的遣返准备已撤销');
+          } else if (returnTaskWasRunning) {
+            // 普通回滚打断处理中任务时仍结束计时，但不误称遣返楼已删除。
+            emitTaskStatus('butterfly', 'cancelled', '聊天已回滚，蝴蝶效应处理已停止');
+          }
+        }
       })();
       lifecycle.resetReturnPreparation(rollbackBarrier);
-      emitTaskStatus('butterfly', 'cancelled', '聊天已回滚，旧的遣返准备已撤销');
       void rollbackBarrier.catch(error => console.error(
           '[Eyon History Workbench] failed to rollback canon revision after message deletion',
           error,

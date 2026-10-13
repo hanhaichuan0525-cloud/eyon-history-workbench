@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ButterflyRecord } from '../src/storage/butterflies.ts';
+import { butterflyLogTitle, serializeButterflyArchive } from '../src/renderers/butterfly.ts';
+import { butterflyRecordTitle } from '../src/runtime/butterflySources.ts';
 import {
   runtimeStateLabel,
   visibleButterflyArchives,
@@ -80,4 +82,46 @@ test('时空页展示已写正文/已归档及失败待重试的蝴蝶效应，�
   assert.equal(result[2]?.statusLabel, '已归档');
   assert.equal(result[2]?.retryable, false);
   assert.equal(result[2]?.failureReason, undefined);
+});
+
+test('新日志以短标题展示，缺失或无效标题用关键词兜底且不截正文', () => {
+  const item = record('committed', 100, 'stable-run');
+  const effect = item.result.effect;
+  effect.title = '《蝴蝶效应日志：逆风新城》';
+  effect.historicalKeywords = ['金谷新城', '战旗'];
+  effect.historicalEvolution = '完整历史正文：未裁剪。'.repeat(200);
+  effect.presentLanding = '现世窗口';
+  const original = structuredClone(effect);
+  const title = butterflyLogTitle(effect);
+  assert.equal(title, '《蝴蝶效应日志：逆风新城》');
+  item.archiveEntry = serializeButterflyArchive({
+    title, effect,
+    anchors: {
+      reality: { time: '488年', location: '现世原地' },
+      ruinEntry: { time: '129年', location: '旧时代原地' },
+      ruinExit: { time: '130年', location: '离开地点' },
+    },
+  });
+  assert.equal(visibleButterflyArchives([item])[0]?.title, title);
+  assert.equal(butterflyRecordTitle(item), title, '召回源沿用归档标题');
+  assert.equal(item.runId, 'stable-run', '展示改名不改变召回源标识');
+  assert.ok(item.archiveEntry.includes(effect.historicalEvolution));
+  assert.deepEqual(effect, original, '命名与渲染不改写原始结果');
+  for (const invalid of [undefined, '', '12', '标题'.repeat(20), 123]) {
+    const input = { ...effect, title: invalid } as typeof effect;
+    assert.equal(butterflyLogTitle(input), '《蝴蝶效应日志：金谷新城》');
+  }
+  assert.equal(butterflyLogTitle({ ...effect, title: undefined, historicalKeywords: [] }),
+    '《蝴蝶效应日志：历史余波》');
+});
+
+test('旧序号日志保留原文；无归档标题时不再用列表序号', () => {
+  const legacy = record('committed', 100, 'legacy-run');
+  legacy.archiveEntry = '### 《蝴蝶效应日志：3》\n\n旧档案完整正文';
+  const current = record('committed', 200, 'current-run');
+  current.archiveEntry = '';
+  current.result.effect.title = '山谷改道';
+  assert.deepEqual(visibleButterflyArchives([legacy, current]).map(item => item.title),
+    ['《蝴蝶效应日志：山谷改道》', '《蝴蝶效应日志：3》']);
+  assert.equal(legacy.archiveEntry, '### 《蝴蝶效应日志：3》\n\n旧档案完整正文');
 });

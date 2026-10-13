@@ -122,6 +122,16 @@ export function createGlobalDataBindings(
     globalObject,
     'triggerSlash',
   );
+  const getLastMessageId = resolveRequiredFunction<() => number>(globalObject, 'getLastMessageId');
+  const getChatMessages = resolveRequiredFunction<
+    (range: number | string) => Array<{ message_id: number; role: string; message: string; is_hidden?: boolean }>
+  >(globalObject, 'getChatMessages');
+  const sillyTavern = resolveHostGlobal<{
+    getCurrentChatId?: () => string;
+    getContext?: () => { chatId?: string; chat_id?: string };
+  }>(globalObject, 'SillyTavern');
+  const chatIdentity = () => sillyTavern?.getCurrentChatId?.()
+    ?? sillyTavern?.getContext?.().chatId ?? sillyTavern?.getContext?.().chat_id;
   const mvu = resolveGlobalMvu(globalObject);
   const getMvuData = typeof mvu?.getMvuData === 'function'
     ? mvu.getMvuData.bind(mvu) as (option: Record<string, unknown>) => Record<string, unknown>
@@ -160,7 +170,28 @@ export function createGlobalDataBindings(
         { refresh: 'affected' },
       ),
     triggerReply: async () => {
-      await triggerSlash('/trigger');
+      const chatId = chatIdentity();
+      const userId = getLastMessageId();
+      const user = getChatMessages(userId).find(message => message.message_id === userId);
+      if (!user || user.role !== 'user' || user.is_hidden) {
+        throw new Error('玩家楼已变化，已停止自动启动正文');
+      }
+      // ST 1.18.0 /trigger defaults to fire-and-forget. Await the actual normal
+      // generation, then read back: a resolved slash promise is not a reply receipt.
+      await triggerSlash('/trigger await=true');
+      if (chatId !== chatIdentity()) {
+        throw new Error('聊天已切换，不再核验旧聊天的自动回复');
+      }
+      const currentUser = getChatMessages(userId).find(message => message.message_id === userId);
+      if (!currentUser || currentUser.role !== 'user' || currentUser.is_hidden || currentUser.message !== user.message) {
+        throw new Error('玩家楼已回滚或改写，不再核验旧轮正文');
+      }
+      const lastId = getLastMessageId();
+      const reply = lastId > userId ? getChatMessages(`${userId + 1}-${lastId}`)
+        .find(message => !message.is_hidden && message.role !== 'system') : undefined;
+      if (reply?.role !== 'assistant' || !reply.message.trim()) {
+        throw new Error('玩家楼已发送，但酒馆未完成正文生成。请保留该楼并使用酒馆「重新生成」；不要再次发送。已准备的资料仍保留。');
+      }
     },
   };
 }

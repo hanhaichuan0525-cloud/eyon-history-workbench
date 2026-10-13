@@ -196,7 +196,7 @@ test('新方案位于完整资料之后，投递骰子仅含回显编号；旧�
   assert.deepEqual(modern.request.dice, { roll: 1, scope: '个人' }, '仅投递视图降噪，不修改冻结协议');
   assert.equal(prompt.split(longAction).length - 1, 1);
   assert.match(prompt, /模板.*不.*既有角色|生成.*模板/u);
-  assert.match(prompt, /本轮创作/u);
+  assert.match(prompt, /本轮先确认历史拐点/u);
   const legacy = await freeze(false);
   const legacyPrompt = buildButterflyApiPrompt({ request: legacy.request, rules });
   assert.ok(legacyPrompt.includes('"scope":"个人"'));

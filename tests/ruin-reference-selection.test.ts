@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import * as creativeReferences from '../src/core/creativeReferences.ts';
+import * as ruinPresentation from '../src/ui/ruinPresentation.ts';
 import * as ruinPanelAccess from '../src/core/ruinPanelAccess.ts';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
@@ -121,11 +122,18 @@ test('实际UI事件、按钮与生成输入一致；关闭后刷新、新建任
     '../core/creativeReferences.ts': creativeReferences,
     '../core/ruinPanelAccess.ts': ruinPanelAccess,
     './butterflyWorkbench.ts': { mountButterflyWorkbench: () => ({ async refresh() {}, setAppearance() {}, dispose() {} }) },
-    './scrollPan.ts': { installScrollPan: () => () => {} }, './ruinPresentation.ts': {},
+    './scrollPan.ts': { installScrollPan: () => () => {} }, './ruinPresentation.ts': ruinPresentation,
   };
   runInNewContext(compiled, { exports, require: (id: string) => dependencies[id], document: { createElement: () => host } });
   const handle = exports.mountRuinWorkbench!({ replaceChildren() {} }, client, { onPanelChange: (panel: string) => panelChanges.push(panel) });
   await handle.refresh();
+  for (const group of ['telling', 'pace', 'mood'] as const) {
+    const options = root.html.match(new RegExp('data-ruin-style="' + group + '"[^>]*>([\\s\\S]*?)</select>', 'u'))![1];
+    for (const value of creativeReferences.RUIN_STYLE_OPTIONS[group]) {
+      assert.ok(options.includes('value="' + value + '"'));
+      assert.ok(options.includes('>' + creativeReferences.ruinStyleLabel(group, value) + '</option>'));
+    }
+  }
   handle.selectPanel('tasks'); handle.selectPanel('butterfly');
   assert.equal(panelChanges.length, 0, '未入境时程序化切页也不放行');
   const added = person('塞缪尔·克罗');

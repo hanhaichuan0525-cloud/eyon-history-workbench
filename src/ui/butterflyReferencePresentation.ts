@@ -1,11 +1,11 @@
-import { absurdityLabel, type ButterflyReferences, type BUTTERFLY_OPTIONS } from '../core/creativeReferences.ts';
+import { absurdityLabel, type ActiveButterflySelectKey, type ButterflyReferences, type BUTTERFLY_OPTIONS } from '../core/creativeReferences.ts';
 
 type SelectKey = keyof typeof BUTTERFLY_OPTIONS;
 type Copy = readonly [label: string, meaning: string];
 
 // 只改变玩家看到的短语；枚举、存档和模型提示仍使用 core 中的原值。
 export const BUTTERFLY_FIELD_LABELS: Record<SelectKey, string> = {
-  scope: '波及范围', domain: '主要改变什么', intensity: '改变有多大',
+  scope: '波及范围', domain: '侧重领域（可选）', intensity: '改写深度',
   legend: '故事有多传奇', evolution: '如何发展下去',
   mood: '读起来什么感觉', manifestation: '如何发现变化',
 };
@@ -16,21 +16,21 @@ export const BUTTERFLY_PRESET_LABELS: Record<string, string> = {
 const OPTIONS: { [K in Exclude<SelectKey, 'scope'>]: Record<ButterflyReferences[K], Copy> } = {
   domain: {
     '顺势生长': ['顺其自然', '重点随行动展开'],
-    '人物命运': ['个人命运', '关注个人成长与选择'],
+    '人物命运': ['个人命运', '关注个体存续与处境'],
     '亲缘与后代': ['家人与后代', '关注家人或继承者'],
     '风俗与日常': ['风俗日常', '关注生活风俗'],
-    '知识与技术': ['知识技术', '关注知识的实际用途'],
+    '知识与技术': ['知识技术', '关注知识与技术道路'],
     '信仰与文化': ['信仰文化', '关注信仰与共同记忆'],
     '政治与战争': ['政治战争', '关注权力与战局'],
     '生态与地域': ['生态地域', '关注环境与生活条件'],
     '多域交织': ['多个方面', '关注多个方面的联动'],
   },
   intensity: {
-    '顺势生长': ['顺其自然', '变化深浅随行动而定'],
+    '顺势生长': ['顺其自然', '变化深浅随拐点而定'],
     '细微涟漪': ['细节变化', '偏向细小改变'],
-    '局部改写': ['局部改变', '偏向改变局部生活'],
-    '深刻转折': ['深刻改变', '可能改变人生方向'],
-    '时代回响': ['长期走向', '可能改变社会的长期走向'],
+    '局部改写': ['局部改变', '某段进程明显不同'],
+    '深刻转折': ['深刻改变', '关键历史结果转向'],
+    '时代回响': ['时代回响', '重要进程或格局不同'],
   },
   legend: {
     '平凡人生': ['平凡日常', '保留日常分量'],
@@ -47,7 +47,7 @@ const OPTIONS: { [K in Exclude<SelectKey, 'scope'>]: Record<ButterflyReferences[
     '多线汇合': ['多线交汇', '让几条变化相遇'],
   },
   mood: {
-    '随历史生长': ['随故事变化', '随人物得失变化'],
+    '随历史生长': ['随故事变化', '随历史变化形成'],
     '温暖明亮': ['温暖明亮', '温暖、有希望'],
     '幽默诙谐': ['轻松诙谐', '轻巧、有趣'],
     '黑色幽默': ['辛酸幽默', '好笑又辛酸'],
@@ -67,14 +67,14 @@ const OPTIONS: { [K in Exclude<SelectKey, 'scope'>]: Record<ButterflyReferences[
 };
 const ABSURDITY: Record<string, Copy> = {
   '朴素': ['贴近日常', '保持朴实'],
-  '意外': ['偶有意外', '偶有意外转折'],
-  '奇诡': ['奇异变化', '与初衷形成反差'],
-  '狂想': ['大胆奇想', '经历大胆转用'],
+  '微妙': ['微妙偏差', '少量偏差带来意外'],
+  '离奇': ['离奇转向', '明显偏离直接预期'],
+  '奇诞': ['大胆奇诞', '疏远的事件意外相连'],
   '极诞': ['离奇演变', '演变离奇但可追溯'],
 };
 
 export function butterflyOptionCopy(key: SelectKey, value: string): Copy {
-  if (key === 'scope') return [value, '观察范围不等于改写深度，也不预定输赢。'];
+  if (key === 'scope') return [value, '主要观察尺度，不是实际影响的天花板。'];
   const options = OPTIONS[key] as Record<string, Copy>;
   return Object.hasOwn(options, value) ? options[value] : [value, '由实际行动和历史条件决定。'];
 }
@@ -82,10 +82,9 @@ export function butterflyAbsurdityCopy(value: number): Copy {
   return ABSURDITY[absurdityLabel(Number.isFinite(value) ? value : 35)];
 }
 export function butterflyStylePreview(refs: ButterflyReferences): string {
-  const meaning = (key: Exclude<SelectKey, 'scope'>) => butterflyOptionCopy(key, refs[key])[1];
-  const scope = refs.scope === '顺势生长' ? '范围随行动发展，' : `在「${refs.scope}」尺度下，`;
-  const focus = refs.focus.trim() ? '围绕重点对象，' : '';
-  return `${scope}${focus}${meaning('domain')}，${meaning('intensity')}。`
-    + `可能${meaning('evolution')}、${butterflyAbsurdityCopy(refs.absurdity)[1]}，${meaning('legend')}；`
-    + `读感${meaning('mood')}，线索可能来自${meaning('manifestation')}。`;
+  const meaning = (key: Exclude<ActiveButterflySelectKey, 'scope'>) => butterflyOptionCopy(key, refs[key])[1];
+  const scope = refs.scope === '顺势生长' ? '从真实拐点选择观察尺度，' : `主要观察「${refs.scope}」，`;
+  const focus = refs.focus.trim() ? '靠近关注对象，' : '';
+  return `${scope}${focus}${meaning('intensity')}，${meaning('domain')}。`
+    + `路线${butterflyAbsurdityCopy(refs.absurdity)[1]}，读感${meaning('mood')}；实际成果保留，结局不预定。`;
 }

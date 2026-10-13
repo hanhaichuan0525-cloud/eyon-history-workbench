@@ -16,6 +16,7 @@ import {
   type WorkbenchViewId,
 } from './workbenchNavigation.ts';
 import shellCss from './workbenchShell.css?raw';
+import { COURT_ART, acquireCourtFonts } from './courtAssets.ts';
 
 type ModuleHandle =
   TimelineWorkbenchHandle
@@ -44,11 +45,18 @@ export function mountWorkbenchShell(
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'open' });
   container.replaceChildren(host);
+  const releaseFonts = acquireCourtFonts(host.ownerDocument);
+  host.style.setProperty('--court-night-image', `url("${COURT_ART.palaceNight}")`);
+  host.style.setProperty('--court-day-image', `url("${COURT_ART.palaceDay}")`);
   let active = normalizeWorkbenchView(options.initialView ?? 'timeline');
   let appearance: WorkbenchAppearance = {
     mode: 'light',
     accent: 'jade',
     text: 'neutral',
+    uiFont: 'mixed',
+    proseFont: 'zhenkai',
+    readingSize: 14,
+    readingSizeVersion: 1,
   };
   let snapshot: WorkbenchUiSnapshot | null = null;
   let ruinPanel: RuinPanelId = 'generation';
@@ -95,16 +103,11 @@ export function mountWorkbenchShell(
         <aside class="rail">
           <div class="brand">
             <div class="brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 48 56" role="img">
-                <path d="M11 47V21C11 11 16 5 24 5s13 6 13 16v26" />
-                <path d="M16 47V22c0-6 3-10 8-10s8 4 8 10v25" />
-                <path d="M8 47h32M19 47V27h10v20M22 31h4" />
-                <circle cx="24" cy="20" r="2.4" />
-              </svg>
+              <img src="${COURT_ART.crest}" alt="" width="72" height="72">
             </div>
             <div>
-              <strong>虚嗣王庭</strong>
-              <small>ROYAL SCRIPTORIUM</small>
+              <strong class="court-brand-name">Eyon</strong>
+              <small>影蛇王庭 · 档案院</small>
               <span class="brand-version" title="伊雍历史工作台 ${WORKBENCH_VERSION}">${WORKBENCH_VERSION_LABEL}</span>
             </div>
           </div>
@@ -147,6 +150,9 @@ export function mountWorkbenchShell(
             </div>
           </header>
           <div class="content">
+            <section class="palace-hero" aria-label="影蛇王庭">
+              <img class="court-art-title" src="${COURT_ART.title}" alt="影蛇王庭 · Court of Shadow Serpents" width="1200" height="400">
+            </section>
             <header class="module-intro">
               <div class="module-copy">
                 <span data-kicker></span>
@@ -442,6 +448,7 @@ export function mountWorkbenchShell(
     navigate,
     refresh,
     dispose() {
+      releaseFonts();
       disposed = true;
       reads.dispose(); offContext();
       if (toastTimer) clearInterval(toastTimer);

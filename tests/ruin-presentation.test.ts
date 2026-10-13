@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { RuinNode } from '../src/schemas/ruin.ts';
+import { RUIN_STYLE_OPTIONS, ruinStyleMeaning } from '../src/core/creativeReferences.ts';
 import {
   formatRuinNodeExactTime,
   fullRuinStageIntroduction,
+  ruinStyleSummary,
 } from '../src/ui/ruinPresentation.ts';
 
 function makeNode(): RuinNode {
@@ -61,4 +63,20 @@ test('旧记录缺少日期字段时不会虚构年月日时', () => {
 test('绿色详情框使用未经截断的完整阶段介绍', () => {
   const node = makeNode();
   assert.equal(fullRuinStageIntroduction(node), node.summary);
+});
+
+test('32项玩家文风说明简短且独立于模型完整释义', () => {
+  const descriptions: string[] = [];
+  for (const group of ['telling', 'pace', 'mood'] as const) {
+    for (const option of RUIN_STYLE_OPTIONS[group]) {
+      const short = ruinStyleSummary(group, option), full = ruinStyleMeaning(group, option);
+      descriptions.push(short);
+      assert.ok(short.length > 0 && short.length <= 40, `${group}/${option} 仅保留短说明`);
+      assert.doesNotMatch(short, /如：|写作抓手|评分|输出字段/u);
+      assert.ok(full.length > short.length);
+      assert.match(full, /如：/u, '精简显示不裁掉模型的完整方法与短例');
+    }
+    assert.equal(ruinStyleSummary(group, '未知旧值'), ruinStyleSummary(group, '随内容自动'));
+  }
+  assert.equal(new Set(descriptions).size, 32);
 });

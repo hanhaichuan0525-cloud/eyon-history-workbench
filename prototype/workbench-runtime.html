@@ -42,6 +42,10 @@
         mode: previewOption('mode', ['light', 'dark'], 'light'),
         accent: previewOption('accent', ['jade', 'gold', 'blue', 'crimson'], 'jade'),
         text: previewOption('text', ['neutral', 'warm', 'cool'], 'neutral'),
+        uiFont: 'mixed',
+        proseFont: 'zhenkai',
+        readingSize: 14,
+        readingSizeVersion: 1,
       },
     };
     const character = {
@@ -65,6 +69,24 @@
       flowState: 'exploring', runId: 'preview-run-creative', ruinTime: '神明纪元12年-6月-8日-09:00', ruinLocation: '亚尔夫海姆-幽谷-溪畔',
     });
     let butterflyPreferences = JSON.parse(window.localStorage?.getItem('eyon-creative-preview:' + runtime.runId) || 'null');
+    // Presentation fixture only: inspect long archive typography without touching chat.
+    const previewButterflyRecords = previewParams.get('dossier') === 'long' ? [{
+      key: 'preview::butterfly::archive', namespace: { characterKey: 'preview', chatId: 'preview-chat' },
+      runId: 'preview-archive', requestId: 'preview-request', status: 'committed',
+      sourceHash: 'preview', panel: '', archiveEntry: '### 《蝴蝶效应日志：逆风旧誓》',
+      assistantMessageId: 10, revision: 1, createdAt: 1, updatedAt: 1,
+      request: { anchors: {
+        reality: { time: '复兴纪元488年-03月-01日-10:25', location: '阿斯塔利亚大陆-奥古斯提姆帝国-艾瑟嘉德-军港调度分局门外' },
+        ruinEntry: { time: '复兴纪元450年-04月-05日-16:45', location: '阿斯塔利亚大陆-梵尼亚-神迹群山-聚居峰谷-石灶间' },
+        ruinExit: { time: '复兴纪元450年-04月-05日-16:50', location: '阿斯塔利亚大陆-梵尼亚-神迹群山-聚居峰谷-石灶间' },
+      } },
+      result: { effect: {
+        scope: '省份级地区', presentLanding: '艾瑟嘉德-军港调度分局-联合检疫处',
+        ruinActionRecord: '你在旧宅石灶间留下了一段未说完的往事，随即在风雪中离开。',
+        perceptibleEvidence: ['女信使抬手抵胸，掌心向外偏转，与守卫默契地擦肩而过。', '窗外的战旗依风舒展，旧日的裂痕仍留在银线缝合处。', '你听见熟悉的铜铃，远处有人叫出多年未闻的名字。'],
+        historicalEvolution: '此后数十年，山间旧誓在行旅者间流传。不同的人因各自的选择走上新路，往事逐渐改变了边疆的相遇。'.repeat(12) + '原文完整标记：长风仍在。',
+      } },
+    }] : [];
     const previewBiographyRecords = [{
       key: 'preview::biography::dusk-tide-notebook',
       namespace: { characterKey: 'preview', chatId: 'preview-chat' },
@@ -254,7 +276,7 @@
       return structuredClone(record);
     }
     const facade = {
-      version: '0.14.35',
+      version: '0.14.40',
       getSettings: () => structuredClone(settings),
       updateSettings: patch => {
         Object.assign(settings, patch);
@@ -306,7 +328,7 @@
       listRuins: async () => structuredClone(previewRuinRecords),
       listBiographies: async () => structuredClone(previewBiographyRecords),
       deleteBiography: async () => true,
-      listButterflies: async () => [],
+      listButterflies: async () => structuredClone(previewButterflyRecords),
       listButterflyPending: async () => [],
       deleteButterfly: async () => true,
       fetchCustomApiModels: async () => [],
@@ -327,7 +349,7 @@
       exportCurrentData: async () => ({
         format: 'eyon-history-workbench-backup',
         schemaVersion: 1,
-        workbenchVersion: '0.14.35',
+        workbenchVersion: '0.14.40',
         exportedAt: new Date().toISOString(),
         namespace: { characterKey: 'preview', chatId: 'preview-chat' },
         settings: structuredClone(settings),
@@ -369,7 +391,7 @@
       () => { document.querySelector('[data-eyon-workbench-reopen]').style.display = 'none'; },
     );
   </script>
-  <script type="module" src="../dist/workbench.js?v=0.14.35"></script>
+  <script type="module" src="../dist/workbench.js?v=0.14.40"></script>
   <script type="module">
     // The preview must announce its mock facade after the production bundle has
     // installed its listeners. Keeping this page on the real bundle prevents a

@@ -1,9 +1,11 @@
 import { WorkbenchUiClient } from './workbenchClient.ts';
-import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
+import { applyAppearance, courtModuleCss, type WorkbenchAppearance } from './appearance.ts';
 import { preserveDomState, ViewRefreshGuard } from './viewRefresh.ts';
 import {
   BUTTERFLY_OPTIONS, BUTTERFLY_PRESETS, DEFAULT_BUTTERFLY_REFERENCES,
   randomButterflyReferences,
+  BUTTERFLY_MEANINGS, BUTTERFLY_EXAMPLE_NOTICE, butterflyAbsurdityMeaning,
+  type ActiveButterflySelectKey,
 } from '../core/creativeReferences.ts';
 import {
   BUTTERFLY_FIELD_LABELS, BUTTERFLY_PRESET_LABELS,
@@ -124,6 +126,8 @@ export function mountButterflyWorkbench(container: HTMLElement, client: Workbenc
     if (feedback) { feedback.textContent = error; feedback.hidden = !error; }
     const preview = root.querySelector('[data-style-preview]');
     if (preview && !composing) preview.textContent = butterflyStylePreview(refs);
+    const absurdityMeaning = root.querySelector('[data-absurdity-meaning]');
+    if (absurdityMeaning && !composing) absurdityMeaning.textContent = butterflyAbsurdityMeaning(refs.absurdity);
   }
 
   function render(force = false): void {
@@ -133,7 +137,7 @@ export function mountButterflyWorkbench(container: HTMLElement, client: Workbenc
     if (!force && !locked && !returning && root.activeElement?.matches('[data-focus], [data-absurdity]')) { updateControls(); return; }
     const restore = preserveDomState(root);
     const disabled = locked || returning;
-    root.innerHTML = `<style>${ruinCss}\n${creativeCss}</style>
+    root.innerHTML = `<style>${ruinCss}\n${creativeCss}\n${courtModuleCss}</style>
       <main class="ruin-app butterfly-console" data-theme="${theme}">
         <header class="creative-heading"><div><span class="ruin-eyebrow">THE SHAPE OF A RIPPLE</span>
           <h2>蝴蝶效应控制台</h2><p>调整故事倾向，不预定结局。</p></div>
@@ -144,19 +148,20 @@ export function mountButterflyWorkbench(container: HTMLElement, client: Workbenc
           <button type="button" class="quiet-button" data-random ${disabled ? 'disabled' : ''}>⚄ 随机一组</button>
         </section>
         <div class="butterfly-reference-grid">
-          <section class="reference-group reference-group--focus" aria-label="影响重点"><header><span aria-hidden="true">01</span><h3>影响重点</h3></header>
+          <section class="reference-group reference-group--focus" aria-label="影响重点"><header><span aria-hidden="true">01</span><h3>观察哪里</h3></header>
+            <p class="field-note">下列短例${BUTTERFLY_EXAMPLE_NOTICE}。</p>
             ${select('scope')}
-            <label class="field"><strong>重点看谁</strong><input data-focus value="${escape(refs.focus)}" placeholder="人物、地方或事业；可留空" ${disabled ? 'disabled' : ''}></label>
-            ${select('domain')}
+            <label class="field"><strong>关注对象（可选）</strong><input data-focus value="${escape(refs.focus)}" placeholder="人物、事件、地方或问题；可留空" ${disabled ? 'disabled' : ''}><small class="field-note">想靠近什么，不指定结局。如：某人去留、会战、聚落形成。</small></label>
           </section>
-          <section class="reference-group reference-group--history" aria-label="历史发展"><header><span aria-hidden="true">02</span><h3>历史发展</h3></header>
+          <section class="reference-group reference-group--history" aria-label="历史发展"><header><span aria-hidden="true">02</span><h3>怎样走岔</h3></header>
+            <p class="field-note">下列短例${BUTTERFLY_EXAMPLE_NOTICE}。</p>
             ${select('intensity')}
             <label class="field"><strong>离奇程度 <output data-absurdity-label>${refs.absurdity}　${butterflyAbsurdityCopy(refs.absurdity)[0]}</output></strong>
-              <input type="range" aria-label="离奇程度" min="0" max="100" step="1" data-absurdity value="${refs.absurdity}" ${disabled ? 'disabled' : ''}></label>
-            ${select('evolution')}
+              <input type="range" aria-label="离奇程度" min="0" max="100" step="1" data-absurdity value="${refs.absurdity}" ${disabled ? 'disabled' : ''}><small class="field-note" data-absurdity-meaning>${escape(butterflyAbsurdityMeaning(refs.absurdity))}</small></label>
           </section>
-          <section class="reference-group reference-group--experience" aria-label="阅读体验"><header><span aria-hidden="true">03</span><h3>阅读体验</h3></header>
-            ${select('legend')}${select('mood')}${select('manifestation')}
+          <section class="reference-group reference-group--experience" aria-label="阅读体验"><header><span aria-hidden="true">03</span><h3>读来如何</h3></header>
+            <p class="field-note">下列短例${BUTTERFLY_EXAMPLE_NOTICE}。</p>
+            ${select('mood')}${select('domain')}
           </section>
         </div>
         <footer class="creative-actions">
@@ -196,9 +201,9 @@ export function mountButterflyWorkbench(container: HTMLElement, client: Workbenc
     updateControls();
     restore();
   }
-  function select(key: keyof typeof BUTTERFLY_OPTIONS): string {
+  function select(key: ActiveButterflySelectKey): string {
     return `<label class="field"><strong>${BUTTERFLY_FIELD_LABELS[key]}</strong><select data-reference="${key}" ${locked || returning ? 'disabled' : ''}>
-      ${BUTTERFLY_OPTIONS[key].map(value => `<option value="${escape(value)}" ${refs[key] === value ? 'selected' : ''}>${escape(butterflyOptionCopy(key, value)[0])}</option>`).join('')}</select></label>`;
+      ${BUTTERFLY_OPTIONS[key].map(value => `<option value="${escape(value)}" ${refs[key] === value ? 'selected' : ''}>${escape(butterflyOptionCopy(key, value)[0])}</option>`).join('')}</select><small class="field-note">${escape((BUTTERFLY_MEANINGS[key] as Record<string, string>)[refs[key]])}</small></label>`;
   }
   async function act(work: () => Promise<unknown>): Promise<void> {
     if (returning) return;

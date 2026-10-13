@@ -5,6 +5,9 @@ import { buildButterflyApiPrompt } from '../src/prompts/butterfly.ts';
 import { DEFAULT_BUTTERFLY_REFERENCES } from '../src/core/creativeReferences.ts';
 import { buildRuinTaskPrompt } from '../src/prompts/ruinTask.ts';
 import { buildCompactRuinExpansionRecoveryPrompt } from '../src/prompts/ruin.ts';
+import { RUIN_WRITING_GUIDANCE, RUIN_REVISION, RUIN_PROSE_TARGET_CHARS, RUIN_PROSE_NORMAL_MIN,
+  RUIN_PROSE_NORMAL_MAX, RUIN_PROSE_ACCEPTED_MIN, ruinProseLengthInstruction,
+  ruinProseExpansionGuidance } from '../src/core/ruinProseContract.ts';
 
 const rule = (name: string) => readFileSync(new URL(`../rules/${name}`, import.meta.url), 'utf8');
 const sources = [{ sourceId: 'chat:8', title: '完整行动', content: '完整开头' + '正文证据不可裁剪。'.repeat(1800) + '完整结尾' }];
@@ -58,6 +61,45 @@ test('传输恢复仍保留完整资料和创作参考，不重新要求固定�
   assert.ok(recovery); assert.ok(recovery.includes(references));
   assert.match(recovery, /without cutting a complete passage/u);
   assert.doesNotMatch(recovery, /420-520|Use concrete actions, institutions, resources, pressures/u);
+});
+
+test('作者方法与风格是参考，原有篇幅及四节点输出契约不变', () => {
+  assert.deepEqual([RUIN_PROSE_TARGET_CHARS, RUIN_PROSE_NORMAL_MIN, RUIN_PROSE_NORMAL_MAX, RUIN_PROSE_ACCEPTED_MIN], [500, 320, 650, 300]);
+  assert.match(ruinProseLengthInstruction(), /not an upper-limit check or truncation instruction/u);
+  assert.match(ruinProseExpansionGuidance(200), /至少 300 字/u);
+  assert.match(RUIN_WRITING_GUIDANCE, /故事作者/u);
+  assert.match(RUIN_WRITING_GUIDANCE, /具体处境 → 事情为何开始/u);
+  assert.match(RUIN_WRITING_GUIDANCE, /四节点仍按缘起、经过、高潮、结果依序发生/u);
+  assert.match(RUIN_WRITING_GUIDANCE, /不替玩家做选择/u);
+  assert.match(RUIN_WRITING_GUIDANCE, /不是新增检查表、评分项或输出结构/u);
+  const rules = rule('11_墟境历史期生成规则-API.txt');
+  assert.match(rules, /historyProse 通常320至650字、约500字/u);
+  assert.match(rules, /节点 ID、类型、时间、地点、顺序和人物身份保持不变/u);
+  assert.match(rules, /每类短例只解释方法/u);
+});
+
+test('恢复保留完整作者方法与来源，去重仅作用于相同块', () => {
+  const oldSource = '<CHARACTER_CARDS_FULL>区外角色资料完整尾。</CHARACTER_CARDS_FULL>';
+  const nestedSource = '<CHARACTER_CARDS_FULL>区内角色资料完整尾。</CHARACTER_CARDS_FULL>';
+  const style = '<RUIN_CREATIVE_REFERENCES>本轮所选释义完整尾。</RUIN_CREATIVE_REFERENCES>';
+  const original = [
+    '<RUIN_SELECTED_CANDIDATE_EXPANSION>',
+    'Copy these fixed fields exactly: {"schema":"eyon.ruin.expansion.v1","requestId":"style-recovery","candidateKey":"candidate-1"}',
+    RUIN_WRITING_GUIDANCE, style, oldSource, RUIN_REVISION,
+    '<SELECTED_OUTLINE_READ_ONLY>{"id":"candidate-1"}</SELECTED_OUTLINE_READ_ONLY>',
+    '<REFERENCE_DATA_READ_ONLY>' + sources[0].content + style + nestedSource + '</REFERENCE_DATA_READ_ONLY>',
+  ].join('\n');
+  const recovery = buildCompactRuinExpansionRecoveryPrompt(original)!;
+  assert.ok(recovery.includes(RUIN_WRITING_GUIDANCE));
+  assert.equal(recovery.match(/<RUIN_REVISION>([\s\S]*?)<\/RUIN_REVISION>/u)![1].trim(),
+    RUIN_REVISION.match(/<RUIN_REVISION>([\s\S]*?)<\/RUIN_REVISION>/u)![1].trim());
+  assert.equal(recovery.split('<RUIN_REVISION>').length - 1, 1);
+  assert.doesNotMatch(RUIN_WRITING_GUIDANCE + RUIN_REVISION, /。/u);
+  assert.ok(recovery.includes(sources[0].content), '原文首尾与全部正文不裁剪');
+  assert.match(recovery, /<CHARACTER_CARDS_FULL>\s*区外角色资料完整尾。\s*<\/CHARACTER_CARDS_FULL>/u);
+  assert.ok(recovery.includes(nestedSource), '不同版本的完整来源都保留');
+  assert.equal(recovery.split(style).length - 1, 1, '嵌入完整区的相同释义去重');
+  assert.match(recovery, /candidate contains exactly one field: historyProse/u);
 });
 
 test('任务有正向可玩方法，原有解释/规模/奖励协议不变', () => {

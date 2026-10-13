@@ -1,4 +1,5 @@
 export interface ButterflyEffect {
+  title?: string;
   roll: number;
   scope: string;
   presentLanding: string;
@@ -6,6 +7,18 @@ export interface ButterflyEffect {
   ruinActionRecord: string;
   historicalEvolution: string;
   historicalKeywords: string[];
+}
+
+/** 只整理展示标题，绝不裁剪正文；标题缺省/坏类型不会阻断旧档案读取。 */
+export function butterflyLogTitle(effect: ButterflyEffect): string {
+  const clean = (value: unknown): string => typeof value === 'string'
+    ? value.replace(/^《?蝴蝶效应(?:锚定)?日志[：:]?\s*/u, '')
+      .replace(/[\s《》<>\[\]#|]/gu, '').trim()
+    : '';
+  const candidates = [effect.title, ...effect.historicalKeywords].map(clean);
+  const short = candidates.find(value => Array.from(value).length >= 2
+    && Array.from(value).length <= 16 && !/^\d+$/u.test(value));
+  return `《蝴蝶效应日志：${short || '历史余波'}》`;
 }
 
 export interface ButterflyArchiveAnchors {

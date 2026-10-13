@@ -7,6 +7,7 @@
 以下内容的著作权与相关权利仍归《命定之诗》及伊雍项目创作者所有：
 
 - `prototype/assets/eyon-companion-prototype-v5.png`；
+- `src/ui/assets/court/` 中的王庭主题图像（字体另按下述许可）；
 - `regex/` 配置内嵌的图像、纹章、装饰与角色视觉；
 - 对话框正则引用的 `EyonAssets` 配套角色图像；
 - “伊雍”“色佩尔特圣经”“虚嗣王庭”等专用角色与世界观表达。
@@ -14,6 +15,8 @@
 允许将这些资源与本项目、对应 SillyTavern 角色卡一同使用、备份和再分发。未经权利人另行许可，不得把上述资源从项目中拆出后单独售卖、重新授权、训练模型，或用于无关商业产品。
 
 ## 外部与用户内容
+
+本次内嵌的霞鹜臻楷与UnifrakturMaguntia字体遵循SIL Open Font License 1.1，完整许可分别见 `src/ui/assets/court/OFL-LXGWZhenKai.txt` 与 `src/ui/assets/court/OFL-UnifrakturMaguntia.txt`，不适用上述角色资源限制。
 
 角色卡世界书、玩家导入的图片、聊天记录以及用户自行配置的远程资源不随本仓库授权。使用者应自行确认其来源与许可。
 

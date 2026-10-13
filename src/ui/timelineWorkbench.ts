@@ -8,7 +8,7 @@ import {
 import { WorkbenchUiClient } from './workbenchClient.ts';
 import { preserveDomState, ViewRefreshGuard } from './viewRefresh.ts';
 import timelineCss from './timelineWorkbench.css?raw';
-import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
+import { applyAppearance, courtModuleCss, type WorkbenchAppearance } from './appearance.ts';
 
 export interface TimelineWorkbenchHandle {
   refresh(): Promise<void>;
@@ -197,7 +197,7 @@ export function mountTimelineWorkbench(
       item.record.runId === state.selectedRunId) ?? archives[0] ?? null;
     const active = runtime.flowState !== 'idle';
     root.innerHTML = `
-      <style>${timelineCss}</style>
+      <style>${timelineCss}\n${courtModuleCss}</style>
       <section class="workbench" data-theme="${theme}"
         ${options.embedded ? 'data-embedded' : ''}>
         ${options.embedded ? '' : `<header class="page-head">

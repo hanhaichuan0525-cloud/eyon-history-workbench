@@ -85,6 +85,8 @@ export const ButterflyResultSchema = z.strictObject({
   requestId: z.string().min(1),
   runId: z.string().min(1),
   effect: z.strictObject({
+    // 展示用，旧结果可缺省；坏类型忽略，不让短标题阻断正文归档。
+    title: z.string().optional().catch(undefined),
     roll: z.number().int().min(1).max(100),
     scope: ButterflyScopeSchema,
     presentLanding: z.string().min(1),

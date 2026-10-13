@@ -11,7 +11,8 @@ import type {
 import { resolveTavernHelperFunction } from '../runtime/tavernRuntimeAdapter.ts';
 import { renderGenerationDiagnostics } from './generationDiagnostics.ts';
 import settingsCss from './settingsWorkbench.css?raw';
-import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
+import { applyAppearance, courtModuleCss, type WorkbenchAppearance } from './appearance.ts';
+import { COURT_FONT_OPTIONS, courtReadingSize } from './courtTypography.ts';
 import {
   hydrateWorkbenchIcons,
   icon,
@@ -191,7 +192,7 @@ export function mountSettingsWorkbench(
       canonMemory = null;
     }
     root.innerHTML = `
-      <style>${settingsCss}</style>
+      <style>${settingsCss}\n${courtModuleCss}</style>
       <div class="settings">
         ${renderVersionBar()}
         <nav class="settings-nav" aria-label="设置分类">
@@ -332,6 +333,14 @@ export function mountSettingsWorkbench(
               ${paletteChoice('text', 'warm', current.text, 'sun-medium', '#c99a68', '暖纸色', '柔和长读')}
               ${paletteChoice('text', 'cool', current.text, 'snowflake', '#8fb5c8', '冷银色', '清晰理性')}
             </div>
+          </div>
+          <div class="appearance-block">
+            ${appearanceHeading('正文阅读', '界面字体固定。正文可选字体，默认 14 px；霞鹜臻楷随脚本内置。')}
+            <div class="court-font-controls">
+              <label class="field"><strong>正文字体</strong><select data-court-font="proseFont">${COURT_FONT_OPTIONS.map(([id, label]) => `<option value="${id}" ${id === (current.proseFont ?? 'zhenkai') ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+              <label class="field"><strong>正文字号</strong><select data-court-font="readingSize">${[14, 16, 18, 20].map(size => `<option value="${size}" ${size === courtReadingSize(current) ? 'selected' : ''}>${size} px</option>`).join('')}</select></label>
+            </div>
+            <div class="court-font-preview"><span>正文预览</span><p class="court-prose-preview">夜风掠过王庭长廊，伊雍翻开旧卷。那些未曾说完的故事，在烛光中慢慢苏醒。</p></div>
           </div>
         </div>
       </section>`;
@@ -625,6 +634,18 @@ export function mountSettingsWorkbench(
         appearance = next;
         await persist(async () => client.updateSettings({ appearance: next }), '外观设置已保存');
         options.onAppearanceChange?.(next);
+      });
+    });
+    root.querySelectorAll<HTMLSelectElement>('[data-court-font]').forEach(select => {
+      select.addEventListener('change', async () => {
+        const name = select.dataset.courtFont as 'proseFont' | 'readingSize';
+        const next = { ...appearance, readingSize: courtReadingSize(appearance), readingSizeVersion: 1,
+          [name]: name === 'readingSize' ? Number(select.value) : select.value } as WorkbenchAppearance;
+        if (await persist(async () => client.updateSettings({ appearance: next }), '字体设置已保存')) {
+          appearance = next;
+          applyAppearance(host, next);
+          options.onAppearanceChange?.(next);
+        }
       });
     });
     root.querySelector<HTMLButtonElement>('[data-action="check-update"]')?.addEventListener('click', async () => {

@@ -14,7 +14,7 @@ import {
 import { WorkbenchUiClient } from './workbenchClient.ts';
 import { preserveDomState, ViewRefreshGuard } from './viewRefresh.ts';
 import genealogyCss from './genealogyWorkbench.css?raw';
-import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
+import { applyAppearance, courtModuleCss, type WorkbenchAppearance } from './appearance.ts';
 import { installScrollPan } from './scrollPan.ts';
 import {
   createGenealogyBoardConnectors,
@@ -381,7 +381,7 @@ export function mountGenealogyWorkbench(
     const isCreation = record?.result.nodes.find(item => item.isFocus)?.identity?.lineageKind === 'creation';
     const layout = viewRecord ? createGenealogyBoardLayout(viewRecord.result) : null;
     root.innerHTML = `
-      <style>${genealogyCss}</style>
+      <style>${genealogyCss}\n${courtModuleCss}</style>
       <main class="genealogy-app" data-theme="${theme}">
         ${options.embedded ? '' : renderWorkingState(state)}
         <div class="genealogy-layout">

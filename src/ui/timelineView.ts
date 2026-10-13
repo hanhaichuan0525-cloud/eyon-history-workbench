@@ -1,5 +1,6 @@
 import type { RuinRuntimeSnapshot } from '../adapters/host.ts';
 import type { ButterflyRecord } from '../storage/butterflies.ts';
+import { butterflyLogTitle } from '../renderers/butterfly.ts';
 
 export interface ButterflyArchiveItem {
   record: ButterflyRecord;
@@ -41,13 +42,12 @@ export function visibleButterflyArchives(
       || (record.status === 'validated'
         && !!failedRunReasons?.get(record.runId)))
     .sort((left, right) => right.updatedAt - left.updatedAt)
-    .map((record, index, all) => {
-      const ordinal = all.length - index;
+    .map(record => {
       const failed = failedRunReasons?.get(record.runId);
       return {
         record,
         title: extractArchiveTitle(record.archiveEntry)
-          || `《蝴蝶效应锚定日志${ordinal}》`,
+          || butterflyLogTitle(record.result.effect),
         summary: `${record.result.effect.scope} · ${record.result.effect.presentLanding}`,
         statusLabel: record.status === 'committed'
           ? '已归档'
@@ -61,6 +61,6 @@ export function visibleButterflyArchives(
 }
 
 function extractArchiveTitle(value: string): string {
-  const match = value.match(/《蝴蝶效应锚定日志[^》]*》/u);
+  const match = value.match(/《蝴蝶效应(?:锚定)?日志[^》]*》/u);
   return match?.[0] ?? '';
 }

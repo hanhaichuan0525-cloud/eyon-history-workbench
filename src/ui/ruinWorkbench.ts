@@ -27,14 +27,15 @@ import type { RuinTaskInterpretation, RuinTaskScale } from '../schemas/ruinTask.
 import ruinCss from './ruinWorkbench.css?raw';
 import creativeCss from './creativeWorkbench.css?raw';
 import { mountButterflyWorkbench } from './butterflyWorkbench.ts';
-import { createReferencedRuinMaterials, defaultRuinReferences, randomRuinReferences, RUIN_STYLE_OPTIONS, ruinStyleMeaning, type RuinCreativeReferences } from '../core/creativeReferences.ts';
+import { createReferencedRuinMaterials, defaultRuinReferences, randomRuinReferences, RUIN_STYLE_OPTIONS, ruinStyleLabel, type RuinCreativeReferences } from '../core/creativeReferences.ts';
 import type { RuinPlace } from '../core/ruinGeography.ts';
 import { availableRuinPanel, canOpenRuinPanel } from '../core/ruinPanelAccess.ts';
-import { applyAppearance, type WorkbenchAppearance } from './appearance.ts';
+import { applyAppearance, courtModuleCss, type WorkbenchAppearance } from './appearance.ts';
 import { installScrollPan } from './scrollPan.ts';
 import {
   formatRuinNodeExactTime,
   fullRuinStageIntroduction,
+  ruinStyleSummary,
 } from './ruinPresentation.ts';
 
 export const RUIN_PANELS = ['generation', 'tasks', 'butterfly'] as const;
@@ -643,7 +644,7 @@ export function mountRuinWorkbench(
     const scrollLeft = previousTimeline?.scrollLeft ?? 0;
 
     root.innerHTML = `
-      <style>${ruinCss}\n${creativeCss}</style>
+      <style>${ruinCss}\n${creativeCss}\n${courtModuleCss}</style>
       <main class="ruin-app ${options.embedded ? 'ruin-embedded' : ''}" data-theme="${theme}">
         <nav class="ruin-subtabs ${options.embedded ? 'embedded-subtabs' : ''}" aria-label="墟境探索子模块">
           ${RUIN_PANELS.map(panel => `<button type="button" data-ruin-panel="${panel}" aria-current="${state.panel === panel ? 'page' : 'false'}" ${!canOpenRuinPanel(state.runtime, panel) ? `disabled title="${panel === 'generation' ? '遣返现世后解锁' : '进入墟境后解锁'}"` : ''}>${{ generation: '墟境生成', tasks: '墟境任务', butterfly: '蝴蝶效应' }[panel]}</button>`).join('')}
@@ -672,7 +673,7 @@ export function mountRuinWorkbench(
       const key = select.dataset.ruinStyle as 'telling' | 'pace' | 'mood';
       Object.assign(state.draft.creativeReferences, { [key]: select.value });
       const help = root.querySelector<HTMLElement>(`[data-style-help="${key}"]`);
-      if (help) help.textContent = ruinStyleMeaning(key, select.value);
+      if (help) help.textContent = ruinStyleSummary(key, select.value);
       persistDraft();
     }));
     root.querySelectorAll<HTMLSelectElement>('[data-period-index]').forEach(select => select.addEventListener('change', () => {
@@ -1250,8 +1251,8 @@ function renderCreativeForm(state: RuinState): string {
   const refs = state.draft.creativeReferences;
   return `<div class="field creative-form">
     <div class="period-choice">${Array.from({ length: state.draft.candidateCount }, (_, index) => `<label>候选 ${index + 1}<select data-period-index="${index}" ${state.busy ? 'disabled' : ''}>${(['stable', 'transition', 'turbulent'] as const).map(period => `<option value="${period}" ${refs.periods[index] === period ? 'selected' : ''}>${periodLabel(period)}</option>`).join('')}</select></label>`).join('')}</div>
-    <div class="style-selects">${(['telling', 'pace', 'mood'] as const).map(key => `<label class="creative-field"><span>${{ telling: '讲述方式', pace: '叙事节奏', mood: '情绪色彩' }[key]}</span><select data-ruin-style="${key}" ${state.busy ? 'disabled' : ''}>${RUIN_STYLE_OPTIONS[key].map(value => `<option ${refs[key] === value ? 'selected' : ''}>${value}</option>`).join('')}</select></label>`).join('')}</div>
-    <details class="style-guide" data-style-guide><summary>当前文风说明</summary>${(['telling', 'pace', 'mood'] as const).map(key => `<p><strong>${{ telling: '讲述方式', pace: '叙事节奏', mood: '情绪色彩' }[key]}</strong><span data-style-help="${key}">${escapeHtml(ruinStyleMeaning(key, refs[key]))}</span></p>`).join('')}</details>
+    <div class="style-selects">${(['telling', 'pace', 'mood'] as const).map(key => `<label class="creative-field"><span>${{ telling: '讲述方式', pace: '叙事节奏', mood: '情绪色彩' }[key]}</span><select data-ruin-style="${key}" ${state.busy ? 'disabled' : ''}>${RUIN_STYLE_OPTIONS[key].map(value => `<option value="${escapeHtml(value)}" ${refs[key] === value ? 'selected' : ''}>${escapeHtml(ruinStyleLabel(key, value))}</option>`).join('')}</select></label>`).join('')}</div>
+    <details class="style-guide" data-style-guide><summary>当前文风说明</summary>${(['telling', 'pace', 'mood'] as const).map(key => `<p><strong>${{ telling: '讲述方式', pace: '叙事节奏', mood: '情绪色彩' }[key]}</strong><span data-style-help="${key}">${escapeHtml(ruinStyleSummary(key, refs[key]))}</span></p>`).join('')}</details>
   </div>`;
 }
 

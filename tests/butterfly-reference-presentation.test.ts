@@ -29,21 +29,22 @@ test('全部原选项都有短展示与含义，波及范围原文不变，不�
   assert.equal(renderButterflyReferences(refs), prompt);
 });
 
-test('组合是可能的风格提示，范围/深度/发展/传奇/读感/发现途径各有影响', () => {
+test('组合提示只采用在用参考，短促时代转折不误写成长期社会变化', () => {
   const refs = { ...DEFAULT_BUTTERFLY_REFERENCES, scope: '大陆', domain: '信仰与文化', intensity: '时代回响',
     absurdity: 95, legend: '史诗回响', evolution: '意外转用', mood: '黑色幽默', manifestation: '信仰与公共景观' } as const;
   const text = butterflyStylePreview(refs);
-  for (const value of ['大陆', '信仰', '长期走向', '离奇但可追溯', '新地方', '漫长历史', '好笑又辛酸', '供奉、仪式或建筑']) assert.ok(text.includes(value), value);
+  for (const value of ['大陆', '信仰', '进程或格局不同', '离奇但可追溯', '好笑又辛酸']) assert.ok(text.includes(value), value);
+  assert.equal(text, butterflyStylePreview({ ...refs, legend: '平凡人生', evolution: '缓慢积累', manifestation: '传闻与作品' }));
   assert.notEqual(text, butterflyStylePreview(DEFAULT_BUTTERFLY_REFERENCES));
-  assert.ok(butterflyStylePreview({ ...refs, focus: '二叶'.repeat(2000) }).includes('围绕重点对象'));
+  assert.ok(butterflyStylePreview({ ...refs, focus: '二叶'.repeat(2000) }).includes('靠近关注对象'));
   assert.ok(butterflyStylePreview({ ...refs, focus: '二叶'.repeat(2000) }).length <= 120);
 });
 
 test('离奇度五档边界跟随既有荒诞值，未知展示值有安全回退', () => {
-  for (const [n, expected] of [[0, '贴近日常'], [20, '贴近日常'], [21, '偶有意外'], [40, '偶有意外'],
-    [41, '奇异变化'], [60, '奇异变化'], [61, '大胆奇想'], [80, '大胆奇想'], [81, '离奇演变'], [100, '离奇演变']] as const) {
+  for (const [n, expected] of [[0, '贴近日常'], [20, '贴近日常'], [21, '微妙偏差'], [40, '微妙偏差'],
+    [41, '离奇转向'], [60, '离奇转向'], [61, '大胆奇诞'], [80, '大胆奇诞'], [81, '离奇演变'], [100, '离奇演变']] as const) {
     assert.equal(butterflyAbsurdityCopy(n)[0], expected);
   }
-  assert.equal(butterflyAbsurdityCopy(Number.NaN)[0], '偶有意外');
+  assert.equal(butterflyAbsurdityCopy(Number.NaN)[0], '微妙偏差');
   assert.deepEqual(butterflyOptionCopy('domain', 'toString'), ['toString', '由实际行动和历史条件决定。']);
 });

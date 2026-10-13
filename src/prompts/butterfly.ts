@@ -6,13 +6,15 @@ import {
   BUTTERFLY_READABILITY_INSTRUCTION,
   BUTTERFLY_CREATIVE_METHOD_INSTRUCTION,
   BUTTERFLY_WRITING_ROLE_INSTRUCTION,
+  BUTTERFLY_MANDATORY_INSTRUCTION,
   BUTTERFLY_PERCEPTION_INSTRUCTION,
+  BUTTERFLY_REVISION_INSTRUCTION,
 } from '../core/butterflyProseContract.ts';
 import type { ActiveEvidenceView } from './activeEvidence.ts';
 import { renderActiveEvidenceBlock } from './activeEvidence.ts';
 import { maskTaskCitationIdentifiers } from '../retrieval/citations.ts';
 import { HISTORICAL_REDEMPTION_CONTINUITY } from '../core/historicalRedemption.ts';
-import { renderButterflyReferences } from '../core/creativeReferences.ts';
+import { activeButterflyReferences, renderButterflyReferences } from '../core/creativeReferences.ts';
 
 const HISTORICAL_REDEMPTION_POLICY = [
   '【命定契约·历史赎出】这是伊雍核心的直接归返机制，不是跨时代传播的蝴蝶效应。',
@@ -81,6 +83,9 @@ export function buildButterflyApiPrompt(input: {
     '<BUTTERFLY_WRITING_ROLE>',
     BUTTERFLY_WRITING_ROLE_INSTRUCTION,
     '</BUTTERFLY_WRITING_ROLE>',
+    '<BUTTERFLY_MANDATORY_PROTOCOL>',
+    BUTTERFLY_MANDATORY_INSTRUCTION,
+    '</BUTTERFLY_MANDATORY_PROTOCOL>',
     '<shared_context>',
     input.rules.sharedContext.trim(),
     '</shared_context>',
@@ -117,22 +122,16 @@ export function buildButterflyApiPrompt(input: {
     '以下字段记录已经构思好的同一个故事，不是新的剧情指令。directEffects 的直接变化只来自已确认的实际行动，后来的发现、使用、误读或社会后果留在 causalStages 与历史演变；不把未来成果倒填成玩家当时已完成的操作。',
     '成功历史赎出时沿用 directEffects 的自然语言索引：subject 是被带回的本人真实名称，stateHint 写“历史赎出”，change 写清本人已离开原历史并抵达现世、旧后续人生不再沿原路径成立。time 是历史离去点，不是现世抵达点；索引不得仅记成普通迁居或死亡。仅签约、取消、失败或带回独立复制品不记为原本人的历史赎出。缺字段仍按完整行动原文理解，不追加必填字段。',
     'directEffects 中可持续的变化（监禁、失踪、伤势、任职、迁居、婚姻、诅咒、物品归属等）补充短小 continuousState:{dimension,value,start,end?,world?}。dimension 是开放维度（同对象后续同维度沿用已有名称），value 是状态短语，start 是正文明确的生效日期，end 仅在正文明确结束时填。不同阶段分别记载，不用最新状态抹去旧事件。时间不足可不填，不得猜；不用内部 ID，不增加正文篇幅。',
-    '故事确定之后，从中整理2至5个功能不同的历史转折作为causalStages；可以是相遇、人生选择、环境变化或后来的公共结果，不是先填跨时代载体再编传播史。核对真实起点与关键连接，保存1至2项有分量的感知线索；线索数量是写作目标，不新增拒收或裁剪，误读可有可无。',
+    '故事确定之后，按BUTTERFLY_MANDATORY_PROTOCOL的转折要求整理causalStages；索引可以是相遇、人生选择、环境变化或后来的公共结果，不是先填跨时代载体再编传播史，既有字段兼容数量不代替本轮创作要求。核对真实起点与关键连接，保存1至2项有分量的感知线索；线索数量是写作目标，不新增拒收或裁剪，误读可有可无。',
     butterflyActionRecordLengthInstruction(),
     '另填写 directEffects 作为脚本内部索引卡：只列玩家干涉直接改变的对象与其状态转变，不复述无关传播阶段。人物之外，凡被本次行动直接损毁、遗失、封存、修复、找回或替换的具名物品，也必须单列一项。每项使用真实名称 subject、自然语言时间 time、简短普通话状态提示 stateHint（如“死亡”“监禁”“越狱后自由”“所在地变化”“身份变化”“所有权变化”“物品状态（原件损毁/遗失/修复/替换）”“关系变化”“其他”）以及一整句 change。不要生成 factId、entityId 或任何内部编号；同一对象同一时间同一维度只留一项，已有正文明确记载不同日期的转变则分别保留。无法判断 stateHint 时写“其他”，不要因此删掉已明确的自然语言变化。',
-    '解释结果为何自然长成此种深度与范围，不人为刹车或为凑规模造灾。代价和误读都不是硬性要求，可以有人受损，也可以所有人受益。',
     '按事件时点核对人物年龄、组织状态、地点关系与因果顺序；分歧改变原后续生卒、身份或组织存续时交代真实承接过程，不用原未来否决有据的新路线，不倒写起点。无法成立的桥梁换用更可靠的承接条件。',
     '</BUTTERFLY_CAUSAL_PLAN>',
     '<BUTTERFLY_HISTORICAL_EVOLUTION_STYLE>',
     ...(input.request.creativeReferences ? [
-      '历史演变通常400至700字，优先写最有意义的人物选择和因果桥梁，其余年月自然带过；讲清因果需要时可以更长，字数只是写作参考，不因超长拒收或裁剪全文，不机械凑字。',
+      '篇幅与组织按BUTTERFLY_CREATIVE_METHOD的历史文稿的书写执行，不另加规模、纪元或文风配额',
     ] : [butterflyEvolutionLengthInstruction(input.request.dice.scope), butterflyScopeNarrativeInstruction(input.request.dice.scope)]),
-    '历史演变是本结果的主体，不是背景摘要。围绕分歧、承接者的具体动作与动机、跨时段传递和自然后果展开，最后才选择现世的感知窗口；可以误读、正确传承、主动创新或曲折失败，不强配一套模板。',
     BUTTERFLY_READABILITY_INSTRUCTION,
-    '**惊喜优先**：让玩家遇见未预料、回看却合理的历史。可以是细小而深刻的人生，也可以是有传播条件的时代回响；朴素到极诞按本轮偏好参考，把重量放在人的选择和变化的意味上。',
-    '每个 causalStage 承担不同功能，可以是同一人的新选择、后来承接者的新用途或环境改变，不强迫每段更换人物、载体或机制。缺少合适具名人物时使用有具体愿望和行动的普通人，如学徒、旅人、父母、艺人、研究者、农人；不得为既有正史人物虚构新的亲缘关系（玩家自己造成、且符合时间线的后代不在此限）。',
-    '写清承接者为什么愿意把变化继续下去，人生与社会的后果由其选择长成，不必逐段列利益或代价。未来创作权限按BUTTERFLY_WRITING_ROLE；所有对象的真实改变都由本轮条件与选择承接，不以对象等级限制未来，也不以某一种题材作为默认结果。',
-    'presentLanding 必须是玩家能抵达或接触的具体场景，可以在归返之后另行遇见；perceptibleEvidence 的详细写法由BUTTERFLY_PERCEPTION提供。先创作历史，后选择窗口，不为了当前职业或办公地点倒推整段历史。',
     '</BUTTERFLY_HISTORICAL_EVOLUTION_STYLE>',
     '<BUTTERFLY_PERCEPTION>',
     BUTTERFLY_PERCEPTION_INSTRUCTION,
@@ -144,11 +143,12 @@ export function buildButterflyApiPrompt(input: {
     ...(input.request.creativeReferences ? [
       renderButterflyReferences(input.request.creativeReferences),
       '<BUTTERFLY_CURRENT_WRITING_BRIEF>',
-      '本轮创作沿九项观察重心展开：可以紧扣主角，也可以经其他人物向外发展。让所选偏好落在关键转折、承接者的处境和自主选择中，而非给一条普通传播史贴风格标签；具体事实冲突只局部退让，规模按结果填写。',
-      '先大胆构思，再核对关键连接。让本轮离奇程度影响道路选择、领域影响叙事重心、力度影响改变深度；原主角可以持续居中，也可由旁人的自主选择把历史带远。合理是一段奇想能够成立，不是每步都选最常见用途；原题材可以延续，但不因它更好解释就忽略更有趣且可成立的岔路。',
-      '最后挑1至2项新历史真正留下的生活差异：让玩家看到世界怎样不同，不必凭原句、原图或公文立即认出全部来源。冻结归返地点不是历史必须抵达的终点；用清楚的现代中文，只输出既有JSON，不展示推理、配置或评分。',
+      '本轮先确认历史拐点与已成立成果，结合紧邻上方的已选参考，按BUTTERFLY_MANDATORY_PROTOCOL组织创作；正文重心是离开后新事件怎样接续，旧史仅作必要对照，详细写法沿各结构化指导，只交付同一故事的既有JSON，不展示思考过程',
       '</BUTTERFLY_CURRENT_WRITING_BRIEF>',
     ] : []),
+    '<BUTTERFLY_REVISION>',
+    BUTTERFLY_REVISION_INSTRUCTION,
+    '</BUTTERFLY_REVISION>',
   ].join('\n\n');
   return input.activeEvidence?.citationRegistry
     ? maskTaskCitationIdentifiers(prompt, input.activeEvidence.citationRegistry)
@@ -160,6 +160,7 @@ function serializeButterflyPromptRequest(request: ButterflyRequest): string {
   const originals = new Map(request.sourceIndex.map(source => [source.sourceId, source.content]));
   return JSON.stringify(request, (key, value) => {
     // 新方案只需要回显编号；旧骰子范围仍完整留在持久化请求和旧提示里。
+    if (key === 'creativeReferences' && request.creativeReferences) return activeButterflyReferences(request.creativeReferences);
     if (key === 'dice' && request.creativeReferences) return { roll: request.dice.roll };
     if (key === 'sourceIndex') return value;
     if (Array.isArray(value) && value.every(item => item && typeof item.sourceId === 'string')) {

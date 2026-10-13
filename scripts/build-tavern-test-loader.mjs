@@ -5,7 +5,22 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = path.join(root, 'manifest.json');
-const releaseDir = path.join(root, 'release');
+const cli = process.argv.slice(2);
+const outputFlag = cli.indexOf('--out-dir');
+if (cli.some((arg, index) => arg !== '--dry-run' && arg !== '--script-only' && arg !== '--out-dir' && !(outputFlag >= 0 && index === outputFlag + 1))) {
+  throw new Error('仅支持 --dry-run、--script-only 与 --out-dir <release 下的相对目录>');
+}
+if (outputFlag >= 0 && (!cli[outputFlag + 1] || cli[outputFlag + 1].startsWith('--'))) {
+  throw new Error('--out-dir 缺少目录');
+}
+const releaseRoot = path.join(root, 'release');
+const releaseDir = outputFlag < 0 ? releaseRoot : path.resolve(root, cli[outputFlag + 1]);
+const outputRelative = path.relative(releaseRoot, releaseDir);
+if (outputRelative.startsWith('..') || path.isAbsolute(outputRelative)) {
+  throw new Error('本地包只能输出到 release 目录内');
+}
+const dryRun = cli.includes('--dry-run');
+const scriptOnly = cli.includes('--script-only');
 const previewPath = path.join(root, 'prototype', 'workbench-runtime.html');
 const prototypeIndexPath = path.join(root, 'prototype', 'index.html');
 const regexNames = [
@@ -83,6 +98,10 @@ const exportedScript = {
       : `伊雍历史工作台内测整合包 ${manifest.version}。`,
     '已内置墟境时间内核与正式工作台界面。',
     '启用前必须关闭旧版伊雍墟境系统脚本与旧悬浮球，避免重复监听变量。',
+    '\n\n内置字体许可（仅为资源授权说明，不进入模型提示词）：\n',
+    await readFile(path.join(root, 'src/ui/assets/court/OFL-LXGWZhenKai.txt'), 'utf8'),
+    '\n',
+    await readFile(path.join(root, 'src/ui/assets/court/OFL-UnifrakturMaguntia.txt'), 'utf8'),
   ].join(''),
   button: {
     enabled: true,
@@ -96,9 +115,13 @@ const exportedScript = {
   content,
 };
 
+if (dryRun) {
+  console.info(JSON.stringify({ valid: true, outputPath, version: manifest.version, scriptId: exportedScript.id, contentBytes: Buffer.byteLength(content), visualAssets: 'inline-with-OFL', scriptOnly }, null, 2));
+  process.exit(0);
+}
 await mkdir(releaseDir, { recursive: true });
 await writeFile(outputPath, `${JSON.stringify(exportedScript, null, 2)}\n`, 'utf8');
-if (stableVersion) {
+if (stableVersion && !scriptOnly) {
   const releaseRegexDir = path.join(releaseDir, 'regex');
   await mkdir(releaseRegexDir, { recursive: true });
   for (const name of regexNames) {

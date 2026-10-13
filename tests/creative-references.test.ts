@@ -1,33 +1,30 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { DEFAULT_BUTTERFLY_REFERENCES, BUTTERFLY_OPTIONS, BUTTERFLY_PRESETS, RUIN_STYLE_OPTIONS, ButterflyReferencesSchema, createReferencedRuinMaterials, defaultRuinReferences, randomButterflyReferences, randomRuinReferences, renderButterflyReferences, renderRuinCreativeReferences, absurdityLabel, ruinStyleMeaning } from '../src/core/creativeReferences.ts';
+import { DEFAULT_BUTTERFLY_REFERENCES, ACTIVE_BUTTERFLY_SELECT_KEYS, BUTTERFLY_MEANINGS, BUTTERFLY_EXAMPLE_NOTICE, activeButterflyReferences, butterflyAbsurdityMeaning, BUTTERFLY_OPTIONS, BUTTERFLY_PRESETS, RUIN_STYLE_OPTIONS, ButterflyReferencesSchema, createReferencedRuinMaterials, defaultRuinReferences, randomButterflyReferences, randomRuinReferences, renderButterflyReferences, renderRuinCreativeReferences, absurdityLabel, ruinStyleMeaning } from '../src/core/creativeReferences.ts';
 import { readRuinGeography, geographyPathsFromText } from '../src/core/ruinGeography.ts';
 import { ScriptWorkbenchSettings } from '../src/runtime/workbenchSettings.ts';
 import { RuinGenerationInputSchema } from '../src/schemas/ruin.ts';
+import { RUIN_EXAMPLE_NOTICE, renderRuinStyleReminder, ruinStyleLabel } from '../src/core/creativeReferences.ts';
 
 function input() {
   const refs = { ...defaultRuinReferences(), periods: ['stable', 'stable', 'stable'] as const };
   return RuinGenerationInputSchema.parse({ era: '复兴纪元', start: null, end: null, location: '亚尔夫海姆-幽谷-溪畔', supplementaryDirection: '二叶幼年玩积木', selectedCharacters: [], wave: { level: 'ripple', candidateCount: 3 }, materials: createReferencedRuinMaterials(3, { ...refs, periods: [...refs.periods] }), creativeReferences: refs });
 }
 
-test('离奇、传奇与信仰所有组合遵循通用未来演化机制，尺度仍独立', () => {
+test('离奇与领域独立，退役选项存档值不再影响新提示', () => {
   for (const absurdity of [0, 21, 41, 61, 100]) {
-    for (const legend of BUTTERFLY_OPTIONS.legend) {
-      for (const domain of BUTTERFLY_OPTIONS.domain) {
-        const prompt = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES,
-          absurdity, legend, domain });
-        assert.doesNotMatch(prompt, /世界神系与自然条件仍成立|社会信仰变化不改神明本体/u);
-        assert.match(prompt, /低荒诞也可影响国家，高荒诞也可只改变一个人/u);
-        if (domain === '信仰与文化') {
-          assert.match(prompt, /依世界机制改变真实身份、力量、关系和历史地位/u);
-          assert.match(prompt, /旧有重要对象不因地位高就自动免于未来分岔/u);
-          assert.doesNotMatch(prompt, /不等于改写神明本体/u);
-        }
-      }
+    for (const domain of BUTTERFLY_OPTIONS.domain) {
+      const refs = { ...DEFAULT_BUTTERFLY_REFERENCES, absurdity, domain };
+      const prompt = renderButterflyReferences(refs);
+      assert.match(prompt, /低离奇也可影响国家，高离奇也可只改变一个人/u);
+      assert.equal(prompt, renderButterflyReferences({ ...refs,
+        legend: '史诗回响', evolution: '代际接力', manifestation: '传闻与作品' }));
+      assert.doesNotMatch(prompt, /世界神系与自然条件仍成立|不等于改写神明本体/u);
     }
   }
 });
+
 test('三候选可全部稳定，旧输入壳保留但不向提示词投递骰表题材', () => {
   const draft = input();
   const prompt = renderRuinCreativeReferences(draft);
@@ -37,151 +34,189 @@ test('三候选可全部稳定，旧输入壳保留但不向提示词投递骰�
   assert.match(prompt, /起止状态可以相同/u);
   assert.doesNotMatch(prompt, /依玩家内容与所选时期展开/u);
 });
-test('每个文风选项都有语义解释，不作为事件或结局的强制条件', () => {
-  for (const key of ['telling', 'pace', 'mood'] as const) for (const option of RUIN_STYLE_OPTIONS[key]) {
-    const draft = input(); draft.creativeReferences![key] = option as never;
-    const prompt = renderRuinCreativeReferences(draft);
-    assert.ok(prompt.includes(option)); assert.doesNotMatch(prompt, /undefined/u);
-    assert.ok(ruinStyleMeaning(key, option).length >= 120, `${key}/${option} 要说明写法和适用边界，不只提供标签`);
-  }
-  const draft = input(); Object.assign(draft.creativeReferences!, { telling: '多方讲述', pace: '起伏鲜明', mood: '悲伤惋惜' });
-  assert.match(renderRuinCreativeReferences(draft), /玩积木也可.*搭成、倒塌/u);
-  assert.match(renderRuinCreativeReferences(draft), /不强制死亡/u);
-  Object.assign(draft.creativeReferences!, { telling: '逐步揭示', pace: '舒缓描写', mood: '甜蜜暧昧' });
-  assert.match(renderRuinCreativeReferences(draft), /不能为每位士兵新配恋人/u);
-  assert.match(renderRuinCreativeReferences(draft), /已知结局保持准确.*不把已知事实伪装/u);
-  assert.notEqual(ruinStyleMeaning('telling', '随内容自动'), ruinStyleMeaning('pace', '随内容自动'));
-  assert.match(renderRuinCreativeReferences(draft), /不因未满足偏好重试、报错或截断正文/u);
-  const definitions = Object.entries(RUIN_STYLE_OPTIONS).flatMap(([group, options]) => options.map(option => ruinStyleMeaning(group as keyof typeof RUIN_STYLE_OPTIONS, option)));
-  assert.equal(new Set(definitions).size, definitions.length, '每项包括自动选项都使用自己的语义，不复用套话');
-  assert.ok(definitions.every(text => !text.includes('二叶')), '通用文风示例不向其他题材注入具体角色');
-});
-test('全部23项讲述气质都有独立写作抓手，只投递选项且不新增评分或输出结构', () => {
+test('32项讲述气质各有明确写法与短例，组合只使用选中的释义', () => {
   const definitions: string[] = [];
   for (const group of ['telling', 'pace', 'mood'] as const) {
     for (const option of RUIN_STYLE_OPTIONS[group]) {
       const meaning = ruinStyleMeaning(group, option);
-      const craft = meaning.split('写作抓手：')[1];
-      assert.ok(craft && craft.length >= 100, `${group}/${option}要有实际场面和语言操作`);
-      definitions.push(craft);
+      definitions.push(meaning);
+      assert.match(meaning, /^含义: .+\n写法: .+如：.+$/u, `${group}/${option} 分离含义和实际写法`);
+      assert.doesNotMatch(meaning, /。/u);
+      assert.ok(!meaning.includes('二叶'), '通用例子不向其他题材注入角色');
       const draft = input(); draft.creativeReferences![group] = option as never;
-      assert.ok(renderRuinCreativeReferences(draft).includes(craft));
+      const prompt = renderRuinCreativeReferences(draft);
+      assert.ok(prompt.includes(meaning));
+      assert.doesNotMatch(prompt, /undefined/u);
+      for (const other of RUIN_STYLE_OPTIONS[group]) {
+        if (other !== option) assert.ok(!prompt.includes(ruinStyleMeaning(group, other)), `${option}不投递${other}的释义`);
+      }
     }
   }
-  assert.equal(definitions.length, 23);
-  assert.equal(new Set(definitions).size, 23);
-  const draft = input(); Object.assign(draft.creativeReferences!, { telling: '现场展开', pace: '舒缓描写', mood: '冷静克制' });
+  assert.equal(definitions.length, 32);
+  assert.equal(new Set(definitions).size, 32, '三组自动选项也有各自的方法');
+  const draft = input(); Object.assign(draft.creativeReferences!, { telling: '多方讲述', pace: '起伏鲜明', mood: '悲伤惋惜' });
   const prompt = renderRuinCreativeReferences(draft);
-  assert.match(prompt, /写作抓手/u);
-  for (const unused of ['多方讲述', '回忆讲述', '起伏鲜明', '热烈昂扬']) assert.ok(!prompt.includes(`「${unused}」`));
+  assert.match(prompt, /各贡献一块不同的信息/u);
+  assert.match(prompt, /玩积木也可由搭成、倒塌/u);
+  assert.match(prompt, /不强制死亡/u);
+  assert.match(prompt, /先让所选写法影响提纲/u);
   assert.match(prompt, /不因未满足偏好重试、报错或截断正文/u);
 });
 
-test('九项蝴蝶偏好不预设结局，不让感知窗口绑架历史范围或归返锚点', () => {
-  const text = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, absurdity: 100, legend: '史诗回响', focus: '玩家的孩子' });
-  assert.match(text, /极诞/u);
-  assert.match(text, /守住已发生事实与世界运行机制，受分歧影响的未来可大胆改变/u);
-  assert.doesNotMatch(text, /既成行动、世界神系与自然条件仍成立/u);
-  assert.match(text, /圣人、工程师或平凡的人/u); assert.match(text, /不能预定封圣/u);
-  assert.match(text, /三件事/u); assert.match(text, /不要求当场/u);
-  assert.equal(Object.keys(DEFAULT_BUTTERFLY_REFERENCES).length, 9);
-  assert.ok(BUTTERFLY_PRESETS.length >= 3);
-  assert.doesNotMatch(text, /undefined/u);
-});
-
-test('蝴蝶每项选项含独立展开语义，五档力度只投递当前一档', () => {
-  for (const [group, options] of Object.entries(BUTTERFLY_OPTIONS)) {
-    const label = { scope: '波及范围', domain: '影响领域', intensity: '改写力度', legend: '传奇感',
-      evolution: '演化方式', mood: '情绪底色', manifestation: '显现方式' }[group]!;
-    const definitions = options.map(option => {
-      const text = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, [group]: option });
-      const line = text.split('\n\n').find(line => line.startsWith(`${label}「${option}」`))!;
-      assert.ok(line && line.length >= 75, `${group}/${option}须有具体写法而非只贴标签`);
-      assert.doesNotMatch(line, /undefined/u);
-      return line.split('：').slice(1).join('：');
+test('讲述、节奏与情绪分别落实信息、场面及语言，不只换标签', () => {
+  const expectations = {
+    telling: ['理解路径', '为什么开始', '动作、声音、空间与对话', '注意、愿望与误解', '先前细节', '不同的信息', '回望的语气', '谁为何知道', '交谈本身', '使用、递交', '时代的窗口'],
+    pace: ['篇幅留给', '相同篇幅', '动作带来回应', '压缩重复背景', '期待、落差', '缩短行动间隔', '消化的间隙', '新的意味'],
+    mood: ['语言温度', '小小错位', '具体照顾', '成年关系', '正常节律被打断', '准确动作和留白', '值得珍惜', '实际行动', '所得与所失', '形态、尺度', '不合常态', '各自的道理', '距离、缺席'],
+  };
+  for (const group of ['telling', 'pace', 'mood'] as const) {
+    RUIN_STYLE_OPTIONS[group].forEach((option, index) => {
+      assert.ok(ruinStyleMeaning(group, option).includes(expectations[group][index]!), `${group}/${option}必须说明可用的写法`);
     });
-    assert.equal(new Set(definitions).size, options.length);
   }
-  for (const intensity of BUTTERFLY_OPTIONS.intensity) {
-    const line = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, intensity })
-      .split('\n\n').find(line => line.startsWith('改写力度'))!;
-    for (const other of BUTTERFLY_OPTIONS.intensity.filter(value => value !== intensity)) assert.ok(!line.includes(other));
-  }
-  for (const [value, label] of [[0,'朴素'],[20,'朴素'],[21,'意外'],[40,'意外'],[41,'奇诡'],[60,'奇诡'],[61,'狂想'],[80,'狂想'],[81,'极诞'],[100,'极诞']] as const) {
-    const line = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, absurdity: value })
-      .split('\n\n').find(line => line.startsWith('荒诞值'))!;
-    assert.ok(line.includes(`「${label}」`) && line.length >= 100, '去重精简后仍须有完整语义，不能只投递档位标签');
-  }
-});
-test('蝴蝶全部离散选项及五档荒诞有独立演化抓手，关注对象不变成演员锁或结局', () => {
-  const crafts: string[] = [];
-  for (const [group, options] of Object.entries(BUTTERFLY_OPTIONS)) for (const option of options) {
-    const prompt = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, [group]: option });
-    const label = { scope: '波及范围', domain: '影响领域', intensity: '改写力度', legend: '传奇感',
-      evolution: '演化方式', mood: '情绪底色', manifestation: '显现方式' }[group]!;
-    const line = prompt.split('\n\n').find(line => line.startsWith(`${label}「${option}」`))!;
-    const craft = line?.split('演化抓手：')[1];
-    assert.ok(craft && craft.length >= 80, `${group}/${option}要说明人物承接、条件和表现`);
-    crafts.push(craft);
-  }
-  assert.equal(new Set(crafts).size, crafts.length, '同名自动选择在不同组也使用独立含义');
-  for (const absurdity of [0, 21, 41, 61, 81]) {
-    const line = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, absurdity }).split('\n\n').find(line => line.startsWith('荒诞值'))!;
-    assert.ok((line.split('演化抓手：')[1]?.length ?? 0) >= 80);
-  }
-  const prompt = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, focus: '后来捡到笔记的人', scope: '国家', evolution: '意外转用' });
-  assert.match(prompt, /关注对象.*观察重心.*演化抓手/u);
-  assert.match(prompt, /不是参与者名单或期望结局/u);
-  assert.match(prompt, /不因文风不符返工或报错/u);
-  for (const unselected of ['曲折扩散', '多线汇合', '代际接力']) assert.ok(!prompt.includes(`演化方式「${unselected}」`));
+  assert.match(ruinStyleMeaning('telling', '回忆讲述'), /不获取事件终点后的知识/u);
+  assert.match(ruinStyleMeaning('telling', '逐步揭示'), /已知事实仍准确/u);
+  assert.match(ruinStyleMeaning('pace', '舒缓描写'), /紧急行动仍按真实速度/u);
+  assert.match(ruinStyleMeaning('mood', '甜蜜暧昧'), /不把幼年人物成人化/u);
 });
 
-test('随机仅在显式调用时发生，值有界，默认对象不被突变', () => {
+test('每类示例提醒只出现一次，正文末尾仅回看选择，不叠加整套释义', () => {
+  const draft = input(); Object.assign(draft.creativeReferences!, { telling: '现场展开', pace: '舒缓描写', mood: '冷静克制' });
+  const prompt = renderRuinCreativeReferences(draft);
+  assert.equal(prompt.split(RUIN_EXAMPLE_NOTICE).length - 1, 4, '时期和三类气质各一次，不每项重复');
+  assert.equal(prompt.split('写作抓手：').length - 1, 3);
+  for (const group of ['telling', 'pace', 'mood'] as const) {
+    assert.equal(prompt.split(ruinStyleMeaning(group, draft.creativeReferences![group])).length - 1, 1);
+  }
+  const reminder = renderRuinStyleReminder(draft);
+  assert.match(reminder, /现场讲述/u); assert.match(reminder, /舒缓细写/u); assert.match(reminder, /冷静克制/u);
+  assert.match(reminder, /无需输出说明、评分或新字段/u);
+  assert.doesNotMatch(reminder, /如：|仅作示例|多方讲述|悲伤惋惜/u);
+  for (const unused of ['多方讲述', '回忆讲述', '起伏鲜明', '热烈昂扬']) assert.ok(!prompt.includes(`「${unused}」`));
+});
+
+test('无新配置的旧输入沿用自动风格，未知选项安全回退且不改候选', () => {
+  const draft = input(); delete draft.creativeReferences;
+  const materials = structuredClone(draft.materials);
+  const prompt = renderRuinCreativeReferences(draft);
+  for (const group of ['telling', 'pace', 'mood'] as const) {
+    assert.equal(ruinStyleMeaning(group, '未知旧值'), ruinStyleMeaning(group, '随内容自动'));
+    assert.ok(prompt.includes(ruinStyleMeaning(group, '随内容自动')));
+  }
+  assert.deepEqual(draft.materials, materials);
+  assert.match(prompt, /不是四套文风抽签/u); assert.match(prompt, /起止状态可以相同/u);
+});
+
+test('四字显示名称不改变旧存储值，32项可保存重读且只投递选中内容', () => {
+  assert.equal(ruinStyleLabel('pace', '循序推进'), '循序渐进');
+  assert.equal(ruinStyleLabel('telling', '多方讲述'), '多方视角');
+  assert.equal(ruinStyleLabel('mood', '复杂交织'), '五味杂陈');
+  let variables: Record<string, unknown> = {};
+  const scope = { characterKey: '选项兼容卡', chatId: '选项兼容聊天' };
+  const settings = new ScriptWorkbenchSettings({
+    getScriptVariables: () => variables, replaceScriptVariables: value => { variables = value; },
+  }, () => scope);
+  for (const group of ['telling', 'pace', 'mood'] as const) {
+    const labels = RUIN_STYLE_OPTIONS[group].map(value => ruinStyleLabel(group, value));
+    assert.ok(labels.every(value => [...value].length === 4));
+    assert.equal(new Set(labels).size, labels.length);
+    for (const option of RUIN_STYLE_OPTIONS[group]) {
+      const draft = input(); draft.creativeReferences![group] = option as never;
+      settings.setRuinDraft(scope, draft);
+      const restored = settings.getRuinDraft(scope)!;
+      assert.equal(restored.creativeReferences![group], option, '原键值不得被显示名称覆盖');
+      assert.ok(renderRuinCreativeReferences(restored).includes(ruinStyleMeaning(group, option)));
+    }
+  }
+});
+
+test('防模板指导从本次事实出发，不把求新变成强制反转或领域配额', () => {
+  const ruin = renderRuinCreativeReferences(input());
+  const butterfly = renderButterflyReferences(DEFAULT_BUTTERFLY_REFERENCES);
+  assert.match(ruin, /不先从短例选择剧情再套入角色/u);
+  assert.match(butterfly, /完整实际行动.*历史条件/su);
+  assert.match(butterfly, /原演员、物件与题材可以退出/u);
+  assert.match(butterfly, /不强求每步跨领域或放大/u);
+  assert.match(butterfly, /不为避免相似而刻意反转/u);
+  assert.match(butterfly, /不另加分析字段/u);
+});
+
+test('五项主参考和可选领域不预定结局，九键存档保持兼容', () => {
+  const refs = { ...DEFAULT_BUTTERFLY_REFERENCES, absurdity: 100, focus: '某个家庭' };
+  const text = renderButterflyReferences(refs);
+  assert.match(text, /极诞/u);
+  assert.match(text, /范围是主要观察尺度，不是实际影响的天花板/u);
+  assert.match(text, /个人尺度也须承接已经结束的大战/u);
+  assert.match(text, /时代回响可以是一场短促的改写世界事件/u);
+  assert.match(text, /三件事.*锚点逐字恢复/su);
+  assert.equal(Object.keys(DEFAULT_BUTTERFLY_REFERENCES).length, 9);
+  assert.deepEqual(Object.keys(activeButterflyReferences(refs)), ['scope', 'focus', 'intensity', 'absurdity', 'mood', 'domain']);
+  assert.deepEqual(ButterflyReferencesSchema.parse(refs), refs);
+  assert.ok(BUTTERFLY_PRESETS.length >= 3);
+  assert.doesNotMatch(text, /undefined|传奇感「|演化方式「|显现方式「/u);
+});
+
+test('31个在用离散选项有独立含义、承接写法及短例，只发送选中释义', () => {
+  const meanings: string[] = [];
+  for (const group of ACTIVE_BUTTERFLY_SELECT_KEYS) {
+    for (const option of BUTTERFLY_OPTIONS[group]) {
+      const meaning = (BUTTERFLY_MEANINGS[group] as Record<string, string>)[option];
+      assert.match(meaning, /如：/u);
+      assert.match(meaning, /^含义: .+\n写法: .+\n如：.+$/u);
+      assert.ok(meaning.length >= 100 && meaning.length < 300, '选项解释足够具体但不堆入整套公共规则');
+      assert.doesNotMatch(meaning, /。/u);
+      meanings.push(meaning);
+      const prompt = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, [group]: option });
+      assert.ok(prompt.includes(meaning), group + '/' + option);
+      for (const other of BUTTERFLY_OPTIONS[group].filter(value => value !== option)) {
+        assert.ok(!prompt.includes((BUTTERFLY_MEANINGS[group] as Record<string, string>)[other]));
+      }
+    }
+  }
+  assert.equal(meanings.length, 31);
+  assert.equal(new Set(meanings).size, 31);
+});
+
+test('示例提醒每个大类仅一次，不重复塞入每个选项', () => {
+  const prompt = renderButterflyReferences(DEFAULT_BUTTERFLY_REFERENCES);
+  assert.equal(prompt.split(BUTTERFLY_EXAMPLE_NOTICE).length - 1, 6);
+  for (const meanings of Object.values(BUTTERFLY_MEANINGS)) {
+    for (const meaning of Object.values(meanings)) assert.ok(!meaning.includes(BUTTERFLY_EXAMPLE_NOTICE));
+  }
+  assert.match(prompt, /关注对象.*不是参与者名单或期望结局/su);
+  assert.match(prompt, /不因文风不符返工或报错/u);
+});
+
+test('五档离奇释义边界明确，与观察尺度互不绑定', () => {
+  const values = [0,20,21,40,41,60,61,80,81,100];
+  assert.deepEqual(values.map(absurdityLabel), ['朴素','朴素','微妙','微妙','离奇','离奇','奇诞','奇诞','极诞','极诞']);
+  for (const value of values) {
+    const meaning = butterflyAbsurdityMeaning(value);
+    assert.ok(meaning.startsWith(absurdityLabel(value)));
+    assert.match(meaning, /如：/u);
+    assert.ok(renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, absurdity: value }).includes(meaning));
+  }
+});
+
+test('随机只改在用选项，默认对象不突变，旧字段继续可解析', () => {
   const before = JSON.stringify(DEFAULT_BUTTERFLY_REFERENCES);
   for (const value of [-1, 0, 1, NaN, Infinity]) {
-    assert.doesNotThrow(() => ButterflyReferencesSchema.parse(randomButterflyReferences(() => value)));
+    const randomized = randomButterflyReferences(() => value);
+    assert.doesNotThrow(() => ButterflyReferencesSchema.parse(randomized));
+    for (const key of ['legend', 'evolution', 'manifestation'] as const) {
+      assert.equal(randomized[key], DEFAULT_BUTTERFLY_REFERENCES[key]);
+    }
     assert.equal(randomRuinReferences(5, () => value).periods.length, 5);
   }
   assert.equal(JSON.stringify(DEFAULT_BUTTERFLY_REFERENCES), before);
-  assert.deepEqual([0,20,21,40,41,60,61,80,81,100].map(absurdityLabel), ['朴素','朴素','意外','意外','奇诡','奇诡','狂想','狂想','极诞','极诞']);
 });
 
-test('48选项展开构思取舍与独立表现，而非一笔带过或全库投递', () => {
-  for (const [group, options] of Object.entries(BUTTERFLY_OPTIONS)) for (const option of options) {
-    const prompt = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, [group]: option });
-    const label = { scope: '波及范围', domain: '影响领域', intensity: '改写力度', legend: '传奇感',
-      evolution: '演化方式', mood: '情绪底色', manifestation: '显现方式' }[group]!;
-    const line = prompt.split('\n\n').find(line => line.startsWith(`${label}「${option}」`))!;
-    assert.ok(line.split('演化抓手：')[1].length >= 140, `${group}/${option}需展开具体取舍与表现`);
-    for (const other of options.filter(other => other !== option)) assert.ok(!prompt.includes(`${label}「${other}」`));
-  }
-  const refs = { ...DEFAULT_BUTTERFLY_REFERENCES, scope: '大陆' as const, domain: '人物命运' as const,
-    intensity: '时代回响' as const, absurdity: 100, legend: '史诗回响' as const, evolution: '代际接力' as const };
-  const prompt = renderButterflyReferences(refs);
-  assert.match(prompt, /改变谁的选择.*选择怎样牵动.*历史/u);
-  assert.match(prompt, /不只.*新职业|新职业.*不.*人生/u);
-  assert.match(prompt, /原物.*遗忘|遗忘.*原物/u);
-  assert.match(prompt, /极诞.*偏离.*直接预期/u);
-  assert.match(prompt, /逻辑是故事成立的底线，不是选择最普通路线的理由/u);
-  assert.match(prompt, /不因文风不符返工或报错/u);
+test('城市和聚落可新生或消失，时代回响不锁为长期风俗', () => {
+  assert.match(BUTTERFLY_MEANINGS.scope.城市, /新城、迁都与旧城消失/u);
+  assert.match(BUTTERFLY_MEANINGS.scope.聚落, /新村形成.*旧寨消失/u);
+  assert.match(BUTTERFLY_MEANINGS.intensity.时代回响, /不要求漫长积累.*一瞬止战.*大战终止/su);
 });
 
-test('七种显现各有感官写法，不把人物、环境与公共景观都写成记录文件', () => {
-  const meanings = {
-    '自然遇见': /声音.*气味/u,
-    '人物与关系': /疤痕.*称呼/u,
-    '生活与习俗': /味道.*动作/u,
-    '器物与技术': /使用.*功能/u,
-    '信仰与公共景观': /军旗.*敬礼/u,
-    '传闻与作品': /讲述者.*立场/u,
-    '多种线索': /互补.*不是.*重复/u,
-  };
-  for (const manifestation of BUTTERFLY_OPTIONS.manifestation) {
-    const prompt = renderButterflyReferences({ ...DEFAULT_BUTTERFLY_REFERENCES, manifestation });
-    const line = prompt.split('\n\n').find(line => line.startsWith('显现方式'))!;
-    assert.match(line, meanings[manifestation]);
-  }
-});
 test('地理加载数据保留真实父子关系；循环和缺父不伪造层级', () => {
   const raw = { places: [{ id:'c',name:'大陆' },{ id:'s',name:'小城',parent:'c' },{ id:'m',name:'市场',parent:'s' },{ id:'bad',name:'缺父',parent:'none' },{ id:'a',name:'环甲',parent:'b' },{ id:'b',name:'环乙',parent:'a' },{ id:'s',name:'覆盖小城' }] };
   const places = readRuinGeography(JSON.stringify(raw));

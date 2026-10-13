@@ -23,3 +23,10 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 项目主页：<https://zod.dev/>
+
+## 内嵌字体 — SIL Open Font License 1.1
+
+霞鹜臻楷（LXGW ZhenKai）与UnifrakturMaguntia以完整字形的WOFF2形式内嵌；未裁减字形或改名。字体版权及许可全文随源码和离线脚本分发：
+
+- [霞鹜臻楷许可](src/ui/assets/court/OFL-LXGWZhenKai.txt)
+- [UnifrakturMaguntia许可](src/ui/assets/court/OFL-UnifrakturMaguntia.txt)

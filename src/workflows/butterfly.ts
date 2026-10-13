@@ -8,6 +8,7 @@ import {
   type ButterflyRuleSet,
 } from '../prompts/butterfly.ts';
 import {
+  butterflyLogTitle,
   serializeButterflyArchive,
   serializeButterflyPanel,
 } from '../renderers/butterfly.ts';
@@ -161,9 +162,7 @@ export class ButterflyWorkflow {
     await this.assertNamespace(pending);
     assertActive();
 
-    const existingRecords = await this.repository.list(pending.namespace);
-    assertActive();
-    const title = `《蝴蝶效应锚定日志${existingRecords.length + 1}》`;
+    const title = butterflyLogTitle(result.effect);
     const creativeReferences = Boolean(pending.request.creativeReferences);
     const panel = serializeButterflyPanel(result.effect, { creativeReferences });
     const archiveEntry = serializeButterflyArchive({

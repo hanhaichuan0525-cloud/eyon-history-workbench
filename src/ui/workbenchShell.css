@@ -25,14 +25,14 @@
   --radius-panel: 15px;
   --radius-major: 21px;
   --font-ui: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
-  --font-reading: "Noto Serif SC", "Songti SC", STSong, serif;
+  --font-reading: "Noto Serif SC", "Songti SC", STSong, SimSun, serif;
   --font-eyon: "Kaiti SC", "STKaiti", "KaiTi", "FZKai-Z03", "Noto Serif SC", serif;
   display: block;
   height: 100%;
   min-height: 0;
   overflow: hidden;
   color: var(--ink);
-  background: var(--bg);
+  background: var(--archive-bg, var(--bg));
   font-family: var(--font-ui);
 }
 
@@ -62,16 +62,12 @@ button:focus-visible {
 
 .app {
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
+  grid-template-columns: 216px minmax(0, 1fr);
   width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background:
-    linear-gradient(90deg, transparent 0 calc(100% - 72px), rgba(180, 156, 120, .035) calc(100% - 72px), rgba(180, 156, 120, .035) calc(100% - 71px), transparent calc(100% - 71px)),
-    radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--teal, #8f7b9b) 13%, transparent), transparent 31rem),
-    radial-gradient(circle at 30% 84%, rgba(132, 85, 102, .07), transparent 27rem),
-    var(--bg);
+  background: var(--archive-bg, var(--bg));
 }
 
 .rail {
@@ -284,7 +280,8 @@ button:focus-visible {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: clamp(22px, 3.2vw, 48px);
+  --content-pad: clamp(20px, 2.5vw, 36px);
+  padding: var(--content-pad);
   scrollbar-color: color-mix(in srgb, var(--muted) 68%, transparent) var(--bg);
 }
 .content::-webkit-scrollbar { width: 11px; height: 11px; }
@@ -470,7 +467,7 @@ button:focus-visible {
   .top-copy p { display: none; }
   .top-copy h2 { font-size: 15px; }
   .icon-button { width: 40px; height: 40px; }
-  .content { padding: 28px 14px 24px; }
+  .content { --content-pad: 14px; padding: var(--content-pad) var(--content-pad) 24px; }
   .module-intro { margin-bottom: 20px; }
   .module-intro h1 { font-size: 24px; line-height: 1.3; }
   .module-intro p { font-size: 12px; }
@@ -488,3 +485,121 @@ button:focus-visible {
 .ruin-nav-children button:focus-visible{outline:2px solid var(--teal,var(--gold));outline-offset:2px}
 .nav{min-height:0;overflow-y:auto;flex-shrink:1}
 @media(max-width:1000px){.ruin-nav-children,.nav-disclosure{display:none}}
+
+/* Approved court prototype: flat silver insignia, violet-black architecture.
+   The light court uses its own art rather than a washed-out night image. */
+:host {
+  --court-rail-top: #1a1425;
+  --court-rail-bottom: #100d18;
+  --court-rail-ink: #c9bed5;
+  --court-rail-muted: #b1a0c0;
+  --court-brand: #e7d5f8;
+  --court-rail-line: #514160;
+  --court-nav-hover: #251d33;
+  --court-nav-active: #392746;
+  --court-nav-line: #79608d;
+  --court-nav-ink: #f3e7ff;
+  --court-palace-image: var(--court-night-image);
+  --court-palace-veil: linear-gradient(90deg, #130e1ddd, #19102177 44%, #110b1611 74%, #130d1d55);
+  --court-art-filter: none;
+}
+:host([data-theme="light"]) {
+  --court-rail-top: #eee7f3;
+  --court-rail-bottom: #d9cede;
+  --court-rail-ink: #4e3a60;
+  --court-rail-muted: #65536f;
+  --court-brand: #56376d;
+  --court-rail-line: #b8a5c5;
+  --court-nav-hover: #dcd0e5;
+  --court-nav-active: #cdbbdf;
+  --court-nav-line: #9273aa;
+  --court-nav-ink: #372244;
+  --court-palace-image: var(--court-day-image);
+  --court-palace-veil: linear-gradient(90deg, #ede6f2ee, #e5dced99 38%, #dfd5e722 70%, #d9cfe733);
+  --court-art-filter: brightness(.32) sepia(.3) saturate(1.2) hue-rotate(210deg);
+}
+.rail {
+  overflow-y: auto;
+  padding: 22px 18px;
+  border-color: var(--court-rail-line);
+  color: var(--court-rail-ink);
+  background: linear-gradient(180deg, var(--court-rail-top), var(--court-rail-bottom));
+}
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 20px;
+  text-align: center;
+  border-color: var(--court-rail-line);
+}
+.brand-mark { width: 72px; height: 72px; }
+.brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; filter: var(--court-art-filter); }
+.brand strong.court-brand-name { color: var(--court-brand); font: 400 40px/1.2 "EyonCourtBlackletter", Georgia, serif; letter-spacing: .04em; }
+.brand small { color: var(--court-rail-muted); font-size: 12px; letter-spacing: .06em; }
+.rail-label { margin-top: 20px; color: var(--court-rail-muted); font-size: 12px; }
+.rail-status { border-color: var(--court-rail-line); }
+.rail-status strong, .rail-status span { color: var(--court-rail-ink); font-size: 12px; }
+.nav-button { color: var(--court-rail-ink); }
+.nav-button:hover { color: var(--court-nav-ink); background: var(--court-nav-hover); }
+.nav-button[aria-current="page"] { color: var(--court-nav-ink); border-color: var(--court-nav-line); background: var(--court-nav-active); }
+.nav-label { font-size: 15px; font-weight: 400; }
+.nav-count { color: var(--court-rail-muted); border-color: var(--court-rail-line); font-size: 12px; }
+.nav-icon { color: var(--court-rail-muted); }
+.nav-disclosure { color: var(--court-rail-muted); }
+.ruin-nav-children { border-color: var(--court-rail-line); }
+.ruin-nav-children button { color: var(--court-rail-ink); font-size: 14px; min-height: 44px; }
+.ruin-nav-children button:disabled { opacity: 1; color: var(--court-rail-muted); }
+.ruin-nav-children button[aria-current="page"] { color: var(--court-nav-ink); background: var(--court-nav-active); }
+.topbar { min-height: 64px; padding: 12px 32px; background: var(--archive-panel); backdrop-filter: none; }
+.top-copy p { font-size: 12px; }
+.top-copy h2 { font-size: 18px; font-weight: 400; }
+.palace-hero {
+  display: flex;
+  align-items: center;
+  min-height: 240px;
+  margin: calc(-1 * var(--content-pad)) calc(-1 * var(--content-pad)) 28px;
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--archive-line);
+  background-image: var(--court-palace-veil), var(--court-palace-image);
+  background-position: center, center 42%;
+  background-size: cover;
+}
+.court-art-title { display: block; width: min(530px, 74%); height: auto; object-fit: contain; filter: var(--court-art-filter); }
+.module-intro h1 { font-size: 28px; font-weight: 400; }
+.module-intro p { font-size: 14px; }
+.module-intro .module-copy > span { font-size: 12px; }
+.ledger-cell dt { font-size: 12px; }
+.ledger-cell dd { font-size: 14px; }
+@media (max-width: 1000px) {
+  .rail { overflow: visible; padding: 0 0 env(safe-area-inset-bottom, 0px); }
+  .brand, .rail-label, .rail-status, .rail-ornament { display: none; }
+  .nav { overflow: visible; }
+  .nav-label { font-size: 12px; }
+  .topbar { min-height: 64px; padding: 12px 14px; }
+  .palace-hero { min-height: 200px; padding: 20px; }
+  .court-art-title { width: min(530px, 87%); }
+  .module-ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ledger-cell, .ledger-cell + .ledger-cell { display: block; padding: 8px 6px; }
+  .ledger-cell + .ledger-cell::before { inset: 8px auto 8px 0; width: 1px; height: auto; }
+  .ledger-cell dd { margin-top: 5px; text-align: left; white-space: normal; overflow-wrap: anywhere; font-size: 13px; }
+  .rail .ruin-nav-children:not([hidden]) {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0;
+    padding: 8px;
+    border: 1px solid var(--court-nav-line);
+    border-radius: var(--radius-panel);
+    background: var(--court-rail-top);
+    box-shadow: var(--shadow);
+  }
+  .ruin-nav-children button { text-align: center; padding: 9px 4px; }
+}
+@media (max-width: 600px) {
+  .palace-hero { min-height: 174px; padding: 14px; }
+  .court-art-title { width: 98%; }
+}

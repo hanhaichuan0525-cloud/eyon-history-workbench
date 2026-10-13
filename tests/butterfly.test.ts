@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type {
   ButterflyHostAdapter,
@@ -396,6 +397,76 @@ test('旧提交忽略取消时可同楼重试，旧finally不删除新提交锁'
   fresh.resolve(rollbackRecord(pending)); assert.ok(await second);
 });
 
+test('普通回滚或未创建的预计遣返楼不提示，但仍撤销受影响准备', async () => {
+  const h = rollbackHarness();
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(8), false);
+  h.messages.pop();
+  h.runtime.getMessageSwipeId = id => h.messages.some(message => message.message_id === id) ? 0 : null;
+  const pending = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(9), false, '预生成不等于玩家楼已确认');
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(10), false, '不能把预计的下一楼认作遣返 AI 楼');
+  await h.controller.onMessageDeleted(10);
+  assert.equal(await h.repository.getPending(pending.key), null, '无提示不影响后台清理');
+  assert.equal((await h.repository.getRecord(butterflyRecordKey(namespace, pending.runId)))?.canonStatus, 'reverted');
+});
+
+test('已绑定真实遣返 AI 楼的待结算快照提示，不要求猜测下一楼', async () => {
+  const h = rollbackHarness();
+  const pending = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  await h.repository.updatePending({ ...pending, triggerSwipeId: null,
+    request: { ...pending.request, trigger: { ...pending.request.trigger, returnAssistantMessageId: 10 } } });
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(10), true);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(11), false);
+});
+
+test('已确认玩家遣返楼与截断包含它的回滚提示，后续普通楼不提示', async () => {
+  const h = rollbackHarness();
+  await h.controller.prepareBeforeUserTurn('遣返', 9);
+  await h.controller.confirmPreparedUserFloor('遣返', 9);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(9), true);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(8), true);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(10), false);
+  await h.controller.onMessageDeleted(9);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(9), false, '已撤销事务不能反复触发通知');
+});
+
+test('已归档遣返 AI 楼回滚提示，但后续普通楼和已撤销旧档案不提示', async () => {
+  const h = rollbackHarness();
+  const pending = await h.controller.prepareBeforeUserTurn('遣返', 9);
+  await h.repository.deletePending(pending.key);
+  const archived = { ...rollbackRecord(pending), assistantMessageId: 10, status: 'committed' as const };
+  await h.repository.updateRecord(archived);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(10), true);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(9), true);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(8), true);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(11), false);
+  await h.repository.updateRecord({ ...archived, canonStatus: 'reverted' });
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(10), false);
+});
+
+test('回滚通知核对限定在捕获的聊天，不借用其他聊天的遣返记录', async () => {
+  const h = rollbackHarness();
+  await h.controller.prepareBeforeUserTurn('遣返', 9);
+  await h.controller.confirmPreparedUserFloor('遣返', 9);
+  const nextNamespace = { ...namespace, chatId: 'next-chat' };
+  h.runtime.getCurrentChatId = () => nextNamespace.chatId;
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(9), false);
+  assert.equal(await h.controller.hasReturnFloorAtOrAfter(9, namespace), true);
+});
+
+test('删楼入口先核对遣返身份，清理完成且聊天未切换才发通知', () => {
+  const entry = readFileSync(new URL('../src/entry.ts', import.meta.url), 'utf8');
+  const handler = entry.slice(entry.indexOf('  const onMessageDeleted ='), entry.indexOf('  if (events.names.messageDeleted)'));
+  assert.ok(handler.indexOf('hasReturnFloorAtOrAfter(id, namespace)') < handler.indexOf('canon.rollbackByMessageId'));
+  assert.ok(handler.indexOf('await butterflyController.onMessageDeleted') < handler.indexOf("emitTaskStatus('butterfly'"));
+  assert.match(handler, /if \(!disposed && revision === contextRevision/u);
+  assert.match(handler, /namespaceKey\(namespace\) === namespaceKey\(scopeReader.getNamespace\(\)\)/u);
+  assert.match(handler, /if \(returnFloorAffected \|\| rollback\) \{\s*emitTaskStatus\('butterfly', 'cancelled', '遣返楼已回滚/u);
+  assert.match(handler, /else if \(returnTaskWasRunning\) \{[\s\S]*?蝴蝶效应处理已停止/u);
+  assert.ok(handler.indexOf('const returnTaskWasRunning') < handler.indexOf('generator.cancel'), '保留处理中任务的准确取消反馈');
+  assert.equal(handler.match(/emitTaskStatus\('butterfly'/gu)?.length, 2, '两种通知都受实际影响条件限制');
+});
+
 test('回滚撤销受影响pending与预生成结果，不删除已归档历史或更早准备', async () => {
   const h = rollbackHarness(); const pending = await h.controller.prepareBeforeUserTurn('遣返',9); assert.ok(pending);
   const earlier = { ...pending, key: pendingSettlementKey(namespace, 'earlier'), runId: 'earlier',
@@ -746,7 +817,7 @@ test('蝴蝶效应提示词包含只读证据与完整因果计划且仍使用�
   assert.match(prompt, /<BUTTERFLY_EVIDENCE_POLICY_READ_ONLY>/u);
   assert.match(prompt, /<BUTTERFLY_CAUSAL_PLAN>/u);
   assert.match(prompt, /<BUTTERFLY_HISTORICAL_EVOLUTION_STYLE>/u);
-  assert.match(prompt, /历史演变是本结果的主体/u);
+  assert.match(prompt, /历史文稿的书写:/u);
   assert.match(prompt, /建议 450-900 个中文字符/u);
   assert.match(prompt, /仅用于兼容回显/u);
   assert.doesNotMatch(prompt, /被永久改写|只限定\*\*结果落地时的规模\*\*/u);
@@ -755,12 +826,12 @@ test('蝴蝶效应提示词包含只读证据与完整因果计划且仍使用�
   assert.match(prompt, /代价不是硬性要求/u);
   assert.match(prompt, /继续调查、利用、保护、交易、对抗或误解/u);
   assert.match(prompt, /不得写成范围说明、得失清单、游戏结算报告或固定模板/u);
-  assert.match(prompt, /两到三条不同的可能路径/u);
-  assert.match(prompt, /人生的志愿与际遇、感情与后代、技术与创造/u);
-  assert.match(prompt, /信仰与竞争、生态与迁徙、游戏与习俗/u);
+  assert.match(prompt, /参考应当实际影响事件取舍与表达/u);
+  assert.match(prompt, /历史本身，包括人物、事件、群体、地域、资源、环境、机会与关系/u);
+  assert.match(prompt, /新处境推动下一件事/u);
   assert.doesNotMatch(prompt, /【人生接力】|【用途转生】|【共同生活】/u);
   assert.doesNotMatch(prompt, /【失败｜不要这样写】/u);
-  assert.match(prompt, /结果为何自然长成此种深度与范围/u);
+  assert.match(prompt, /范围、改写深度、离奇程度与持续时间彼此独立/u);
   assert.match(prompt, /directEffects 作为脚本内部索引卡/u);
   assert.match(prompt, /具名物品，也必须单列一项/u);
   assert.match(prompt, /物品状态（原件损毁\/遗失\/修复\/替换）/u);
@@ -988,6 +1059,8 @@ test('蝴蝶效应按 validated → message_committed → committed 提交且同
   const canon = new MemoryCanonRepository();
   const appendedPanels: Array<{ messageId: number; requestId: string; panel: string }> = [];
   let generatorCalls = 0;
+  const generated = result();
+  generated.effect.title = '失落谱系重现';
   const host: ButterflyHostAdapter = {
     async getNamespace() { return namespace; },
     async getRuinRuntimeSnapshot() {
@@ -1011,7 +1084,7 @@ test('蝴蝶效应按 validated → message_committed → committed 提交且同
   const generator: GenerationAdapter = {
     async generate() {
       generatorCalls += 1;
-      return JSON.stringify(result());
+      return JSON.stringify(generated);
     },
   };
   const workflow = new ButterflyWorkflow({
@@ -1042,6 +1115,9 @@ test('蝴蝶效应按 validated → message_committed → committed 提交且同
   await repository.savePending(pending);
   const committed = await workflow.settle(pending);
   assert.equal(committed.status, 'committed');
+  assert.match(committed.archiveEntry, /^### 《蝴蝶效应日志：失落谱系重现》/u);
+  assert.equal(committed.key, butterflyRecordKey(namespace, frozen.runId));
+  assert.equal(committed.result.effect.historicalEvolution, generated.effect.historicalEvolution);
   assert.equal(committed.canonRevision, 1);
   assert.ok(committed.actionRef);
   assert.ok(committed.deltaRef);
@@ -1067,6 +1143,7 @@ test('蝴蝶效应按 validated → message_committed → committed 提交且同
 
   const same = await workflow.settle(pending);
   assert.equal(same.status, 'committed');
+  assert.equal(same.archiveEntry, committed.archiveEntry, '同轮重试复用标题和完整归档');
   // internal.81 v21：同楼再次提交只触发一次面板补插尝试（宿主 v20 按文本幂等，
   // host.test 单独锁定），绝不重新生成或重新入账。
   assert.equal(appendedPanels.length, 2);
@@ -1088,6 +1165,7 @@ test('蝴蝶效应按 validated → message_committed → committed 提交且同
   };
   await repository.savePending(reroll);
   const rebound = await workflow.settle(reroll);
+  assert.equal(rebound.archiveEntry, committed.archiveEntry, '重roll正文不重新生成标题或史稿');
   assert.equal(rebound.assistantMessageId, 12);
   assert.equal(rebound.status, 'committed');
   assert.equal(appendedPanels.length, 3, '重掷新楼重新追加面板');
@@ -1513,11 +1591,11 @@ test('遣返正文获得精确冻结时地，创作偏好进入同一次生成�
   assert.match(instruction, /墟境经过的时间不加到现实时间上/u);
   const prompt = buildButterflyApiPrompt({ request: req,
     rules: { sharedContext: '', retrievalContract: '', validationContract: '', generationContract: '' } });
-  assert.match(prompt, /波及范围「大陆」.*大陆不同地域与社会/u);
-  assert.match(prompt, /影响领域「风俗与日常」/u);
-  assert.match(prompt, /演化方式「意外转用」/u);
-  assert.match(prompt, /通常400至700字.*不因超长拒收或裁剪全文/u);
-  assert.match(prompt, /两到三条不同的可能路径/u);
+  assert.match(prompt, /波及范围.*「大陆」：含义: 以大陆层面的历史方向或共同世界条件/su);
+  assert.match(prompt, /侧重领域.*「风俗与日常」/su);
+  assert.doesNotMatch(prompt, /演化方式「意外转用」/u, '退役的演化方式不再装配');
+  assert.match(prompt, /通常300至600字，复杂故事可以更长.*不凑字，不硬切正文/u);
+  assert.match(prompt, /参考应当实际影响事件取舍与表达/u);
   assert.doesNotMatch(prompt, /【失败｜|一封信件 -> 一次判例/u);
 });
 

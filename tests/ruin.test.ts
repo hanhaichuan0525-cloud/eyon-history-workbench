@@ -94,6 +94,8 @@ import {
 import { insertRuinTrace } from '../src/workflows/messageAssembly.ts';
 import { scopeRuinGenealogy } from '../src/runtime/ruinActorPolicy.ts';
 import { UnifiedShadowRetrievalEngine } from '../src/retrieval/shadowEngine.ts';
+import { RUIN_WRITING_GUIDANCE } from '../src/core/ruinProseContract.ts';
+import { RUIN_STYLE_OPTIONS, ruinStyleMeaning } from '../src/core/creativeReferences.ts';
 
 const namespace = {
   characterKey: '命定之诗',
@@ -206,10 +208,47 @@ test('讲述气质在规划、扩写和恢复中完整接洽，末尾以短提�
   const expansion = buildRuinExpansionApiPrompt(promptInput, input.materials[0]!, makeCandidates().candidates[0]!);
   for (const prompt of [buildRuinOutlineBatchApiPrompt(promptInput), expansion, buildCompactRuinExpansionRecoveryPrompt(expansion)!]) {
     assert.match(prompt, /写作抓手/u);
+    assert.ok(prompt.includes(RUIN_WRITING_GUIDANCE), '三阶段使用同一完整作者身份与方法');
+    assert.equal(prompt.split('<RUIN_WRITING_GUIDANCE>').length - 1, 1);
+    assert.equal(prompt.split('<RUIN_CREATIVE_REFERENCES>').length - 1, 1, '恢复不重复发送已含在完整只读区的释义');
+    for (const group of ['telling', 'pace', 'mood'] as const) {
+      for (const option of RUIN_STYLE_OPTIONS[group]) {
+        const count = prompt.split(ruinStyleMeaning(group, option)).length - 1;
+        assert.equal(count, option === input.creativeReferences[group] ? 1 : 0, '仅投递选中的完整释义一次');
+      }
+    }
     const reminder = prompt.slice(prompt.lastIndexOf('本轮讲述气质回看'));
-    assert.match(reminder, /多方讲述/u); assert.match(reminder, /先缓后紧/u); assert.match(reminder, /悲伤惋惜/u);
+    assert.match(reminder, /多方视角/u); assert.match(reminder, /先缓后紧/u); assert.match(reminder, /悲伤惋惜/u);
+    assert.equal(prompt.split('<RUIN_REVISION>').length - 1, 1);
+    assert.ok(prompt.indexOf('<RUIN_REVISION>') > prompt.indexOf('<RUIN_STYLE_REMINDER>'));
     assert.match(reminder, /无需输出/u);
     assert.ok(!reminder.includes('冷静克制'), '不在末尾混入未选风格');
+  }
+});
+
+test('不同新选项组合在实际提纲、扩写及恢复中只装配本轮方法，保留玩家题材', () => {
+  const cases = [
+    { direction: '雪夜渡口最后一班船上的闲谈', telling: '对话推进', pace: '张弛交替', mood: '孤独清冷' },
+    { direction: '工匠修补一件被送回的旧玩具', telling: '物件串联', pace: '前后呼应', mood: '荒诞幽默' },
+    { direction: '浮空城集市一日的普通劳作', telling: '以小见大', pace: '循序推进', mood: '新奇惊艳' },
+    { direction: '深林驿站里一次尚无定论的异响', telling: '传闻拼合', pace: '先缓后紧', mood: '神秘诡异' },
+  ] as const;
+  for (const item of cases) {
+    const input = makeInput();
+    input.supplementaryDirection = item.direction;
+    input.creativeReferences = { periods: ['transition'], telling: item.telling, pace: item.pace, mood: item.mood };
+    const promptInput = { requestId, directive: '墟境探索', generationInput: input, context: makeContext(), rules: { generationContract: '' } };
+    const expansion = buildRuinExpansionApiPrompt(promptInput, input.materials[0]!, makeCandidates().candidates[0]!);
+    for (const prompt of [buildRuinOutlineBatchApiPrompt(promptInput), expansion, buildCompactRuinExpansionRecoveryPrompt(expansion)!]) {
+      assert.ok(prompt.includes(item.direction));
+      assert.equal(prompt.split('<RUIN_WRITING_GUIDANCE>').length - 1, 1);
+      assert.equal(prompt.split('<RUIN_REVISION>').length - 1, 1);
+      for (const group of ['telling', 'pace', 'mood'] as const) {
+        for (const option of RUIN_STYLE_OPTIONS[group]) {
+          assert.equal(prompt.split(ruinStyleMeaning(group, option)).length - 1, option === item[group] ? 1 : 0);
+        }
+      }
+    }
   }
 });
 

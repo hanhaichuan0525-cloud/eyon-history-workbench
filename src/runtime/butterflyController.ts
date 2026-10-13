@@ -529,6 +529,23 @@ export class ButterflyController {
     });
   }
 
+  /** 仅供通知判断：在 Canon 对账改写状态前，核对回滚是否涉及已建立的遣返楼。 */
+  async hasReturnFloorAtOrAfter(messageId: number, namespace = currentNamespace(this.runtime)): Promise<boolean> {
+    const [pending, records] = await Promise.all([
+      this.repository.listPending(namespace), this.repository.list(namespace),
+    ]);
+    // userMessageId + 1 只是预计的 AI 楼；未确认的玩家楼也可能尚未创建，
+    // 不能沿用下面较宽的清理条件来宣称“遣返楼已回滚”。
+    return pending.some(item =>
+      (item.triggerSwipeId != null && item.request.trigger.userMessageId >= messageId)
+      || (item.request.trigger.returnAssistantMessageId > 0
+        && item.request.trigger.returnAssistantMessageId >= messageId)
+    ) || records.some(item =>
+      item.canonStatus !== 'reverted' && item.assistantMessageId > 0
+      && (item.request.trigger.userMessageId >= messageId || item.assistantMessageId >= messageId)
+    );
+  }
+
   /** 在 Canon 回滚屏障内撤销已删楼的准备；保留已归档历史供 Canon 对齐。 */
   async onMessageDeleted(messageId: number, namespace = currentNamespace(this.runtime)): Promise<void> {
     const [pending, records] = await Promise.all([

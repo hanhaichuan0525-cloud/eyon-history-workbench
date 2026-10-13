@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "cardId": "eyon-history-workbench",
+  "assets": [
+    {
+      "id": "palace-night",
+      "kind": "image",
+      "source": {
+        "type": "local",
+        "path": "palace-night.webp"
+      },
+      "bytes": 132348,
+      "sha256": "6ad0a7db2469152e8ae937b2fc03c361f16834d8bf06bb87d383802afcc994b8",
+      "preload": "on-demand",
+      "lifetime": "card",
+      "fallbackAssetId": null,
+      "provenance": "Approved image_gen prototype; resized and encoded for embedded delivery."
+    },
+    {
+      "id": "palace-day",
+      "kind": "image",
+      "source": {
+        "type": "local",
+        "path": "palace-day.webp"
+      },
+      "bytes": 206874,
+      "sha256": "980ea23638cc4263e565598f1bc3106eed004e13ad1c79c9aba66bb807c17ec8",
+      "preload": "on-demand",
+      "lifetime": "card",
+      "fallbackAssetId": null,
+      "provenance": "Approved image_gen prototype; resized and encoded for embedded delivery."
+    },
+    {
+      "id": "court-title",
+      "kind": "image",
+      "source": {
+        "type": "local",
+        "path": "court-title.webp"
+      },
+      "bytes": 128058,
+      "sha256": "eaee627dd75defd6ecb5e24f2e1d5e2210c63e9a8e1c12f427ae1e5c0db57d92",
+      "preload": "on-demand",
+      "lifetime": "card",
+      "fallbackAssetId": null,
+      "provenance": "Approved image_gen prototype; resized and encoded for embedded delivery."
+    },
+    {
+      "id": "crest",
+      "kind": "image",
+      "source": {
+        "type": "local",
+        "path": "crest.webp"
+      },
+      "bytes": 20372,
+      "sha256": "e5e1687cf3596aa22a9c5e64449501da624bcf634e9a1372d445a0f752de67a9",
+      "preload": "on-demand",
+      "lifetime": "card",
+      "fallbackAssetId": null,
+      "provenance": "Approved image_gen prototype; resized and encoded for embedded delivery."
+    }
+  ],
+  "fonts": [
+    {
+      "name": "LXGWZhenKaiGB-Regular.woff2",
+      "original": "LXGWZhenKaiGB-Regular.ttf",
+      "bytes": 9524644,
+      "sha256": "f17a58708171bf98d3ddce52c248cd1f7b7dc622a22bd28f31bbe434d1b09d41",
+      "policy": "Full original glyph repertoire; WOFF2 compression, no subsetting; SIL OFL 1.1."
+    },
+    {
+      "name": "UnifrakturMaguntia-Book.woff2",
+      "original": "UnifrakturMaguntia-Book.ttf",
+      "bytes": 35540,
+      "sha256": "5f50be5ec47c1113d7a452771ad7439e0f28015bed772d2d32f5c09402d92de9",
+      "policy": "Full original glyph repertoire; WOFF2 compression, no subsetting; SIL OFL 1.1."
+    }
+  ]
+}

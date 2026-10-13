@@ -49,6 +49,11 @@ module.exports = {
         test: /eyon-companion-prototype-v5\.png$/,
         type: 'asset/inline',
       },
+      {
+        test: /\.(webp|woff2)$/,
+        include: path.resolve(__dirname, 'src/ui/assets/court'),
+        type: 'asset/inline',
+      },
     ],
   },
   optimization: {

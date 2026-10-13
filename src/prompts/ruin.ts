@@ -5,7 +5,7 @@ import {
   taskCitationRegistry,
 } from '../retrieval/citations.ts';
 import { activeTemporalEligibilityRules, assessStagePerson } from '../retrieval/temporal.ts';
-import { ruinProseLengthInstruction } from '../core/ruinProseContract.ts';
+import { ruinProseLengthInstruction, RUIN_WRITING_GUIDANCE, RUIN_REVISION } from '../core/ruinProseContract.ts';
 import {
   buildActiveEvidenceView,
   renderActiveEvidenceBlock,
@@ -421,6 +421,7 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
     'Historical blanks may be filled generously. A durable local family custom, obligation or institution is allowed when it grows from the event causes and contradicts no supplied fact. Direct evidence is required only before turning that local invention into an unrelated continent-wide law, divine treaty or civilizational rewrite.',
     'Keep the answer short. Do not write a 500-character history yet.',
     '</RUIN_OUTLINE_BATCH_TASK>',
+    RUIN_WRITING_GUIDANCE,
     '<PROTAGONIST_ANCHOR>',
     `当前玩家扮演的主角是「${input.context.scope.characterKey}」，是活着的当代人。`,
     '主角可以出现在墟境历史中——但工作台勾选只表示重点参考；只有玩家在补充方向明确要求其进入、或候选因果确实需要其作为穿越者行动时，才以当代人的身份合理出场。',
@@ -478,6 +479,7 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
     'If a draft conflicts with an earlier or later biography state, correct the outline itself before sending. Keep uncertain gaps open to plausible invention; do not add fields, explanations or a printed checklist.',
     '</PRE_SUBMISSION_CHECK>',
     renderRuinStyleReminder(input.generationInput),
+    RUIN_REVISION,
     '</MANDATORY_FINAL_OUTPUT_CONTRACT>',
   ].join('\n\n');
   return maskTaskCitationIdentifiers(
@@ -538,7 +540,7 @@ export function buildRuinExpansionApiPrompt(
   };
   const prompt = [
     '<RUIN_SELECTED_CANDIDATE_EXPANSION>',
-    'Expand only the selected outline into a vivid, causally coherent historical dossier for immediate entry.',
+    'Expand only the selected outline into a vivid historical story with concrete scenes and a distinctive selected voice, ready for immediate entry.',
     'EVIDENCE_LEDGER_READ_ONLY remains binding during expansion. Added texture may explain a gap, but may never alter a canonical name, identity, lifespan, allegiance, dated deed or location hierarchy.',
     'Preserve every node id, node kind, structured time and full 4–8 level MVU location exactly. Add detail; do not move, replace or reorder the four playable stages.',
     'The selected outline cast is a read-only canonical ledger. Keep every name, kind, identity and role exactly; do not add, remove, rename, merge or replace actors. Only desire, constraint and inference may be enriched. Preserve the lifespan and age logic already implied by the outline.',
@@ -551,6 +553,7 @@ export function buildRuinExpansionApiPrompt(
     ruinProseLengthInstruction(),
     'Keep every other string compact: usually 10-45 Chinese characters. Each list should normally contain one item, and never more than two unless the selected outline makes a second item indispensable.',
     '</RUIN_SELECTED_CANDIDATE_EXPANSION>',
+    RUIN_WRITING_GUIDANCE,
     ...PERIOD_ANCHORING_BLOCK,
     ...renderTaskSubjectBoundary({
       taskType: 'ruin',
@@ -609,6 +612,7 @@ export function buildRuinExpansionApiPrompt(
     'If any check fails, correct it before sending. Never print this checklist or its result.',
     '</PRE_SUBMISSION_CHECK>',
     renderRuinStyleReminder(input.generationInput),
+    RUIN_REVISION,
     '</MANDATORY_FINAL_OUTPUT_CONTRACT>',
   ].join('\n\n');
   return maskTaskCitationIdentifiers(
@@ -821,13 +825,19 @@ export function buildCompactRuinExpansionRecoveryPrompt(
   const knownEventFaithfulness = extractTaggedBlock(originalPrompt, 'KNOWN_EVENT_FAITHFULNESS_READ_ONLY');
   const characterTimeAnchors = extractTaggedBlock(originalPrompt, 'CHARACTER_TIME_ANCHORS');
   const styleReminder = extractTaggedBlock(originalPrompt, 'RUIN_STYLE_REMINDER');
+  const writingGuidance = extractTaggedBlock(originalPrompt, 'RUIN_WRITING_GUIDANCE');
+  const revision = extractTaggedBlock(originalPrompt, 'RUIN_REVISION');
+  const referenceData = extractTaggedBlock(originalPrompt, 'REFERENCE_DATA_READ_ONLY');
   // 恢复只缩减输出，不裁掉生成已消费的原文。否则生日/对应经历会在恢复时消失。
   const sourceBlocks = ['RUIN_CREATIVE_REFERENCES', 'CHARACTER_CARDS_FULL', 'HISTORICAL_AUTHORITY_READ_ONLY',
-    'HISTORICAL_REFERENCE_FACTS_READ_ONLY', 'REFERENCE_DATA_READ_ONLY']
+    'HISTORICAL_REFERENCE_FACTS_READ_ONLY']
     .flatMap(tag => {
       const content = extractTaggedBlock(originalPrompt, tag);
+      // 仅去重全量只读区里完全相同的块，不舍弃区外的不同来源版本。
+      if (referenceData && content === extractTaggedBlock(referenceData, tag)) return [];
       return content ? [`<${tag}>`, content, `</${tag}>`] : [];
     });
+  if (referenceData) sourceBlocks.push('<REFERENCE_DATA_READ_ONLY>', referenceData, '</REFERENCE_DATA_READ_ONLY>');
   if (!fixedHeader || !selectedOutline) return null;
 
   return [
@@ -838,6 +848,7 @@ export function buildCompactRuinExpansionRecoveryPrompt(
     'Begin at the exact date of the origin node, make the opening month or season agree with that date, then carry time forward through process, climax and result with visible transitions. Never borrow a later node\'s season for the opening. If the era uses a custom calendar, keep the environment neutral unless the supplied evidence explicitly maps its months to seasons.',
     'Include the outline cast naturally and make the four outline nodes read as one causal sequence. Do not mention prompts, dice, seed labels, stages or recovery.',
     '</RUIN_COMPACT_EXPANSION_RECOVERY>',
+    ...(writingGuidance ? ['<RUIN_WRITING_GUIDANCE>', writingGuidance, '</RUIN_WRITING_GUIDANCE>'] : []),
     ...(evidenceLedger
       ? [
           '<EVIDENCE_LEDGER_READ_ONLY>',
@@ -876,6 +887,7 @@ export function buildCompactRuinExpansionRecoveryPrompt(
     'candidate contains exactly one field: historyProse.',
     'Do not output nodes, cast, dates, locations, fusion, shift, source data, Markdown, analysis or comments. The script restores all omitted structure from the selected outline.',
     ...(styleReminder ? ['<RUIN_STYLE_REMINDER>', styleReminder, '</RUIN_STYLE_REMINDER>'] : []),
+    ...(revision ? ['<RUIN_REVISION>', revision, '</RUIN_REVISION>'] : []),
     '</MANDATORY_FINAL_OUTPUT_CONTRACT>',
   ].join('\n\n');
 }

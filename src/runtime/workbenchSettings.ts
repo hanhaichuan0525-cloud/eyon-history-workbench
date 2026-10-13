@@ -37,6 +37,11 @@ const AppearanceSettingsSchema = z.object({
   mode: z.enum(['dark', 'light']).default('light'),
   accent: z.enum(['jade', 'gold', 'blue', 'crimson']).default('jade'),
   text: z.enum(['neutral', 'warm', 'cool']).default('neutral'),
+  // Keep legacy interface choices in backups; only prose remains configurable.
+  uiFont: z.enum(['mixed', 'zhenkai', 'sans', 'song', 'kai', 'fang']).optional(),
+  proseFont: z.enum(['zhenkai', 'sans', 'song', 'kai', 'fang']).optional(),
+  readingSize: z.union([z.literal(14), z.literal(16), z.literal(18), z.literal(20)]).optional(),
+  readingSizeVersion: z.literal(1).optional(),
 });
 
 const RuinPreferencesSchema = z.object({
@@ -110,6 +115,10 @@ export const WorkbenchSettingsSchema = z.object({
     mode: 'light',
     accent: 'jade',
     text: 'neutral',
+    uiFont: 'mixed',
+    proseFont: 'zhenkai',
+    readingSize: 14,
+    readingSizeVersion: 1,
   }),
   ruinPreferences: RuinPreferencesSchema.default({
     candidateCount: 3,

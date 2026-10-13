@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as creative from '../src/core/creativeReferences.ts';
+import { ruinStyleSummary } from '../src/ui/ruinPresentation.ts';
 
 const source = readFileSync(new URL('../src/ui/ruinWorkbench.ts', import.meta.url), 'utf8');
 const tree = ts.createSourceFile('ui.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -25,9 +26,9 @@ function state(): any {
       location: '港口', supplementaryDirection: '二叶玩积木', candidateCount: 3, creativeReferences: creative.defaultRuinReferences() } };
 }
 
-test('三段常驻设置与六个日期输入均直接可用，只有长文风帮助折叠', () => {
+test('三段常驻设置与六个日期输入均直接可用，文风帮助使用简短说明', () => {
   const renderer = run(`${['renderForm', 'renderCreativeForm', 'renderGeographyPicker', 'renderDateGroup'].map(extract).join('\n')} renderForm`, {
-    ...creative, KNOWN_EYON_ERAS: ['复兴纪元'], CUSTOM_ERA_OPTION: '__custom_era__', isCustomEra: () => false,
+    ...creative, ruinStyleSummary, KNOWN_EYON_ERAS: ['复兴纪元'], CUSTOM_ERA_OPTION: '__custom_era__', isCustomEra: () => false,
     escapeHtml: (value: string) => value, escapeAttribute: (value: string) => value,
     periodLabel: (value: string) => value,
   });
@@ -42,6 +43,34 @@ test('三段常驻设置与六个日期输入均直接可用，只有长文风�
   assert.doesNotMatch(details[0][1], /data-date=|data-direction|data-auto-genealogy|data-ruin-style|data-period-index/u);
   assert.match(html, /data-auto-genealogy/u);
   assert.doesNotMatch(html, /data-date-details|data-reference-details|给想象一个方向|无需先知道角色全名/u);
+  for (const group of ['telling', 'pace', 'mood'] as const) {
+    assert.ok(html.includes(ruinStyleSummary(group, '随内容自动')));
+    assert.ok(!html.includes(creative.ruinStyleMeaning(group, '随内容自动')));
+  }
+});
+
+test('切换文风只就地更新短说明并保存草稿，不重绘或改变模型选择', () => {
+  const current = state();
+  const callbacks: Record<string, () => void> = {}, help: Record<string, { textContent: string }> = {};
+  const options = { telling: '多方讲述', pace: '起伏鲜明', mood: '悲伤惋惜' };
+  const selects = Object.entries(options).map(([group, value]) => {
+    help[group] = { textContent: '' };
+    return { dataset: { ruinStyle: group }, value, addEventListener(_: string, fn: () => void) { callbacks[group] = fn; } };
+  });
+  const bind = extract('bind');
+  const start = bind.indexOf("root.querySelectorAll<HTMLSelectElement>('[data-ruin-style]')");
+  const end = bind.indexOf("root.querySelectorAll<HTMLSelectElement>('[data-period-index]')");
+  assert.ok(start >= 0 && end > start);
+  let saved = 0;
+  run(bind.slice(start, end), { state: current, ruinStyleSummary, persistDraft: () => { saved++; },
+    root: { querySelectorAll: () => selects, querySelector: (selector: string) => help[selector.match(/"([^"]+)"/u)![1]] } });
+  for (const group of ['telling', 'pace', 'mood'] as const) {
+    callbacks[group]();
+    assert.equal(current.draft.creativeReferences[group], options[group]);
+    assert.equal(help[group].textContent, ruinStyleSummary(group, options[group]));
+  }
+  assert.equal(saved, 3);
+  assert.equal(current.draft.supplementaryDirection, '二叶玩积木');
 });
 
 test('左右独立卡片与窄屏切页使用同一份草稿，不重新生成或重挂页面', () => {

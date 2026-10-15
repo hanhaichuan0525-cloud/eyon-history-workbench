@@ -4,7 +4,9 @@
   // This script is intentionally small: runtime and UI bytes are fetched from the
   // public release manifest and are executed only after SHA-256 verification.
   const MANIFEST_URL = "https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@main/manifest.json";
-  const LOADER_VERSION = "0.3.1";
+  const RAW_BASE = "https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/";
+  const LOADER_VERSION = "0.3.2";
+  const DOWNLOAD_TIMEOUT_MS = { manifest: 30000, bundle: 120000 };
   const CACHE_NAME = 'eyon-history-workbench-verified-v1';
   const INSTANCE_KEY = '__eyonHistoryWorkbenchAutoLoader';
   const LEGACY_INSTANCE_KEY = '__eyonHistoryWorkbenchInternalLoader';
@@ -127,29 +129,46 @@
     } catch {}
   };
 
-  const fetchBytes = async (url) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    try {
-      const response = await fetch(url, {
-        cache: 'no-store',
-        credentials: 'omit',
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error('HTTP ' + response.status + '：' + url);
-      return new Uint8Array(await response.arrayBuffer());
-    } catch (error) {
-      if (error && error.name === 'AbortError') throw new Error('网络请求超时：' + url);
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
+  const fallbackUrl = (url) => {
+    const target = new URL(url);
+    const primary = new URL(MANIFEST_URL);
+    const prefix = primary.pathname.slice(0, primary.pathname.lastIndexOf('/') + 1);
+    if (target.origin !== primary.origin || !target.pathname.startsWith(prefix)) return null;
+    return RAW_BASE + target.pathname.slice(prefix.length) + target.search;
+  };
+  const fetchBytes = async (url, timeoutMs = DOWNLOAD_TIMEOUT_MS.manifest, verify) => {
+    const backup = fallbackUrl(url);
+    const candidates = backup ? [url, backup] : [url];
+    let lastError;
+    for (const candidate of candidates) {
+      if (candidate !== url) emitStatus('loading', '主下载暂不可用，正在从备用来源读取工作台');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(candidate, {
+          cache: 'no-store', credentials: 'omit', signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status + '：' + candidate);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (verify) await verify(bytes);
+        return bytes;
+      } catch (error) {
+        lastError = error && error.name === 'AbortError' ? new Error('网络请求超时：' + candidate) : error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
     }
+    throw lastError;
   };
 
   const manifestCacheKey = MANIFEST_URL;
   const readNetworkManifest = async () => {
     const separator = MANIFEST_URL.includes('?') ? '&' : '?';
-    const bytes = await fetchBytes(MANIFEST_URL + separator + 'eyon_loader=' + encodeURIComponent(LOADER_VERSION) + '&t=' + Date.now());
+    const bytes = await fetchBytes(
+      MANIFEST_URL + separator + 'eyon_loader=' + encodeURIComponent(LOADER_VERSION) + '&t=' + Date.now(),
+      DOWNLOAD_TIMEOUT_MS.manifest,
+      candidate => validateManifest(JSON.parse(new TextDecoder().decode(candidate))),
+    );
     const manifest = validateManifest(JSON.parse(new TextDecoder().decode(bytes)));
     // β1.1：这里不再立刻写 manifest 缓存。它是 (manifest, runtime, workbench) 这一组的
     // 提交点，必须等两个 bundle 都通过 SHA-256 校验后再落盘（见 loadVerifiedArtifacts）。
@@ -163,9 +182,7 @@
     return { manifest: validateManifest(JSON.parse(new TextDecoder().decode(bytes))), source: 'cache' };
   };
 
-  // β1.1：bundle 地址带 manifest 版本参数。jsDelivr 的边缘缓存与浏览器缓存都以完整 URL
-  // 为键，于是"新版本"天然就是"新缓存键"，第一次请求必然回源取新字节——不再依赖推送后
-  // 手动 purge，也不会再出现 manifest 已刷新、bundle 还是旧缓存的一对。
+  // 版本参数隔离本地缓存；CDN可能忽略查询参数或返回旧字节，仍逐字节校验SHA-256。
   const resolveRemoteUrl = (relativePath, version) => {
     const url = new URL(relativePath, MANIFEST_URL).href;
     if (!version) return url;
@@ -175,9 +192,10 @@
     let networkError = null;
     if (preferNetwork) {
       try {
-        const bytes = await fetchBytes(url);
-        const actual = await sha256Bytes(bytes);
-        if (actual.toLowerCase() !== String(expectedHash).toLowerCase()) throw new Error('远端文件校验失败：' + url);
+        const bytes = await fetchBytes(url, DOWNLOAD_TIMEOUT_MS.bundle, async candidate => {
+          const actual = await sha256Bytes(candidate);
+          if (actual.toLowerCase() !== String(expectedHash).toLowerCase()) throw new Error('远端文件校验失败：' + url);
+        });
         return bytes;
       } catch (error) { networkError = error; }
     }

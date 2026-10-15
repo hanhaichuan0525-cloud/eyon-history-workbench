@@ -8,14 +8,13 @@ const distRuntimePath = resolve(root, 'dist/index.js');
 const distWorkbenchPath = resolve(root, 'dist/workbench.js');
 const releaseDir = resolve(root, 'release');
 
-// β1：清单与 bundle 全部走 jsDelivr。GitHub raw 对 .js 返回 text/plain，静态 import 会被
-// 浏览器按 MIME 拒绝（真机病历：加载器整段不执行、控制台无日志）；jsDelivr 返回
-// application/javascript，且分支缓存可用 purge 接口刷新，因此加载器整段内联、不再依赖
-// 宿主的模块加载路径。
+// 主来源为jsDelivr，备用为同一GitHub仓库的raw内容。二者均先fetch字节、校验后以
+// JavaScript Blob导入，不静态import raw链接，避免text/plain的模块MIME限制。
 const CDN_BASE = 'https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@main';
 const MANIFEST_URL = `${CDN_BASE}/manifest.json`;
+const RAW_BASE = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/';
 const RELEASE_LABEL = 'β1';
-const AUTO_LOADER_VERSION = '0.3.1';
+const AUTO_LOADER_VERSION = '0.3.2';
 const AUTO_LOADER_ID = 'eyon-history-workbench-auto-loader';
 
 const outputPath = resolve(releaseDir, `酒馆助手脚本-伊雍历史工作台-${RELEASE_LABEL}.json`);
@@ -47,7 +46,9 @@ function createLoaderContent() {
   // This script is intentionally small: runtime and UI bytes are fetched from the
   // public release manifest and are executed only after SHA-256 verification.
   const MANIFEST_URL = ${JSON.stringify(MANIFEST_URL)};
+  const RAW_BASE = ${JSON.stringify(RAW_BASE)};
   const LOADER_VERSION = ${JSON.stringify(AUTO_LOADER_VERSION)};
+  const DOWNLOAD_TIMEOUT_MS = { manifest: 30000, bundle: 120000 };
   const CACHE_NAME = 'eyon-history-workbench-verified-v1';
   const INSTANCE_KEY = '__eyonHistoryWorkbenchAutoLoader';
   const LEGACY_INSTANCE_KEY = '__eyonHistoryWorkbenchInternalLoader';
@@ -170,29 +171,46 @@ function createLoaderContent() {
     } catch {}
   };
 
-  const fetchBytes = async (url) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    try {
-      const response = await fetch(url, {
-        cache: 'no-store',
-        credentials: 'omit',
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error('HTTP ' + response.status + '：' + url);
-      return new Uint8Array(await response.arrayBuffer());
-    } catch (error) {
-      if (error && error.name === 'AbortError') throw new Error('网络请求超时：' + url);
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
+  const fallbackUrl = (url) => {
+    const target = new URL(url);
+    const primary = new URL(MANIFEST_URL);
+    const prefix = primary.pathname.slice(0, primary.pathname.lastIndexOf('/') + 1);
+    if (target.origin !== primary.origin || !target.pathname.startsWith(prefix)) return null;
+    return RAW_BASE + target.pathname.slice(prefix.length) + target.search;
+  };
+  const fetchBytes = async (url, timeoutMs = DOWNLOAD_TIMEOUT_MS.manifest, verify) => {
+    const backup = fallbackUrl(url);
+    const candidates = backup ? [url, backup] : [url];
+    let lastError;
+    for (const candidate of candidates) {
+      if (candidate !== url) emitStatus('loading', '主下载暂不可用，正在从备用来源读取工作台');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(candidate, {
+          cache: 'no-store', credentials: 'omit', signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status + '：' + candidate);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (verify) await verify(bytes);
+        return bytes;
+      } catch (error) {
+        lastError = error && error.name === 'AbortError' ? new Error('网络请求超时：' + candidate) : error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
     }
+    throw lastError;
   };
 
   const manifestCacheKey = MANIFEST_URL;
   const readNetworkManifest = async () => {
     const separator = MANIFEST_URL.includes('?') ? '&' : '?';
-    const bytes = await fetchBytes(MANIFEST_URL + separator + 'eyon_loader=' + encodeURIComponent(LOADER_VERSION) + '&t=' + Date.now());
+    const bytes = await fetchBytes(
+      MANIFEST_URL + separator + 'eyon_loader=' + encodeURIComponent(LOADER_VERSION) + '&t=' + Date.now(),
+      DOWNLOAD_TIMEOUT_MS.manifest,
+      candidate => validateManifest(JSON.parse(new TextDecoder().decode(candidate))),
+    );
     const manifest = validateManifest(JSON.parse(new TextDecoder().decode(bytes)));
     // β1.1：这里不再立刻写 manifest 缓存。它是 (manifest, runtime, workbench) 这一组的
     // 提交点，必须等两个 bundle 都通过 SHA-256 校验后再落盘（见 loadVerifiedArtifacts）。
@@ -206,9 +224,7 @@ function createLoaderContent() {
     return { manifest: validateManifest(JSON.parse(new TextDecoder().decode(bytes))), source: 'cache' };
   };
 
-  // β1.1：bundle 地址带 manifest 版本参数。jsDelivr 的边缘缓存与浏览器缓存都以完整 URL
-  // 为键，于是"新版本"天然就是"新缓存键"，第一次请求必然回源取新字节——不再依赖推送后
-  // 手动 purge，也不会再出现 manifest 已刷新、bundle 还是旧缓存的一对。
+  // 版本参数隔离本地缓存；CDN可能忽略查询参数或返回旧字节，仍逐字节校验SHA-256。
   const resolveRemoteUrl = (relativePath, version) => {
     const url = new URL(relativePath, MANIFEST_URL).href;
     if (!version) return url;
@@ -218,9 +234,10 @@ function createLoaderContent() {
     let networkError = null;
     if (preferNetwork) {
       try {
-        const bytes = await fetchBytes(url);
-        const actual = await sha256Bytes(bytes);
-        if (actual.toLowerCase() !== String(expectedHash).toLowerCase()) throw new Error('远端文件校验失败：' + url);
+        const bytes = await fetchBytes(url, DOWNLOAD_TIMEOUT_MS.bundle, async candidate => {
+          const actual = await sha256Bytes(candidate);
+          if (actual.toLowerCase() !== String(expectedHash).toLowerCase()) throw new Error('远端文件校验失败：' + url);
+        });
         return bytes;
       } catch (error) { networkError = error; }
     }
@@ -479,7 +496,7 @@ const artifact = {
   id: AUTO_LOADER_ID,
   info: `伊雍历史工作台 ${RELEASE_LABEL}（工作台 ${manifest.displayVersion ?? manifest.version}，更新协议 ${manifest.version}，loader ${AUTO_LOADER_VERSION}）。`
     + `①加载器整段内联，无静态 import，规避 GitHub raw 的 text/plain 导致的 module MIME 拒绝；`
-    + `②manifest 与 dist 全走 jsDelivr，读取后逐字节校验 SHA-256，失败则回退最后一次已验证缓存；`
+    + `②优先jsDelivr，失败尝试同仓库GitHub raw；清单30秒、每份代码120秒，代码逐字节校验SHA-256，两来源失败再回退已验证缓存；`
     + `③魔术棒入口已退役，工作台只由角色卡悬浮球打开，并已接上 eyon-history-workbench:open 桥接；`
     + `④ready 通知后补一次 success，避免通知条目永久驻留导致悬浮球不回日常动作。`
     + `请只保留一个已启用的工作台脚本，避免重复监听。`,

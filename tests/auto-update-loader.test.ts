@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { WORKBENCH_VERSION, WORKBENCH_VERSION_LABEL } from '../src/core/version.ts';
@@ -40,11 +39,11 @@ test('源码版本与清单一致，固定β1加载器元信息可落后于当�
   assert.deepEqual(artifact.export_with, { data: true, button: true });
 });
 
-test('β1.7 远端更新兼容已安装的β1.5加载器：代码逐字节保持不变', async () => {
-  const loader = await readFile(remoteLoaderPath);
-  // 固定β1.5发布时loader 0.3.1的哈希；本次只更换清单和bundle，不要求重新导入。
-  assert.equal(createHash('sha256').update(loader).digest('hex'),
-    'ebd436749781c8de62d91bc371d703a658c3df0683a53f30d56d925c26abab25');
+test('loader 0.3.2保留固定清单与旧缓存身份，新下载策略需重新导入加载器', async () => {
+  const loader = await readFile(remoteLoaderPath, 'utf8');
+  assert.match(loader, /LOADER_VERSION = "0\.3\.2"/u);
+  assert.match(loader, /CACHE_NAME = 'eyon-history-workbench-verified-v1'/u);
+  assert.match(loader, /INSTANCE_KEY = '__eyonHistoryWorkbenchAutoLoader'/u);
 });
 
 /**
@@ -93,7 +92,9 @@ test('远端加载器模块保留 SHA-256 校验、缓存回退与超时控制',
   assert.match(loader, /CACHE_NAME = 'eyon-history-workbench-verified-v1'/);
   assert.match(loader, /new URL\(relativePath, MANIFEST_URL\)/);
   assert.match(loader, /AbortController/);
-  assert.match(loader, /setTimeout\(.*15000/);
+  assert.match(loader, /DOWNLOAD_TIMEOUT_MS = \{ manifest: 30000, bundle: 120000 \}/u);
+  assert.match(loader, /setTimeout\(.*timeoutMs/);
+  assert.match(loader, /raw\.githubusercontent\.com\/hanhaichuan0525-cloud\/eyon-history-workbench\/main\//u);
   assert.match(loader, /if \(!\/\^\\d\+\\\.\\d\+\\\.\\d\+\$\/\.test\(String\(manifest\.version\)\)\)/);
   assert.doesNotMatch(loader, /eyon-history-workbench-wand-entry/);
   assert.doesNotMatch(loader, /\beval\s*\(/u);

@@ -272,7 +272,14 @@ export class TavernButterflyContextAssembler {
         input.creativeReferences.domain === '顺势生长' ? '' : input.creativeReferences.domain,
       ] : [])].filter(Boolean).join('\n'),
       // 关注栏是资料/未来传播的观察重心，不是已发生的行动或必到场演员。
-      castRequirementQuery: actionQuery,
+      // 原轨迹、历史背景与入场文稿仍用于找资料，不能把其中提名都当成本轮
+      // 必须核对的行动对象。保留入场后的玩家/AI完整行动及建楼前输入框末次行动。
+      castRequirementQuery: [input.rawCommand,
+        // 无明确入场标记时，首条AI楼只是兼容读取的起点，可能已是真实行动。
+        // 不能因它被借作史案来源，就把其中参与者从必需对象识别中排除。
+        ...(entrySource && !isRuinEntryMessage(entrySource) ? [entrySource.message] : []),
+        ...legacyRequest.playerInterventions.map(source => source.content),
+      ].join('\n'),
       contextQuery: [
         ...legacyRequest.involvedEntities.flatMap(source => [source.title, source.content]),
         ...legacyRequest.currentRealityContext.flatMap(source => [source.title, source.content]),

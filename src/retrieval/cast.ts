@@ -101,6 +101,8 @@ export function buildCastManifest(
     focusEntityNames?: string[];
     requiredDirectEntityIds?: string[];
     actionQuery?: string;
+    /** 实际任务要求全体时保留完整群体；调用者仍负责限定行动范围。 */
+    completeExhaustiveGroups?: boolean;
   } = {},
 ): CastManifest {
   const byId = new Map(catalog.entities.map(entity => [entity.entityId, entity]));
@@ -141,7 +143,9 @@ export function buildCastManifest(
       .filter(entity => !frame.directEntityIds.includes(entity.entityId));
     const candidates = allCandidates.filter(entity => temporalCompatible(entity, frame.temporalTerms, catalog));
     const incompatible = allCandidates.filter(entity => !temporalCompatible(entity, frame.temporalTerms, catalog));
-    const limit = target.exhaustive ? EXHAUSTIVE_GROUP_LIMIT : GENERAL_GROUP_LIMIT;
+    const limit = target.exhaustive
+      ? options.completeExhaustiveGroups ? candidates.length : EXHAUSTIVE_GROUP_LIMIT
+      : GENERAL_GROUP_LIMIT;
     const selected = candidates.slice(0, limit);
     for (const entity of selected) {
       if (!entries.has(entity.entityId)) {

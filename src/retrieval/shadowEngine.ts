@@ -149,10 +149,16 @@ export class UnifiedShadowRetrievalEngine {
     for (const id of castRequirementFrame.directEntityIds) {
       if (!eventFrame.directEntityIds.includes(id)) eventFrame.directEntityIds.push(id);
     }
-    const initialCastManifest = buildCastManifest(eventFrame, index.catalog, {
+    // 蝴蝶的完整查询含原历史背景；直接对象和群体展开都必须服从实际行动文本。
+    // 其他模块仍沿用既有演员规则，不在本次遣返修复中改变。
+    const castFrame = input.taskType === 'butterfly'
+      ? { ...eventFrame, collectiveTargets: castRequirementFrame.collectiveTargets }
+      : eventFrame;
+    const initialCastManifest = buildCastManifest(castFrame, index.catalog, {
       focusEntityNames: input.focusEntityNames,
       requiredDirectEntityIds: castRequirementFrame.directEntityIds,
       actionQuery: input.castRequirementQuery === undefined ? undefined : entityRecognitionText(input.castRequirementQuery),
+      completeExhaustiveGroups: input.taskType === 'butterfly',
     });
     for (const entry of initialCastManifest.entries) {
       if (roleReferences.required.includes(entry.entityId)) entry.reasons.push('role-grounded-subject');
@@ -274,9 +280,19 @@ export class UnifiedShadowRetrievalEngine {
           || left.snapshot.snapshotId.localeCompare(right.snapshot.snapshotId))[0];
       if (authority) requiredAuthoritySnapshotIds.add(authority.snapshot.snapshotId);
     }
-    if (requiredAuthoritySnapshotIds.size > profile.maxSources) {
+    if (input.taskType !== 'butterfly' && requiredAuthoritySnapshotIds.size > profile.maxSources) {
       throw new Error('Retrieval v1.2 required cast exceeds source candidate budget');
     }
+    // 16份是常规候选预算，不能成为删除真实行动对象的理由。仅按已经确认的
+    // 必需来源数补齐；超额时不再额外扩张可选来源，原文与证据覆盖门照常保留。
+    const sourceBudget = input.taskType === 'butterfly'
+      ? Math.max(profile.maxSources, requiredAuthoritySnapshotIds.size)
+      : profile.maxSources;
+    const requiredSourceBudgetWarnings = sourceBudget > profile.maxSources ? [
+      `required-source-budget: default=${profile.maxSources}; required=${requiredAuthoritySnapshotIds.size}; effective=${sourceBudget}; `
+      + initialCastManifest.entries.filter(entry => ['required', 'group-required'].includes(entry.disposition))
+        .map(entry => `${entry.identity.canonicalName} [${entry.disposition}; ${entry.reasons.join(',')}]`).join('; '),
+    ] : [];
 
     ranked.sort((left, right) =>
       Number(requiredAuthoritySnapshotIds.has(right.snapshot.snapshotId))
@@ -293,7 +309,7 @@ export class UnifiedShadowRetrievalEngine {
         rejected.push(decision(item, 'no-retrieval-signal'));
       } else if (!item.eligible) {
         rejected.push(decision(item, item.rejectionReason ?? 'insufficient-primary-anchor'));
-      } else if (selected.length >= profile.maxSources) {
+      } else if (selected.length >= sourceBudget) {
         rejected.push(decision(item, 'source-budget-exhausted'));
       } else {
         selected.push(item);
@@ -311,6 +327,9 @@ export class UnifiedShadowRetrievalEngine {
       snapshotIds: this.index.sources.map(source => source.snapshot.snapshotId),
       purposePolicy: 'local-task-purpose.v3-fated-systems',
       forcedSourceLogicalIds: [...(input.forcedSourceLogicalIds ?? [])].sort(),
+      ...(input.taskType === 'butterfly' ? {
+        castRequirementQuery: normalizeRetrievalText(input.castRequirementQuery ?? input.query),
+      } : {}),
     });
     const passageStarted = performance.now();
     const desiredCoverageAnchors = castDesiredAnchors(initialCastManifest);
@@ -427,6 +446,7 @@ export class UnifiedShadowRetrievalEngine {
         })),
         rejectedPassages: passageAssembly.rejected,
         warnings: [
+          ...requiredSourceBudgetWarnings,
           ...roleReferences.warnings,
           ...territorialWarnings,
           ...(passageAssembly.omittedAnchors.length > 0

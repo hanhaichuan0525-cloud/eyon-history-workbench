@@ -5,7 +5,11 @@
   // public release manifest and are executed only after SHA-256 verification.
   const MANIFEST_URL = "https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@main/manifest.json";
   const RAW_BASE = "https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/";
-  const LOADER_VERSION = "0.3.3";
+  const LOADER_VERSION = "0.3.4";
+  // 低于这个运行时版本的清单/缓存一律拒绝：0.15.1 才把数据库对齐到 v9。
+  const MIN_RUNTIME_VERSION = "0.15.1";
+  // 固定提交兜底：即使 CDN 的 @main 仍返回旧清单，也能取到 0.15.1。
+  const PINNED_MANIFEST = 'https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@c1b85aabc4cf2bd4e4018acd3210e4e8f1d9a7fc/manifest.json';
   // 清单来源可能被切到固定提交；bundle 相对它解析。
   let activeManifestUrl = MANIFEST_URL;
   const DOWNLOAD_TIMEOUT_MS = { manifest: 30000, bundle: 120000 };
@@ -179,7 +183,7 @@
   const withBust = (base) => base + (base.includes('?') ? '&' : '?')
     + 'eyon_loader=' + encodeURIComponent(LOADER_VERSION) + '&t=' + Date.now();
   const readNetworkManifest = async () => {
-    const candidates = [MANIFEST_URL, RAW_BASE + 'manifest.json'];
+    const candidates = [MANIFEST_URL, RAW_BASE + 'manifest.json', PINNED_MANIFEST];
     try {
       const apiBytes = await fetchBytes(COMMIT_API, 8000);
       const sha = JSON.parse(new TextDecoder().decode(apiBytes)).sha;
@@ -193,6 +197,7 @@
         const bytes = await fetchBytes(withBust(candidate), DOWNLOAD_TIMEOUT_MS.manifest,
           value => validateManifest(JSON.parse(new TextDecoder().decode(value))));
         const manifest = validateManifest(JSON.parse(new TextDecoder().decode(bytes)));
+        if (!isNewer(manifest.version, MIN_RUNTIME_VERSION) && manifest.version !== MIN_RUNTIME_VERSION) continue;
         if (!best || isNewer(manifest.version, best.manifest.version)) best = { manifest, bytes, url: candidate };
       } catch {}
     }
@@ -203,7 +208,12 @@
   const readCachedManifest = async () => {
     const bytes = await cacheRead(manifestCacheKey);
     if (!bytes) throw new Error('没有可用的已验证缓存 manifest');
-    return { manifest: validateManifest(JSON.parse(new TextDecoder().decode(bytes))), source: 'cache' };
+    const manifest = validateManifest(JSON.parse(new TextDecoder().decode(bytes)));
+    // 旧缓存可能来自数据库版本不兼容的旧运行时，宁可报错也不静默降级。
+    if (!isNewer(manifest.version, MIN_RUNTIME_VERSION) && manifest.version !== MIN_RUNTIME_VERSION) {
+      throw new Error('缓存版本 ' + manifest.version + ' 低于最低兼容版本 ' + MIN_RUNTIME_VERSION + '，请检查网络后重试');
+    }
+    return { manifest, source: 'cache' };
   };
 
   // 版本参数隔离本地缓存；CDN可能忽略查询参数或返回旧字节，仍逐字节校验SHA-256。

@@ -41,7 +41,7 @@ test('源码版本与清单一致，固定β1加载器元信息可落后于当�
 
 test('loader 0.3.3多源清单：@main / raw / 提交固定地址，旧缓存身份保留', async () => {
   const loader = await readFile(remoteLoaderPath, 'utf8');
-  assert.match(loader, /LOADER_VERSION = "0\.3\.3"/u);
+  assert.match(loader, /LOADER_VERSION = "0\.3\.4"/u);
   assert.match(loader, /COMMIT_API/u);
   assert.match(loader, /CACHE_NAME = 'eyon-history-workbench-verified-v1'/u);
   assert.match(loader, /INSTANCE_KEY = '__eyonHistoryWorkbenchAutoLoader'/u);

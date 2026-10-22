@@ -14,7 +14,7 @@ const CDN_BASE = 'https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history
 const MANIFEST_URL = `${CDN_BASE}/manifest.json`;
 const RAW_BASE = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/';
 const RELEASE_LABEL = 'β1';
-const AUTO_LOADER_VERSION = '0.3.3';
+const AUTO_LOADER_VERSION = '0.3.4';
 const AUTO_LOADER_ID = 'eyon-history-workbench-auto-loader';
 
 const outputPath = resolve(releaseDir, `酒馆助手脚本-伊雍历史工作台-${RELEASE_LABEL}.json`);

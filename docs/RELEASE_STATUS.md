@@ -1,5 +1,12 @@
 # 工作台版本状态 / 历史发布记录
 
+## β1.9.3独立发布线（2026-10-22，数字更新协议0.15.0）
+
+- 以云端 `main`（β1.9.2 提交 `1a4ead0`）为基线拉 `release/beta1.9.3`，剥离因果炼金接线与样式（entry、workbenchShell、workbenchNavigation、biographyWorkbench、settingsWorkbench、dataManagement、facade），并回退与炼金绑定的墟境入境契约（`RuinEntryTargetSchema` 依赖炼金怪物卷宗）。
+- 纳入：自动纪元判定（`src/runtime/ruinAutomaticEra.ts`，产出 era/reason/sourceRefs）、历史长河（时间线）工作台重写、蝴蝶遣返证据修复（生成中拒绝准备＋冻结前等待生成收尾落定 260ms）。
+- 版本单独起 0.15.0／β1.9.3，不顺延本地炼金开发线的 0.14.5x；loader 保持 0.3.2，无需替换。
+- 验证：`tsc` 0、全量测试 1235/1235、dist 内无炼金标识、六份 bundle SHA-256 与 manifest 一致。真实酒馆与模型质量待玩家复验。
+
 ## β1.9.2自动更新分发维护（2026-10-15，loader 0.3.2／运行时0.14.41）
 
 - 实测CDN返回`Package size exceeded the configured limit of 50 MB`；Git当前树93,423,185 bytes，其中release占60,831,931 bytes。归档并从当前树移出19份旧离线包，保留0.14.41最新包、β1加载器、核心与正则；旧包在本地隔离副本`tmp/beta192-loader-maintenance-before/offline`保留SHA-256回执，也可从Git历史恢复。移出旧包后基础体积48,599,872 bytes，后续说明与测试占用另计，不清理Git历史。

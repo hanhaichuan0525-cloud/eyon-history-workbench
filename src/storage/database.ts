@@ -1,5 +1,8 @@
 const DATABASE_NAME = 'eyon-history-system';
-const DATABASE_VERSION = 8;
+const DATABASE_VERSION = 9;
+// 0.14.5x 本地开发线已把该库升到 v9 并建了炼金 store；发布线不读写它，
+// 只保留同架构，避免两条线在同一浏览器里互相打不开（VersionError）。
+export const ALCHEMY_STORE = 'alchemyRecords';
 
 export const BIOGRAPHY_STORE = 'biographies';
 export const RUIN_STORE = 'ruinCandidates';
@@ -19,6 +22,10 @@ export function historyDatabase(): Promise<IDBDatabase> {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
     request.onupgradeneeded = () => {
       const database = request.result;
+      if (!database.objectStoreNames.contains(ALCHEMY_STORE)) {
+        const store = database.createObjectStore(ALCHEMY_STORE, { keyPath: 'key' });
+        store.createIndex('namespace', 'namespaceKey', { unique: false });
+      }
       if (!database.objectStoreNames.contains(BIOGRAPHY_STORE)) {
         const store = database.createObjectStore(BIOGRAPHY_STORE, { keyPath: 'key' });
         store.createIndex('namespace', 'namespaceKey', { unique: false });

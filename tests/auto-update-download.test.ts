@@ -78,7 +78,7 @@ test('清单损坏也切备用；完整两份代码通过后最后提交清单�
   assert.equal(h.writes.length, 3);
   assert.ok(h.timers.some(timer => timer.ms === 30000));
   assert.ok(h.timers.some(timer => timer.ms === 120000));
-  assert.ok(h.calls.some(call => call.url.startsWith(raw + 'manifest.json?eyon_loader=0.3.2&t=')));
+  assert.ok(h.calls.some(call => call.url.startsWith(raw + 'manifest.json?eyon_loader=0.3.3&t=')));
 });
 
 test('新版界面双源失败时整组回旧版，已下载的新运行时不污染旧回退基线', async () => {

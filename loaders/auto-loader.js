@@ -5,7 +5,9 @@
   // public release manifest and are executed only after SHA-256 verification.
   const MANIFEST_URL = "https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@main/manifest.json";
   const RAW_BASE = "https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/";
-  const LOADER_VERSION = "0.3.2";
+  const LOADER_VERSION = "0.3.3";
+  // 清单来源可能被切到固定提交；bundle 相对它解析。
+  let activeManifestUrl = MANIFEST_URL;
   const DOWNLOAD_TIMEOUT_MS = { manifest: 30000, bundle: 120000 };
   const CACHE_NAME = 'eyon-history-workbench-verified-v1';
   const INSTANCE_KEY = '__eyonHistoryWorkbenchAutoLoader';
@@ -129,12 +131,15 @@
     } catch {}
   };
 
+  const CDN_PATTERN = /^https:\/\/cdn\.jsdelivr\.net\/gh\/hanhaichuan0525-cloud\/eyon-history-workbench@([^/]+)\/(.*)$/;
+  const RAW_PATTERN = /^https:\/\/raw\.githubusercontent\.com\/hanhaichuan0525-cloud\/eyon-history-workbench\/([^/]+)\/(.*)$/;
   const fallbackUrl = (url) => {
     const target = new URL(url);
-    const primary = new URL(MANIFEST_URL);
-    const prefix = primary.pathname.slice(0, primary.pathname.lastIndexOf('/') + 1);
-    if (target.origin !== primary.origin || !target.pathname.startsWith(prefix)) return null;
-    return RAW_BASE + target.pathname.slice(prefix.length) + target.search;
+    const cdn = target.href.match(CDN_PATTERN);
+    if (cdn) return 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/' + cdn[1] + '/' + cdn[2];
+    const raw = target.href.match(RAW_PATTERN);
+    if (raw) return 'https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@' + raw[1] + '/' + raw[2];
+    return null;
   };
   const fetchBytes = async (url, timeoutMs = DOWNLOAD_TIMEOUT_MS.manifest, verify) => {
     const backup = fallbackUrl(url);
@@ -162,19 +167,38 @@
   };
 
   const manifestCacheKey = MANIFEST_URL;
+  // 清单来源：jsDelivr @main、GitHub raw、以及 GitHub API 解析出的最新提交（不可缓存）。
+  // 取版本号最高的一份，避免 CDN 的 @main 旧缓存把升级整个挡掉。
+  const COMMIT_API = 'https://api.github.com/repos/hanhaichuan0525-cloud/eyon-history-workbench/commits/main';
+  const versionParts = (value) => String(value).split('.').map(part => Number.parseInt(part, 10) || 0);
+  const isNewer = (a, b) => {
+    const x = versionParts(a); const y = versionParts(b);
+    for (let i = 0; i < 3; i += 1) { if (x[i] !== y[i]) return x[i] > y[i]; }
+    return false;
+  };
+  const withBust = (base) => base + (base.includes('?') ? '&' : '?')
+    + 'eyon_loader=' + encodeURIComponent(LOADER_VERSION) + '&t=' + Date.now();
   const readNetworkManifest = async () => {
-    const separator = MANIFEST_URL.includes('?') ? '&' : '?';
-    const bytes = await fetchBytes(
-      MANIFEST_URL + separator + 'eyon_loader=' + encodeURIComponent(LOADER_VERSION) + '&t=' + Date.now(),
-      DOWNLOAD_TIMEOUT_MS.manifest,
-      candidate => validateManifest(JSON.parse(new TextDecoder().decode(candidate))),
-    );
-    const manifest = validateManifest(JSON.parse(new TextDecoder().decode(bytes)));
-    // β1.1：这里不再立刻写 manifest 缓存。它是 (manifest, runtime, workbench) 这一组的
-    // 提交点，必须等两个 bundle 都通过 SHA-256 校验后再落盘（见 loadVerifiedArtifacts）。
-    // 旧实现先写 manifest 再验 bundle，于是"新 manifest + 旧 bundle"的窗口会把回退基线
-    // 也污染成不匹配的一对，导致那一次加载直接失败。
-    return { manifest, bytes, source: 'network' };
+    const candidates = [MANIFEST_URL, RAW_BASE + 'manifest.json'];
+    try {
+      const apiBytes = await fetchBytes(COMMIT_API, 8000);
+      const sha = JSON.parse(new TextDecoder().decode(apiBytes)).sha;
+      if (typeof sha === 'string' && /^[0-9a-f]{40}$/.test(sha)) {
+        candidates.push('https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history-workbench@' + sha + '/manifest.json');
+      }
+    } catch {}
+    let best = null;
+    for (const candidate of candidates) {
+      try {
+        const bytes = await fetchBytes(withBust(candidate), DOWNLOAD_TIMEOUT_MS.manifest,
+          value => validateManifest(JSON.parse(new TextDecoder().decode(value))));
+        const manifest = validateManifest(JSON.parse(new TextDecoder().decode(bytes)));
+        if (!best || isNewer(manifest.version, best.manifest.version)) best = { manifest, bytes, url: candidate };
+      } catch {}
+    }
+    if (!best) throw new Error('所有清单来源均不可用');
+    activeManifestUrl = best.url;
+    return { manifest: best.manifest, bytes: best.bytes, source: 'network' };
   };
   const readCachedManifest = async () => {
     const bytes = await cacheRead(manifestCacheKey);
@@ -184,7 +208,7 @@
 
   // 版本参数隔离本地缓存；CDN可能忽略查询参数或返回旧字节，仍逐字节校验SHA-256。
   const resolveRemoteUrl = (relativePath, version) => {
-    const url = new URL(relativePath, MANIFEST_URL).href;
+    const url = new URL(relativePath, activeManifestUrl).href;
     if (!version) return url;
     return url + (url.includes('?') ? '&' : '?') + 'eyon_v=' + encodeURIComponent(String(version));
   };

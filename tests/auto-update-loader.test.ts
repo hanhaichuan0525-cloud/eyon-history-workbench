@@ -39,9 +39,10 @@ test('源码版本与清单一致，固定β1加载器元信息可落后于当�
   assert.deepEqual(artifact.export_with, { data: true, button: true });
 });
 
-test('loader 0.3.2保留固定清单与旧缓存身份，新下载策略需重新导入加载器', async () => {
+test('loader 0.3.3多源清单：@main / raw / 提交固定地址，旧缓存身份保留', async () => {
   const loader = await readFile(remoteLoaderPath, 'utf8');
-  assert.match(loader, /LOADER_VERSION = "0\.3\.2"/u);
+  assert.match(loader, /LOADER_VERSION = "0\.3\.3"/u);
+  assert.match(loader, /COMMIT_API/u);
   assert.match(loader, /CACHE_NAME = 'eyon-history-workbench-verified-v1'/u);
   assert.match(loader, /INSTANCE_KEY = '__eyonHistoryWorkbenchAutoLoader'/u);
 });
@@ -52,7 +53,7 @@ test('loader 0.3.2保留固定清单与旧缓存身份，新下载策略需重�
  * 加载器整段不执行、控制台无日志；②悬浮球点击派发的 eyon-history-workbench:open
  * 原本只有原生扩展在监听；③运行时通知表只在 error/success/cancelled 上安排退场，
  * phase:'ready' 会永久驻留，悬浮球停在"加载完毕"不回 idle。
- * 因此这里锁死：整段内联、清单走 jsDelivr、桥接与通知退场补丁在位、魔术棒入口退役。
+ * 因此这里锁死：整段内联、清单多源（jsDelivr @main / raw / 提交固定地址，取版本最高）、桥接与通知退场补丁在位、魔术棒入口退役。
  */
 test('β1 加载器产物：整段内联 + CDN 清单 + 悬浮球桥接 + 通知退场，且不再挂魔术棒入口', async () => {
   const artifact = JSON.parse(await readFile(artifactPath, 'utf8')) as {
@@ -90,7 +91,7 @@ test('远端加载器模块保留 SHA-256 校验、缓存回退与超时控制',
   const loader = await readFile(remoteLoaderPath, 'utf8');
   assert.match(loader, /crypto\.subtle\.digest\('SHA-256'/);
   assert.match(loader, /CACHE_NAME = 'eyon-history-workbench-verified-v1'/);
-  assert.match(loader, /new URL\(relativePath, MANIFEST_URL\)/);
+  assert.match(loader, /new URL\(relativePath, activeManifestUrl\)/);
   assert.match(loader, /AbortController/);
   assert.match(loader, /DOWNLOAD_TIMEOUT_MS = \{ manifest: 30000, bundle: 120000 \}/u);
   assert.match(loader, /setTimeout\(.*timeoutMs/);

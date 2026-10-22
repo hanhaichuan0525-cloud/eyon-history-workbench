@@ -14,7 +14,7 @@ const CDN_BASE = 'https://cdn.jsdelivr.net/gh/hanhaichuan0525-cloud/eyon-history
 const MANIFEST_URL = `${CDN_BASE}/manifest.json`;
 const RAW_BASE = 'https://raw.githubusercontent.com/hanhaichuan0525-cloud/eyon-history-workbench/main/';
 const RELEASE_LABEL = 'β1';
-const AUTO_LOADER_VERSION = '0.3.2';
+const AUTO_LOADER_VERSION = '0.3.3';
 const AUTO_LOADER_ID = 'eyon-history-workbench-auto-loader';
 
 const outputPath = resolve(releaseDir, `酒馆助手脚本-伊雍历史工作台-${RELEASE_LABEL}.json`);
@@ -496,7 +496,7 @@ const artifact = {
   id: AUTO_LOADER_ID,
   info: `伊雍历史工作台 ${RELEASE_LABEL}（工作台 ${manifest.displayVersion ?? manifest.version}，更新协议 ${manifest.version}，loader ${AUTO_LOADER_VERSION}）。`
     + `①加载器整段内联，无静态 import，规避 GitHub raw 的 text/plain 导致的 module MIME 拒绝；`
-    + `②优先jsDelivr，失败尝试同仓库GitHub raw；清单30秒、每份代码120秒，代码逐字节校验SHA-256，两来源失败再回退已验证缓存；`
+    + `②清单多源：jsDelivr @main、GitHub raw、GitHub API 决定的最新提交三处并取版本最高，bundle 跟随选中来源并在 CDN/raw 间互备；清单30秒、每份代码120秒，逐字节校验SHA-256，全部失败再回退已验证缓存；`
     + `③魔术棒入口已退役，工作台只由角色卡悬浮球打开，并已接上 eyon-history-workbench:open 桥接；`
     + `④ready 通知后补一次 success，避免通知条目永久驻留导致悬浮球不回日常动作。`
     + `请只保留一个已启用的工作台脚本，避免重复监听。`,

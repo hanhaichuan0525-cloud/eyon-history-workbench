@@ -1,5 +1,13 @@
 # NEXT · 伊雍历史工作台
 
+## 2026-10-22 · β1.9.3 独立发布线（SOURCE/BUILD/TEST-VERIFIED）
+
+- 从云端 main 拉 release/beta1.9.3；剥离炼金接线（entry / workbenchShell / workbenchNavigation / biographyWorkbench / settingsWorkbench / dataManagement / facade）
+- 炼金绑定的墟境入境契约（RuinEntryTargetSchema）与 alchemy 生成任务一并回退，不纳入本线
+- 版本单独起 0.15.0 / β1.9.3，不顺延本地炼金开发线 0.14.5x
+- 纳入：自动纪元判定（ruinAutomaticEra）、时间线工作台重写、蝴蝶遣返证据修复（生成中拒绝＋落定等待）
+- 验证：tsc 0；全量测试 1235/1235；dist 内无炼金标识
+
 ## 2026-10-01 · β1.7 发布（PUSHED / DISTRIBUTION-VERIFIED / DRIVER-PENDING）
 
 - 驾驶员授权打包上传GitHub；发布名β1.7，数字更新协议0.14.9，合并此前0.14.5—0.14.8已完成源码。仅发布维护源码、通用测试、正式bundle、当前脚本及公开状态文档，不安装、不调用真实模型、不重封卡/世界书、不创建tag/Release。

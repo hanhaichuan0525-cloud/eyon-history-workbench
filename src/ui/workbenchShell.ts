@@ -116,8 +116,7 @@ export function mountWorkbenchShell(
             ${WORKBENCH_VIEWS.map(view => `
               <button class="nav-button" type="button" data-view="${view.id}" aria-current="${view.id === active ? 'page' : 'false'}" ${view.id === 'ruin' ? 'aria-expanded="false" aria-controls="ruin-nav-children"' : ''} title="${view.label}">
                 <span class="nav-icon" aria-hidden="true">${view.icon}</span>
-                <span class="nav-label">${view.label}${view.id === 'ruin' ? '<span class="nav-disclosure" aria-hidden="true">⌄</span>' : ''}</span>
-                <span class="nav-count" data-count="${view.id}"></span>
+                <span class="nav-label"><span class="nav-full-label">${view.label}</span><span class="nav-short-label">${view.shortLabel}</span></span>
               </button>${view.id === 'ruin' ? `<div class="ruin-nav-children" id="ruin-nav-children" data-ruin-children hidden>${RUIN_PANELS.map(panel => `<button type="button" data-ruin-child="${panel}" aria-current="${ruinPanel === panel ? 'page' : 'false'}" disabled>${{ generation: '墟境生成', tasks: '墟境任务', butterfly: '蝴蝶效应' }[panel]}</button>`).join('')}</div>` : ''}`).join('')}
           </nav>
           <div class="rail-ornament" aria-hidden="true">
@@ -210,7 +209,7 @@ export function mountWorkbenchShell(
       const view = { id: viewId };
       let handle: ModuleHandle;
       if (view.id === 'timeline') {
-        handle = mountTimelineWorkbench(target, client, { theme: appearance.mode, embedded: true });
+        handle = mountTimelineWorkbench(target, client, { theme: appearance.mode, embedded: true, onAppearanceChange: applyWorkbenchAppearance });
       } else if (view.id === 'genealogy') {
         handle = mountGenealogyWorkbench(target, client, {
           theme: appearance.mode,
@@ -223,7 +222,9 @@ export function mountWorkbenchShell(
           onPanelChange: panel => { ruinPanel = panel; updateChrome(); resetWorkspaceScroll(); },
         });
       } else if (view.id === 'biography') {
-        handle = mountBiographyWorkbench(target, client, { theme: appearance.mode, embedded: true });
+        handle = mountBiographyWorkbench(target, client, {
+          theme: appearance.mode, embedded: true,
+        });
       } else {
         handle = mountSettingsWorkbench(target, client, {
           theme: appearance.mode,
@@ -236,6 +237,7 @@ export function mountWorkbenchShell(
   }
 
   function navigate(view: WorkbenchViewId): void {
+    if (view !== 'timeline') (handles.get('timeline') as TimelineWorkbenchHandle | undefined)?.closeReader();
     active = normalizeWorkbenchView(view);
     const firstVisit = ensureMounted(active);
     if (active !== 'ruin') ruinMenuExpanded = false;
@@ -281,6 +283,7 @@ export function mountWorkbenchShell(
   }
 
   function updateChrome(): void {
+    root.querySelector<HTMLElement>('.app')?.setAttribute('data-current-view', active);
     const ruinChildren = root.querySelector<HTMLElement>('[data-ruin-children]');
     if (ruinChildren) ruinChildren.hidden = active !== 'ruin' || !ruinMenuExpanded;
     root.querySelector('[data-view="ruin"]')?.setAttribute('aria-expanded', String(active === 'ruin' && ruinMenuExpanded));
@@ -303,17 +306,6 @@ export function mountWorkbenchShell(
     if (context) context.textContent = definition.context;
     if (kicker) kicker.textContent = definition.kicker;
     if (status) status.textContent = statusText;
-    const counts: Record<WorkbenchViewId, string> = {
-      timeline: snapshot ? String(snapshot.butterflies.length).padStart(2, '0') : '--',
-      genealogy: snapshot ? String(snapshot.genealogies.length).padStart(2, '0') : '--',
-      ruin: snapshot ? String(snapshot.ruins.length).padStart(2, '0') : '--',
-      biography: snapshot ? String(snapshot.biographies.length).padStart(2, '0') : '--',
-      settings: '',
-    };
-    for (const id of Object.keys(counts) as WorkbenchViewId[]) {
-      const element = root.querySelector<HTMLElement>(`[data-count="${id}"]`);
-      if (element) element.textContent = counts[id];
-    }
     const ledger = ledgerFor(active, snapshot);
     ledger.forEach((item, index) => {
       const label = root.querySelector<HTMLElement>(`[data-ledger-label="${index}"]`);
@@ -432,6 +424,7 @@ export function mountWorkbenchShell(
   }
 
   function close(): void {
+    (handles.get('timeline') as TimelineWorkbenchHandle | undefined)?.closeReader();
     host.hidden = true;
     const overlay = host.closest<HTMLElement>('[data-eyon-history-overlay]')
       ?? host.ownerDocument.querySelector<HTMLElement>('[data-eyon-history-overlay]');
@@ -508,7 +501,7 @@ function ledgerFor(
     ];
   }
   return [
-    ['生成模块', '04 项'],
+    ['生成模块', '05 项'],
     ['外观模式', snapshot.settings.appearance.mode === 'dark' ? '王庭夜色' : '雾紫纸页'],
     ['工作台版本', snapshot.version],
   ];

@@ -1068,7 +1068,7 @@ export function mountSettingsWorkbench(
   function syncCustomDrafts(current: WorkbenchSettings): void {
     TASKS.forEach(item => {
       if (!dirtyCustomDrafts.has(item.id)) {
-        customDrafts.set(item.id, cloneCustomDraft(current.generation[item.id]));
+        customDrafts.set(item.id, cloneCustomDraft(current.generation[item.id] ?? EMPTY_CUSTOM));
       }
     });
   }

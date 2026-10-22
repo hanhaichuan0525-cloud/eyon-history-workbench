@@ -14,6 +14,9 @@ export const KNOWN_EYON_ERAS = [
 
 export type KnownEyonEra = typeof KNOWN_EYON_ERAS[number];
 
+/** Draft choice only; resolve to a real era before historical generation. */
+export const AUTO_RUIN_ERA = '自动识别纪元';
+
 /**
  * 墟境可读取角色卡扩展自定义的纪年名。这里只接受一个简短的
  * 纪年标识；具体是否真实存在，由墟境 Context 在完整世界书语料中

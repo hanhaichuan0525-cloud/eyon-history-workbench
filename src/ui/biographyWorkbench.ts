@@ -73,7 +73,8 @@ export function mountBiographyWorkbench(
   const offContext = client.onContextChanged(() => {
     reads.invalidate(); state.records = []; state.ruinReferences = [];
     state.selectedKey = ''; state.open = false; state.query = ''; state.status = null;
-    state.error = ''; state.contextMenu = null; revealAwaitingNarrative = false; render();
+    state.error = ''; state.contextMenu = null; revealAwaitingNarrative = false;
+    render();
   });
   const offDataChanged = client.onDataChanged(detail => {
     if (detail.views.includes('biography')) void refresh();
@@ -167,6 +168,7 @@ export function mountBiographyWorkbench(
               <footer class="shelf-foot">显示 ${available.length} 份档案 · 按最近更新排序</footer>
             </aside>
             <main class="codex-stage">
+              
               ${renderGenerationOverlay(state.status)}
               ${renderCodexStage(selected, state.error, state.open)}
             </main>

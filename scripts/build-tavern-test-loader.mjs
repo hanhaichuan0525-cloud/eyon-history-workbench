@@ -7,8 +7,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = path.join(root, 'manifest.json');
 const cli = process.argv.slice(2);
 const outputFlag = cli.indexOf('--out-dir');
-if (cli.some((arg, index) => arg !== '--dry-run' && arg !== '--script-only' && arg !== '--out-dir' && !(outputFlag >= 0 && index === outputFlag + 1))) {
-  throw new Error('仅支持 --dry-run、--script-only 与 --out-dir <release 下的相对目录>');
+if (cli.some((arg, index) => arg !== '--dry-run' && arg !== '--script-only' && arg !== '--local-test' && arg !== '--out-dir' && !(outputFlag >= 0 && index === outputFlag + 1))) {
+  throw new Error('仅支持 --dry-run、--script-only、--local-test 与 --out-dir <release 下的相对目录>');
 }
 if (outputFlag >= 0 && (!cli[outputFlag + 1] || cli[outputFlag + 1].startsWith('--'))) {
   throw new Error('--out-dir 缺少目录');
@@ -21,6 +21,7 @@ if (outputRelative.startsWith('..') || path.isAbsolute(outputRelative)) {
 }
 const dryRun = cli.includes('--dry-run');
 const scriptOnly = cli.includes('--script-only');
+const localTest = cli.includes('--local-test');
 const previewPath = path.join(root, 'prototype', 'workbench-runtime.html');
 const prototypeIndexPath = path.join(root, 'prototype', 'index.html');
 const regexNames = [
@@ -86,14 +87,14 @@ const content = `${runtimeSource}\n;${loaderGlue}\n`;
 const exportedScript = {
   type: 'script',
   enabled: true,
-  name: stableVersion
+  name: localTest ? `伊雍历史工作台 ${manifest.version} · 本地测试` : stableVersion
     ? `伊雍历史工作台 ${manifest.version}`
     : `伊雍历史工作台 内测 ${manifest.version}`,
   id: stableVersion
     ? 'eyon-history-workbench-loader'
     : 'eyon-history-workbench-internal-loader',
   info: [
-    stableVersion
+    localTest ? `伊雍历史工作台 ${manifest.version} 本地测试包，尚待真实酒馆与模型验收，不是线上稳定发行。建议先导出工作台资料，在独立浏览器配置中测试；测试版本可能升级本地数据库，旧脚本不能保证直接回退读取。` : stableVersion
       ? `伊雍历史工作台稳定整合包 ${manifest.version}。`
       : `伊雍历史工作台内测整合包 ${manifest.version}。`,
     '已内置墟境时间内核与正式工作台界面。',
@@ -116,7 +117,7 @@ const exportedScript = {
 };
 
 if (dryRun) {
-  console.info(JSON.stringify({ valid: true, outputPath, version: manifest.version, scriptId: exportedScript.id, contentBytes: Buffer.byteLength(content), visualAssets: 'inline-with-OFL', scriptOnly }, null, 2));
+  console.info(JSON.stringify({ valid: true, outputPath, version: manifest.version, scriptId: exportedScript.id, scriptName: exportedScript.name, contentBytes: Buffer.byteLength(content), visualAssets: 'inline-with-OFL', scriptOnly, localTest }, null, 2));
   process.exit(0);
 }
 await mkdir(releaseDir, { recursive: true });

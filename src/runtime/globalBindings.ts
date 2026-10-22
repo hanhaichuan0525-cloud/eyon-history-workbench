@@ -274,6 +274,9 @@ export function createGlobalEventBridge(
     messageSent?: string;
     /** 宿主不支持时 undefined(删楼回退释放降级为不可用,不影响其他功能) */
     messageDeleted?: string;
+    /** Optional native host lifecycle, not iframe generate/generateRaw events. */
+    generationEnded?: string;
+    generationStopped?: string;
   };
 } {
   const resolvedSillyTavern = resolveHostGlobal(globalObject, 'SillyTavern');
@@ -369,6 +372,8 @@ export function createGlobalEventBridge(
       chatChanged,
       messageSent,
       messageDeleted,
+      generationEnded: typeof eventNames.GENERATION_ENDED === 'string' ? eventNames.GENERATION_ENDED : undefined,
+      generationStopped: typeof eventNames.GENERATION_STOPPED === 'string' ? eventNames.GENERATION_STOPPED : undefined,
     },
   };
 }

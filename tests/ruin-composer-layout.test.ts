@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import * as creative from '../src/core/creativeReferences.ts';
 import { ruinStyleSummary } from '../src/ui/ruinPresentation.ts';
+import { AUTO_RUIN_ERA } from '../src/schemas/ruin.ts';
 
 const source = readFileSync(new URL('../src/ui/ruinWorkbench.ts', import.meta.url), 'utf8');
 const tree = ts.createSourceFile('ui.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -28,7 +29,7 @@ function state(): any {
 
 test('三段常驻设置与六个日期输入均直接可用，文风帮助使用简短说明', () => {
   const renderer = run(`${['renderForm', 'renderCreativeForm', 'renderGeographyPicker', 'renderDateGroup'].map(extract).join('\n')} renderForm`, {
-    ...creative, ruinStyleSummary, KNOWN_EYON_ERAS: ['复兴纪元'], CUSTOM_ERA_OPTION: '__custom_era__', isCustomEra: () => false,
+    ...creative, ruinStyleSummary, AUTO_RUIN_ERA, KNOWN_EYON_ERAS: ['复兴纪元'], CUSTOM_ERA_OPTION: '__custom_era__', isCustomEra: () => false,
     escapeHtml: (value: string) => value, escapeAttribute: (value: string) => value,
     periodLabel: (value: string) => value,
   });

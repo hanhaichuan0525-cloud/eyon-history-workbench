@@ -13,6 +13,7 @@ import {
   createGlobalDataBindings,
   createGlobalEventBridge,
   createGlobalScriptVariableBindings,
+  resolveGlobalMvu,
   waitForGlobalMvu,
 } from './runtime/globalBindings.ts';
 import { registerWorkbenchLifecycle } from './runtime/registerLifecycle.ts';

@@ -10,7 +10,7 @@ import type {
   RuinGenerationInput,
   RuinNode,
 } from '../schemas/ruin.ts';
-import { KNOWN_EYON_ERAS } from '../schemas/ruin.ts';
+import { KNOWN_EYON_ERAS, AUTO_RUIN_ERA } from '../schemas/ruin.ts';
 import {
   ruinCandidateState,
   type RuinCandidateRecord,
@@ -154,7 +154,7 @@ export function mountRuinWorkbench(
     activeCandidateId: '',
     selectedNodeId: '',
     draft: configured ? inputToDraft(configured) : {
-      era: '复兴纪元',
+      era: AUTO_RUIN_ERA,
       start: { ...EMPTY_DATE },
       end: { ...EMPTY_DATE },
       location: '',
@@ -206,7 +206,7 @@ export function mountRuinWorkbench(
     generationScrollPositions.clear();
     state.panel = 'generation'; state.generationView = 'compose'; state.geography = []; state.geoSearch = ''; state.geoMode = 'select';
     options.onPanelChange?.('generation');
-    state.draft = { era: '复兴纪元', start: { ...EMPTY_DATE }, end: { ...EMPTY_DATE }, location: '', supplementaryDirection: '', autoGenealogy: false, candidateCount: 3, creativeReferences: defaultRuinReferences() };
+    state.draft = { era: AUTO_RUIN_ERA, start: { ...EMPTY_DATE }, end: { ...EMPTY_DATE }, location: '', supplementaryDirection: '', autoGenealogy: false, candidateCount: 3, creativeReferences: defaultRuinReferences() };
     state.taskDirection = '';
     render();
   });
@@ -402,7 +402,7 @@ export function mountRuinWorkbench(
     if (!canOpenRuinPanel(state.runtime, 'generation')) return;
     draftEdited = true;
     state.draft = {
-      era: '复兴纪元',
+      era: AUTO_RUIN_ERA,
       start: { ...EMPTY_DATE },
       end: { ...EMPTY_DATE },
       location: '',
@@ -693,7 +693,7 @@ export function mountRuinWorkbench(
     root.querySelectorAll<HTMLButtonElement>('[data-geo-ancestor]').forEach(button => button.addEventListener('click', () => selectPlace(button.dataset.geoAncestor ?? '')));
     bindGeoResults();
     root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('[data-direction], [data-location], [data-date], [data-era], [data-custom-era], [data-auto-genealogy]')
-      .forEach(input => input.addEventListener('change', () => persistDraft()));
+      .forEach(input => input.addEventListener('change', () => { if (!input.matches('[data-era]')) persistDraft(); }));
     root.querySelectorAll('input, textarea, select').forEach(input => input.addEventListener('input', () => { draftEdited = true; }));
     root.querySelector<HTMLInputElement>('[data-auto-genealogy]')
       ?.addEventListener('change', event => {
@@ -707,6 +707,7 @@ export function mountRuinWorkbench(
       ?.addEventListener('change', event => {
         const value = (event.currentTarget as HTMLSelectElement).value;
         state.draft.era = value === CUSTOM_ERA_OPTION ? '' : value;
+        persistDraft();
         render();
       });
     root.querySelector<HTMLInputElement>('[data-custom-era]')
@@ -1125,11 +1126,13 @@ function renderForm(state: RuinState): string {
         <label class="field">
           <strong>所属纪元</strong>
           <select data-era ${state.busy ? 'disabled' : ''}>
+            <option value="${AUTO_RUIN_ERA}" ${state.draft.era === AUTO_RUIN_ERA ? 'selected' : ''}>自动识别纪元</option>
             ${KNOWN_EYON_ERAS
               .map(era => `<option ${era === state.draft.era ? 'selected' : ''}>${era}</option>`)
               .join('')}
             <option value="${CUSTOM_ERA_OPTION}" ${isCustomEra(state.draft.era) ? 'selected' : ''}>自定义…</option>
           </select>
+          ${state.draft.era === AUTO_RUIN_ERA ? '<span class="field-note">生成前根据参考方向与相关史料识别，不默认套用现世纪元。</span>' : ''}
         </label>
         ${isCustomEra(state.draft.era)
           ? `<label class="field custom-era-field">
@@ -1524,7 +1527,7 @@ function buildInput(state: RuinState): RuinGenerationInput | null {
 }
 
 function isCustomEra(era: string): boolean {
-  return !KNOWN_EYON_ERAS.includes(era as typeof KNOWN_EYON_ERAS[number]);
+  return era !== AUTO_RUIN_ERA && !KNOWN_EYON_ERAS.includes(era as typeof KNOWN_EYON_ERAS[number]);
 }
 
 function parseDate(value: DateDraft, label: string): RuinGenerationInput['start'] {

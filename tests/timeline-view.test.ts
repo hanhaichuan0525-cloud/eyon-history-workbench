@@ -6,7 +6,29 @@ import { butterflyRecordTitle } from '../src/runtime/butterflySources.ts';
 import {
   runtimeStateLabel,
   visibleButterflyArchives,
+  timelineJourney, timelineDisplayTitle,
 } from '../src/ui/timelineView.ts';
+
+test('三节点只读每份档案保存时地，不显示第四节点或改写原资料', () => {
+  const item = record('committed', 2, 'route');
+  item.request = { anchors: { reality: { time: '488年10:25', location: '现世' }, ruinEntry: { time: '740年09:10', location: '配药室' }, ruinExit: { time: '740年11:35', location: '外石阶' } } } as ButterflyRecord['request'];
+  const before = structuredClone(item);
+  assert.deepEqual(timelineJourney(item), [
+    { label:'现世出发',time:'488年10:25',location:'现世' },
+    { label:'墟境进入',time:'740年09:10',location:'配药室' },
+    { label:'墟境离开',time:'740年11:35',location:'外石阶' },
+  ]);
+  assert.deepEqual(item, before);
+});
+test('旧档缺锚点和部分字段分开提示，日志展示名不改变保存标题', () => {
+  const item = record('committed', 2, 'old');
+  assert.equal(timelineJourney(item)[0].time, '时刻未记录');
+  item.request = { anchors: { reality: { time:'旧日期' } } } as ButterflyRecord['request'];
+  assert.equal(timelineJourney(item)[0].time, '旧日期');
+  assert.equal(timelineJourney(item)[0].location, '地点未记录');
+  assert.equal(timelineDisplayTitle('《蝴蝶效应日志：逆风旧誓》'), '逆风旧誓');
+  assert.equal(timelineDisplayTitle('《蝴蝶效应锚定日志4》'), '《蝴蝶效应锚定日志4》');
+});
 
 function record(
   status: ButterflyRecord['status'],

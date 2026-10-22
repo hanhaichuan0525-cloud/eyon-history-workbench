@@ -22,11 +22,13 @@ import {
 import { mergeTaskCitationRegistries, taskCitationRegistry } from '../retrieval/citations.ts';
 import {
   KNOWN_EYON_ERAS,
+  AUTO_RUIN_ERA,
   RuinGenerationInputSchema,
   type RuinCandidate,
   type RuinGenerationInput,
 } from '../schemas/ruin.ts';
 import { resolveAutomaticRuinRange } from '../runtime/ruinAutomaticRange.ts';
+import { buildAutomaticRuinEraPrompt, parseAutomaticRuinEra, type RuinEraResolution } from '../runtime/ruinAutomaticEra.ts';
 import {
   buildRuinPresenceDiagnostic,
   recordRuinPresenceDiagnostic,
@@ -57,6 +59,10 @@ export interface RuinRequestIdentity {
   triggerTextHash: string;
   triggerSwipeId: number | null;
   lifecycleEpoch: number;
+}
+
+function assertContextIdentity(context: RuinContextBundle, identity: RuinRequestIdentity): void {
+  if (namespaceKey(context.scope) !== namespaceKey(identity.namespace) || context.scope.triggerMessageId !== identity.triggerMessageId) throw new Error('Ruin context belongs to a different chat request');
 }
 
 export interface RuinWorkflowDependencies {
@@ -94,7 +100,7 @@ export class RuinWorkflow {
     if (command.type !== 'ruin.generate') {
       throw new Error('Ruin workflow received a different command type');
     }
-    const input = RuinGenerationInputSchema.parse(rawInput);
+    let input = RuinGenerationInputSchema.parse(rawInput);
     if (this.dependencies.resolveSelectedCharacters) {
       input.selectedCharacters = await this.dependencies.resolveSelectedCharacters(input.selectedCharacters);
     }
@@ -108,7 +114,7 @@ export class RuinWorkflow {
 
     const requestId = this.dependencies.createRequestId();
     const directive = command.raw || 'ruin.generate';
-    const context = await this.dependencies.contextAssembler.assemble({
+    const assemble = () => this.dependencies.contextAssembler.assemble({
       requestId,
       namespace: identity.namespace,
       triggerMessageId: identity.triggerMessageId,
@@ -116,20 +122,31 @@ export class RuinWorkflow {
       territorialReferences: territorialFragments(input.location),
       focusCharacterNames: input.selectedCharacters.map(character => character.name),
       castRequirementQuery: [
-        input.era,
+        input.era === AUTO_RUIN_ERA ? '' : input.era,
         input.location,
         input.supplementaryDirection,
       ].map(value => value.trim()).filter(Boolean).join('\n'),
-      eraAnchor: input.era,
-      customEra: !KNOWN_EYON_ERAS.includes(input.era as typeof KNOWN_EYON_ERAS[number]),
+      eraAnchor: input.era === AUTO_RUIN_ERA ? undefined : input.era,
+      customEra: input.era !== AUTO_RUIN_ERA && !KNOWN_EYON_ERAS.includes(input.era as typeof KNOWN_EYON_ERAS[number]),
       actorSelection: input,
     });
-    if (
-      namespaceKey(context.scope) !== namespaceKey(identity.namespace)
-      || context.scope.triggerMessageId !== identity.triggerMessageId
-    ) {
-      throw new Error('Ruin context belongs to a different chat request');
+    if (input.era === AUTO_RUIN_ERA) await this.dependencies.assertCurrent(identity);
+    let context = await assemble();
+    let automaticEraResolution: RuinEraResolution | undefined;
+    if (input.era === AUTO_RUIN_ERA) {
+      await this.dependencies.assertCurrent(identity);
+      assertContextIdentity(context, identity);
+      const prompt = buildAutomaticRuinEraPrompt(input, context);
+      const raw = await this.dependencies.generator.generate('ruin', prompt, { progressLabel: '正在依据史料识别纪元' });
+      await this.dependencies.assertCurrent(identity);
+      automaticEraResolution = parseAutomaticRuinEra(raw, context);
+      input = { ...input, era: automaticEraResolution.era };
+      // Resolve once, before outline generation. Candidate expansion/retry still
+      // reuses the one final frozen context instead of reopening retrieval.
+      context = await assemble();
+      await this.dependencies.assertCurrent(identity);
     }
+    assertContextIdentity(context, identity);
 
     const rangeResolution = resolveAutomaticRuinRange(
       input,
@@ -214,6 +231,7 @@ export class RuinWorkflow {
       frozenContext: context,
       input: effectiveInput,
       result,
+      ...(automaticEraResolution ? { automaticEraResolution } : {}),
       expandedCandidateIds: [],
       candidateStates: Object.fromEntries(result.candidates.map(candidate => [
         candidate.id,
@@ -633,7 +651,7 @@ export function buildRuinRetrievalDirective(
   return [
     // command.raw 还携带候选骰材、基调与内部命令文本。它们属于创作输入，
     // 不能反向召回同名装备稀有度或无关角色；史料检索只消费玩家事实范围。
-    input.era,
+    input.era === AUTO_RUIN_ERA ? '' : input.era,
     input.location,
     input.supplementaryDirection,
     ...selectedCharacterAnchors,

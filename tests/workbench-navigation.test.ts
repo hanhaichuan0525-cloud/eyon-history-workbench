@@ -7,12 +7,13 @@ import {
   WORKBENCH_VIEW_IDS,
 } from '../src/ui/workbenchNavigation.ts';
 
-test('统一工作台只暴露五个正式模块且顺序稳定', () => {
+test('统一工作台暴露五个正式模块且顺序稳定', () => {
   assert.deepEqual(
     WORKBENCH_VIEWS.map(view => view.id),
     [...WORKBENCH_VIEW_IDS],
   );
   assert.equal(new Set(WORKBENCH_VIEW_IDS).size, 5);
+  assert.equal(normalizeWorkbenchView('alchemy'), 'timeline');
 });
 
 test('无效工作台栏目回退到墟境时空', () => {

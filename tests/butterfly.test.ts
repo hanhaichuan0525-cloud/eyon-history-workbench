@@ -3222,3 +3222,10 @@ test('任务检索与 pending 均未投递旧状态时，提交事务仍让 R5 �
   assert.equal(custody.current.subjectEntityId, previousEntityId);
   assert.deepEqual(custody.originalFactIds, [previousFactId]);
 });
+
+
+test('正文仍在生成时拒绝准备遣返，不冻结也不签发授权', async () => {
+  const h = rollbackHarness();
+  (h.runtime as unknown as { isGenerating?: () => boolean }).isGenerating = () => true;
+  await assert.rejects(h.controller.prepareBeforeUserTurn('遣返', 9), /正文仍在生成/u);
+});

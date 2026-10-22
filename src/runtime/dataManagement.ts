@@ -127,7 +127,7 @@ export function createWorkbenchBackup(
 function redactApiKeys(settings: WorkbenchSettings): WorkbenchSettings {
   const safe = structuredClone(settings);
   for (const generation of Object.values(safe.generation)) {
-    generation.key = '';
+    if (generation) generation.key = '';
   }
   return safe;
 }

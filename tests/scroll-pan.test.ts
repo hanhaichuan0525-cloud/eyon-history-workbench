@@ -126,7 +126,8 @@ test('窄屏底部导航使用工作台自身网格，触控区足够且不依�
   assert.match(mobile, /grid-template-areas: "workspace" "navigation"/u);
   assert.match(mobile, /grid-area: navigation;\s*position: relative;/u);
   assert.doesNotMatch(mobile, /position: fixed/u);
-  assert.match(mobile, /repeat\(5, minmax\(0, 1fr\)\)/u);
+  assert.match(mobile, /repeat\(6, minmax\(0, 1fr\)\)/u);
+  assert.match(mobile, /\.nav-short-label\s*\{\s*display:\s*inline/u);
   assert.match(mobile, /safe-area-inset-bottom/u);
 });
 test('四阶段独立圆角卡片和原生双向滑动接入正式源码，模块卸载有清理', async () => {

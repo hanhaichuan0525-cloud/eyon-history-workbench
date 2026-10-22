@@ -309,5 +309,7 @@ test('唯一新遣返按钮位于蝴蝶控制台，时空页退役旧入口，�
   assert.match(console,/遣返现世/u);
   assert.match(console,/referenceRevision === capturedReferenceRevision && !editing/u);
   assert.doesNotMatch(timeline,/data-return|client\.returnRuin\(/u);
-  assert.match(timeline,/墟境探索 → 蝴蝶效应/u);
+  const shell = readFileSync(new URL('../src/ui/workbenchShell.ts', import.meta.url),'utf8');
+  assert.match(shell, /data-ruin-child=.*butterfly: '蝴蝶效应'/u);
+  assert.match(timeline, /data-time-switch/u);
 });

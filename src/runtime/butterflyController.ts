@@ -204,6 +204,16 @@ export class ButterflyController {
     );
   }
 
+  /** 宿主提供生成状态时，等流结束后的收尾写入落定；不提供时不拖时间。 */
+  private async waitForQuiet(limit = 1200): Promise<void> {
+    if (typeof this.runtime.isGenerating !== 'function') return;
+    const started = Date.now();
+    while (this.runtime.isGenerating() === true && Date.now() - started < limit) {
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+    await new Promise(resolve => setTimeout(resolve, 260));
+  }
+
   private async prepareBeforeUserTurnOnce(
     text: string, expectedUserMessageId: number, triggerType: 'button' | 'text',
   ): Promise<PendingSettlement> {
@@ -213,6 +223,12 @@ export class ButterflyController {
     const command = parseTextCommand(text);
     if (!command || command.type !== 'ruin.return') {
       throw new Error('只能为明确的遣返命令预冻结历史锚点');
+    }
+    // 生成结束不等于写完：RuinTrace / 锚定会在流结束后补写最后一楼。
+    // 先等它落定再冻结，否则来源哈希会在 mark 时对不上。
+    await this.waitForQuiet();
+    if (this.runtime.isGenerating?.() === true) {
+      throw new Error('正文仍在生成，请等这一楼结束后再点击「遣返现世」；没有创建玩家楼，也没有签发授权');
     }
     const namespace = currentNamespace(this.runtime);
     const triggerEvidenceHash = butterflyTriggerEvidenceHash(this.runtime, expectedUserMessageId, command.raw);

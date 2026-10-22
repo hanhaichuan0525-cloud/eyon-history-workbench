@@ -57,7 +57,7 @@ import type {
   RuinCandidates,
   RuinGenerationInput,
 } from '../src/schemas/ruin.ts';
-import { RuinGenerationInputSchema } from '../src/schemas/ruin.ts';
+import { RuinGenerationInputSchema, AUTO_RUIN_ERA } from '../src/schemas/ruin.ts';
 import {
   MemoryRuinCandidateRepository,
   ruinCandidateRecordKey,
@@ -2519,6 +2519,40 @@ test('GB-09 墟境生成先重投影已选谱系人物，旧关系不进入检�
     { namespace, triggerMessageId: 8, triggerTextHash: 'hash', triggerSwipeId: 0, lifecycleEpoch: 0 });
   assert.equal(record.input.selectedCharacters[0].contextSummary, '仅供辨识');
   assert.equal(input.selectedCharacters[0].contextSummary, '旧短传残留');
+});
+
+test('自动纪元先无时代偏置检索，识别后固定时代重组上下文，扩写不再重新识别', async () => {
+  const input = { ...makeInput(), era: AUTO_RUIN_ERA, supplementaryDirection: '童年的一次经历' };
+  const assemblies: Array<{ eraAnchor?: string; customEra?: boolean; directive: string }> = [];
+  const prompts: string[] = [];
+  const workflow = new RuinWorkflow({ contextAssembler: { async assemble(request) { assemblies.push(request); return makeContext(); } },
+    generator: { async generate(_task, prompt) {
+      prompts.push(prompt);
+      if (prompt.includes('你是历史舞台的纪元定位员')) return JSON.stringify({ era: '神明纪元', reason: '早年史料的时代', sourceRefs: ['ERA1'] });
+      return JSON.stringify(prompt.includes('<RUIN_OUTLINE_BATCH_TASK>') ? makeOutlineResponse() : makeCandidateResponse(prompt)).replaceAll('复兴纪元', '神明纪元');
+    } }, repository: new MemoryRuinCandidateRepository(), rules: { generationContract: '测试' }, createRequestId: () => requestId, now: () => 1, async assertCurrent() {},
+  });
+  const record = await workflow.generate(createButtonCommand('ruin.generate', '墟境探索'), input,
+    { namespace, triggerMessageId: 8, triggerTextHash: 'hash', triggerSwipeId: 0, lifecycleEpoch: 0 });
+  assert.equal(assemblies.length, 2); assert.equal(assemblies[0]!.eraAnchor, undefined); assert.equal(assemblies[0]!.customEra, false);
+  assert.ok(!assemblies[0]!.directive.includes(AUTO_RUIN_ERA)); assert.equal(assemblies[1]!.eraAnchor, '神明纪元');
+  assert.equal(record.input.era, '神明纪元'); assert.equal(record.result.era, '神明纪元'); assert.equal(input.era, AUTO_RUIN_ERA);
+  assert.equal(prompts.filter(p => p.includes('你是历史舞台的纪元定位员')).length, 1);
+  assert.equal(record.automaticEraResolution?.era, '神明纪元');
+});
+test('自动纪元失败或判定期间换聊天不覆盖旧史稿，不进入大纲重试', async () => {
+  for (const cancel of [false, true]) {
+    const repository = new MemoryRuinCandidateRepository(), old = makeRecord(); await repository.save(old);
+    let calls = 0, stale = false;
+    const workflow = new RuinWorkflow({ contextAssembler: { async assemble() { return makeContext(); } },
+      generator: { async generate() { calls++; stale = cancel; return '{"error":"需要更明确的历史人物"}'; } },
+      repository, rules: { generationContract: '测试' }, createRequestId: () => requestId, now: () => 1,
+      async assertCurrent() { if (stale) throw new Error('聊天已变化'); },
+    });
+    await assert.rejects(workflow.generate(createButtonCommand('ruin.generate', '墟境探索'), { ...makeInput(), era: AUTO_RUIN_ERA },
+      { namespace, triggerMessageId: 8, triggerTextHash: 'hash', triggerSwipeId: 0, lifecycleEpoch: 0 }), cancel ? /聊天已变化/ : /未能自动识别/);
+    assert.equal(calls, 1); assert.deepEqual(await repository.get(old.key), old);
+  }
 });
 
 test('谱系人物节点只进入墟境初始检索，候选扩写与重试复用冻结证据', async () => {

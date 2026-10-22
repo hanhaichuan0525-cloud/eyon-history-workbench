@@ -1064,6 +1064,16 @@ test('全局事件桥暴露 MESSAGE_SENT，并在旧宿主缺失时安全降级'
   assert.equal(createGlobalEventBridge(makeGlobal(false)).names.messageSent, undefined);
 });
 
+test('事件桥只暴露宿主实际公布的结束/停止事件，不混用助手iframe事件', () => {
+  const required = { GENERATION_AFTER_COMMANDS: 'before', CHARACTER_MESSAGE_RENDERED: 'rendered', CHAT_CHANGED: 'changed' };
+  const empty = { eventOn() {}, tavern_events: required, iframe_events: { GENERATION_ENDED: 'js_generation_ended' } };
+  assert.equal(createGlobalEventBridge(empty).names.generationEnded, undefined);
+  assert.equal(createGlobalEventBridge(empty).names.generationStopped, undefined);
+  const actual = createGlobalEventBridge({ ...empty, tavern_events: { ...required, GENERATION_ENDED: 'native-ended', GENERATION_STOPPED: 'native-stopped' } });
+  assert.equal(actual.names.generationEnded, 'native-ended');
+  assert.equal(actual.names.generationStopped, 'native-stopped');
+});
+
 test('发送前准备失败会停止本轮正文并清除临时状态', async () => {
   const calls: string[] = [];
   const lifecycle = {

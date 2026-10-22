@@ -64,3 +64,18 @@ function extractArchiveTitle(value: string): string {
   const match = value.match(/《蝴蝶效应(?:锚定)?日志[^》]*》/u);
   return match?.[0] ?? '';
 }
+
+/** Display only: old records remain untouched, and current runtime never fills old anchors. */
+export function timelineJourney(record: ButterflyRecord): { label: string; time: string; location: string }[] {
+  const anchors = record.request?.anchors;
+  return ([['现世出发', anchors?.reality], ['墟境进入', anchors?.ruinEntry], ['墟境离开', anchors?.ruinExit]] as const)
+    .map(([label, anchor]) => ({
+      label,
+      time: typeof anchor?.time === 'string' && anchor.time ? anchor.time : '时刻未记录',
+      location: typeof anchor?.location === 'string' && anchor.location ? anchor.location : '地点未记录',
+    }));
+}
+
+export function timelineDisplayTitle(title: string): string {
+  return title.replace(/^《蝴蝶效应(?:锚定)?日志[：:]\s*(.*?)》$/u, '$1');
+}

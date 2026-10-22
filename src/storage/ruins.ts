@@ -27,6 +27,7 @@ export interface RuinCandidateRecord {
    * 不得依据模型生成的标题、演员或节点重新打开检索。
    */
   frozenContext?: RuinContextBundle;
+  automaticEraResolution?: { era: string; reason: string; sourceRefs: string[] };
   input: RuinGenerationInput;
   result: RuinCandidates;
   expandedCandidateIds: string[];

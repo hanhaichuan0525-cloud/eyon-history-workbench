@@ -127,6 +127,8 @@ export async function resolveActiveRetrieval(input: {
   }
   const ungroundedActor = bundle.castManifest?.entries.find(entry =>
     ['required', 'group-required'].includes(entry.disposition)
+    // 纪元不匹配的直接实体已降级为参考：允许没有本纪元证据，交给后续 ruin 校验兜底。
+    && !entry.reasons.includes('direct-query-entity-temporal-conflict-degraded')
     && entry.identity.passageIds.length === 0);
   if (ungroundedActor) {
     throw new Error(

@@ -1,5 +1,13 @@
 # 工作台版本状态 / 历史发布记录
 
+## β1.9.4（2026-11-20，数字更新协议0.15.2）
+
+- 以线上 0.15.1 / β1.9.3 为基线，不含因果炼金。
+- 合入非炼金修复：蝴蝶演员查询剥离 `<UpdateVariable>` 等系统块；自动纪元地点降为范围参考；传记/蝴蝶/墟境接入语体守卫；temporal-degraded 跳过；主题标记修复。
+- 版本：`0.15.2` / `β1.9.4`；保留 minimumLoaderVersion 0.1.0，0.3.2 用户等待 CDN 刷新即可，无需重导。
+- 验证：typecheck 通过；测试 1235 通过，热检索性能预算在并行跑中抖动。
+- 真实酒馆、模型质量与用户验收仍待复验。
+
 ## β1.9.3独立发布线（2026-10-22，数字更新协议0.15.1）
 
 - 以云端 `main`（β1.9.2 提交 `1a4ead0`）为基线拉 `release/beta1.9.3`，剥离因果炼金接线与样式（entry、workbenchShell、workbenchNavigation、biographyWorkbench、settingsWorkbench、dataManagement、facade），并回退与炼金绑定的墟境入境契约（`RuinEntryTargetSchema` 依赖炼金怪物卷宗）。

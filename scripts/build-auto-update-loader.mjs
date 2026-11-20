@@ -483,7 +483,7 @@ const workbenchHash = sha256(workbenchBytes);
 if (runtimeHash !== manifest.sha256) throw new Error(`dist/index.js hash mismatch: ${runtimeHash} != ${manifest.sha256}`);
 if (workbenchHash !== manifest.workbenchSha256) throw new Error(`dist/workbench.js hash mismatch: ${workbenchHash} != ${manifest.workbenchSha256}`);
 
-const remoteLoaderContent = createLoaderContent();
+const remoteLoaderContent = (await readFile(remoteLoaderPath, 'utf8')).trimEnd();
 await mkdir(dirname(remoteLoaderPath), { recursive: true });
 await writeFile(remoteLoaderPath, `${remoteLoaderContent}\n`, 'utf8');
 // β1：不再生成"只 import 远端模块"的一行脚本。那条路径在 GitHub raw 上会因为

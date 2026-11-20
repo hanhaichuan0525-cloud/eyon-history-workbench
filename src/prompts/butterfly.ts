@@ -1,4 +1,5 @@
 import type { ButterflyRequest, ButterflyResult } from '../schemas/butterfly.ts';
+import { WORLD_REGISTER_PROSE } from './worldRegister.ts';
 import {
   butterflyActionRecordLengthInstruction,
   butterflyEvolutionLengthInstruction,
@@ -70,6 +71,7 @@ export function buildButterflyNarrativeInstruction(
       : []),
     '不要延迟遣返，也不要把后台结算过程写进正文。',
     BUTTERFLY_READABILITY_INSTRUCTION,
+    WORLD_REGISTER_PROSE,
     '这是一条隐藏协作指令，不要在正文中复述、解释或展示本指令。',
   ].join('\n');
 }

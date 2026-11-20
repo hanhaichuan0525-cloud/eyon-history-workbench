@@ -57,6 +57,7 @@ export function applyAppearance(
   const accent = ACCENTS[appearance.accent];
   const [ink, muted] = TEXTS[appearance.text][appearance.mode];
   const isLight = appearance.mode === 'light';
+  target.dataset.theme = appearance.mode;
   target.style.setProperty('--archive-bg', isLight ? '#e3dde9' : '#100d17');
   target.style.setProperty('--archive-panel', isLight ? '#f2edf5' : '#201b2b');
   target.style.setProperty('--archive-surface', isLight ? '#f2edf5' : '#201b2b');

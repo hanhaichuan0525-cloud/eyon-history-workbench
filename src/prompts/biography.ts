@@ -1,6 +1,7 @@
 import type { BiographyContextBundle } from '../core/context.ts';
 import type { ContinuityView } from '../core/continuityAnchors.ts';
 import type { ContinuityEventPairCandidate } from '../core/continuityRelations.ts';
+import { WORLD_REGISTER_PROSE } from './worldRegister.ts';
 import { renderContinuityView } from '../runtime/continuityAnchors.ts';
 import type { ContextSource } from '../core/context.ts';
 import type { Biography, BiographyPassageResponse, BiographyPlan } from '../schemas/biography.ts';
@@ -458,6 +459,7 @@ export function buildBiographyPlanPrompt(input: {
     '<generation_contract>',
     input.rules.generationContract.trim(),
     '</generation_contract>',
+    WORLD_REGISTER_PROSE,
     ...BIOGRAPHY_SOURCE_PURPOSE_BLOCK,
     '<PROTAGONIST_ANCHOR>',
     `当前玩家扮演的主角是「${input.context.scope.characterKey}」，是活着的当代人，生活在当前时间点。`,

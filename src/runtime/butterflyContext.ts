@@ -43,6 +43,17 @@ import { resolveCanon } from '../retrieval/canonResolver.ts';
 import { buildButterflySourceScope } from './butterflySources.ts';
 import type { ButterflyReferences } from '../core/creativeReferences.ts';
 
+/** 只保留可当行动事实的叙事文本；变量更新、状态栏、选项、摘要不是演员证据。 */
+export function narrativeOnly(text: string): string {
+  return String(text ?? '')
+    .replace(/<UpdateVariable\b[^>]*>[\s\S]*?<\/UpdateVariable>/giu, ' ')
+    .replace(/<StatusPlaceHolderImpl\s*\/>/giu, ' ')
+    .replace(/<(summary|options|action_options|appendix|tp)\b[^>]*>[\s\S]*?<\/\1>/giu, ' ')
+    .replace(/<!--[\s\S]*?-->/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
 // 仅用于识别旧版裁剪策略的 pending；新版选择完整楼/来源，不裁掉契约确认。
 // API prompt 对重复来源去重投递，控制体量而不切正文。
 export const BUTTERFLY_FREEZE_SOURCE_LIMIT = 1500;
@@ -261,7 +272,7 @@ export class TavernButterflyContextAssembler {
         legacyRequest.ruinHistory.enteredAnomaly,
         ...legacyRequest.ruinHistory.locationChain,
         entrySource?.message ?? '',
-        ...legacyRequest.playerInterventions.flatMap(source => [source.title, source.content]),
+        ...playerInterventions.flatMap(source => [source.title, narrativeOnly(source.content)]),
       ].join('\n');
     const active = await resolveActiveRetrieval({
       retrieval: this.retrievalShadow,
@@ -277,8 +288,8 @@ export class TavernButterflyContextAssembler {
       castRequirementQuery: [input.rawCommand,
         // 无明确入场标记时，首条AI楼只是兼容读取的起点，可能已是真实行动。
         // 不能因它被借作史案来源，就把其中参与者从必需对象识别中排除。
-        ...(entrySource && !isRuinEntryMessage(entrySource) ? [entrySource.message] : []),
-        ...legacyRequest.playerInterventions.map(source => source.content),
+        ...(entrySource && !isRuinEntryMessage(entrySource) ? [narrativeOnly(entrySource.message)] : []),
+        ...playerInterventions.map(source => narrativeOnly(source.content)).filter(Boolean),
       ].join('\n'),
       contextQuery: [
         ...legacyRequest.involvedEntities.flatMap(source => [source.title, source.content]),

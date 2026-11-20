@@ -6,6 +6,7 @@ import {
 } from '../retrieval/citations.ts';
 import { activeTemporalEligibilityRules, assessStagePerson } from '../retrieval/temporal.ts';
 import { ruinProseLengthInstruction, RUIN_WRITING_GUIDANCE, RUIN_REVISION } from '../core/ruinProseContract.ts';
+import { WORLD_REGISTER_PROSE } from './worldRegister.ts';
 import {
   buildActiveEvidenceView,
   renderActiveEvidenceBlock,
@@ -422,6 +423,7 @@ export function buildRuinOutlineBatchApiPrompt(input: RuinPromptInput): string {
     'Keep the answer short. Do not write a 500-character history yet.',
     '</RUIN_OUTLINE_BATCH_TASK>',
     RUIN_WRITING_GUIDANCE,
+    WORLD_REGISTER_PROSE,
     '<PROTAGONIST_ANCHOR>',
     `当前玩家扮演的主角是「${input.context.scope.characterKey}」，是活着的当代人。`,
     '主角可以出现在墟境历史中——但工作台勾选只表示重点参考；只有玩家在补充方向明确要求其进入、或候选因果确实需要其作为穿越者行动时，才以当代人的身份合理出场。',
@@ -554,6 +556,7 @@ export function buildRuinExpansionApiPrompt(
     'Keep every other string compact: usually 10-45 Chinese characters. Each list should normally contain one item, and never more than two unless the selected outline makes a second item indispensable.',
     '</RUIN_SELECTED_CANDIDATE_EXPANSION>',
     RUIN_WRITING_GUIDANCE,
+    WORLD_REGISTER_PROSE,
     ...PERIOD_ANCHORING_BLOCK,
     ...renderTaskSubjectBoundary({
       taskType: 'ruin',
